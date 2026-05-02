@@ -218,8 +218,45 @@ The voice configuration and transport page. Top knobs configure global timing an
 
 - **Top knobs (placeholder):** `VSEL` (Voice Select, 1–6) | `BPM` | `SWNG` (Swing) | `LTCK` (Hold Mode: Voltage Block / Elektron)
 - **Bottom knobs (placeholder):** `CDIV` | `LENG` | `DIRN` | `ROTA` — primary track pattern settings. `SCAL` / `ROOT` / `BPCH` / `OLEV` accessible via encoder from this page; exact placement TBD.
-- **Bottom row = button labels** (pipe-separated on LCD), centered on Buttons 4-5-6:
-  - `      |PLAY|PAUS|RST |     ` (exact framing TBD)
+- **Bottom row = transport glyphs** (pipe-separated on LCD), centered on Buttons 4-5-6:
+  - `      |▶  |‖  |⏮  |     ` — symbols rendered via CGRAM custom characters (slots 0–2):
+
+```c
+// CGRAM slot 0 — Play ▶
+{0x00, 0x10, 0x18, 0x1C, 0x1C, 0x18, 0x10, 0x00}
+// . . . . .
+// # . . . .
+// # # . . .
+// # # # . .
+// # # # . .
+// # # . . .
+// # . . . .
+// . . . . .
+
+// CGRAM slot 1 — Pause ‖
+{0x00, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x00}
+// . . . . .
+// # # . # #
+// # # . # #
+// # # . # #
+// # # . # #
+// # # . # #
+// # # . # #
+// . . . . .
+
+// CGRAM slot 2 — Reset |◀  (vertical bar + gap + left-pointing triangle)
+{0x00, 0x11, 0x13, 0x17, 0x17, 0x13, 0x11, 0x00}
+// . . . . .
+// # . . . #
+// # . . # #
+// # . # # #
+// # . # # #
+// # . . # #
+// # . . . #
+// . . . . .
+```
+
+  - Uses 3 of 8 available CGRAM slots; 5 slots remain for lock indicators, waveform thumbnails, etc.
   - Transport buttons override the central button-press meanings *while on this page only*.
 - **Transport buttons are modal: only active on Page 6.** Other pages have no transport access; navigation to other pages uses the encoder turn or pressing a different page button.
 - **LED feedback:**
