@@ -28,6 +28,15 @@ const prog_EventHandlers MultiPage::event_handlers_ PROGMEM = {
 };
 
 /* static */
+uint8_t MultiPage::OnIncrement(int8_t increment) {
+  int16_t bpm = static_cast<int16_t>(multi.data().clock_bpm) + increment;
+  if (bpm < 40) bpm = 40;
+  if (bpm > 240) bpm = 240;
+  multi.SetValue(PRM_MULTI_CLOCK_BPM, static_cast<uint8_t>(bpm));
+  return 1;
+}
+
+/* static */
 uint8_t MultiPage::OnKey(uint8_t key) {
   switch (key) {
     case SWITCH_1:

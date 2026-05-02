@@ -31,6 +31,7 @@
 #include "controller/ui_pages/dialog_box.h"
 #include "controller/ui_pages/multi_page.h"
 #include "controller/ui_pages/os_info_page.h"
+#include "controller/ui_pages/seq_steps_page.h"
 #include "controller/ui_pages/parameter_editor.h"
 #include "controller/voicecard_tx.h"
 
@@ -100,9 +101,9 @@ const prog_PageInfo page_registry[] PROGMEM = {
   },
 
   { PAGE_MULTI_CLOCK,
-    &ParameterEditor::event_handlers_,
-    { 62, 63, 64, 65, 0xff, 0xff, 0xff, 0xff, },
-    PAGE_MULTI_CLOCK, 5, 0x0f,
+    &SeqStepsPage::event_handlers_,
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    PAGE_MULTI, 5, 0x0f,
   },
 
   // PAGE_PERFORMANCE and PAGE_KNOB_ASSIGN: placeholder until Perf page is built.

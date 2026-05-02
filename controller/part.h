@@ -117,8 +117,8 @@ class Part {
   void ResetAllControllers();
   void Reset();
 
-  void SetValue(uint8_t, uint8_t, uint8_t) {}
-  uint8_t GetValue(uint8_t) const { return 0; }
+  void SetValue(uint8_t address, uint8_t value, uint8_t user_initiated);
+  uint8_t GetValue(uint8_t address) const;
 
   void TouchPatch() {}
   void Touch() {}
