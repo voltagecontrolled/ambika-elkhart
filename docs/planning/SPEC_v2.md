@@ -418,6 +418,19 @@ Defines how tracks interact. Maximum 4 active relationships globally (CPU and SP
 
 ---
 
+## MIDI Input
+
+Voices are hardwired — no configurable channel routing.
+
+| Channel | Behavior |
+|---------|----------|
+| 1–6 | Dedicated to voice 1–6 respectively. Note number sets pitch, velocity sets accent. Monophonic — new note-on retriggers (unless GLIDE is set). |
+| 10 | Drum map. Notes 36–41 trigger voices 1–6 at their configured base pitch (`BPCH`). Note number selects voice only; pitch is ignored. Velocity passes through. |
+
+All other channels ignored.
+
+---
+
 ## Memory Architecture
 
 ### Per-Step Storage (on Motherboard)
