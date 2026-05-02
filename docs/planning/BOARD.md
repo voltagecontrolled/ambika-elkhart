@@ -52,6 +52,14 @@ is retired. New entries are topic-named and dated.
 - **Empirical UI re-tuning.** Knob assignments on Pages 1/2/3/6/7/8 are
   placeholder pending playing.
 
+- **Audio-rate voice LFO + pitch tracking.** Empirically the voice LFO
+  already gets close to audio rate; SPEC_v2 had marked audio-rate as dropped
+  but YAM's path may be cleaner than feared. Levers: `voice.cc` ~line 362
+  (`U8U8Mul(patch_.voice_lfo_rate, 128)`) or extend
+  `lut_res_lfo_increments`. Pitch tracking (`TRAK` in SPEC_v2 LFO section)
+  becomes essential once it's audio-rate so the FM ratio stays musical
+  across notes.
+
 ---
 
 ## Done
