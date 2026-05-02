@@ -63,17 +63,13 @@ class Envelope {
     phase_increment_ = stage_phase_increment_[stage];
   }
   
-  inline void Update(
-      uint8_t attack,
-      uint8_t decay,
-      uint8_t curve,
-      uint8_t release) {
+  inline void Update(uint8_t rise, uint8_t fall, uint8_t curve) {
     stage_phase_increment_[ATTACK] = ResourcesManager::Lookup<
-        uint16_t, uint8_t>(lut_res_env_portamento_increments, attack);
-    stage_phase_increment_[DECAY] = ResourcesManager::Lookup<
-        uint16_t, uint8_t>(lut_res_env_portamento_increments, decay);
-    stage_phase_increment_[RELEASE] = ResourcesManager::Lookup<
-        uint16_t, uint8_t>(lut_res_env_portamento_increments, release);
+        uint16_t, uint8_t>(lut_res_env_portamento_increments, rise);
+    uint16_t fall_inc = ResourcesManager::Lookup<
+        uint16_t, uint8_t>(lut_res_env_portamento_increments, fall);
+    stage_phase_increment_[DECAY] = fall_inc;
+    stage_phase_increment_[RELEASE] = fall_inc;
     stage_target_[DECAY] = 0;
     stage_target_[SUSTAIN] = 0;
     curve_ = curve;

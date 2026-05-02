@@ -8,6 +8,91 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 
 ## [Unreleased]
 
+> Going forward, entries are topic-named and dated; the "Phase N" framing
+> below is retired. Historical Phase 2–5 entries kept verbatim. Current
+> work tracker: `docs/planning/BOARD.md`.
+
+### Voice envelopes + LFO UI refactor (2026-05-02)
+
+**Flash result:** controller 43,378 B (66.2%), +154 B over Phase 5; voicecard
+26,082 B, –62 B from release-mod removal.
+**RAM:** controller 3,460 B (–2 B). kSystemVersion bumped to `0x21` on both.
+
+Each voice envelope is now parameterized by three bytes (`rise` / `fall` /
+`curve`) plus a depth byte that lives in the modulation slot it drives.
+`fall` sets both DECAY and RELEASE phase increments — the voicecard envelope
+no longer reads a separate `release` byte. The page that previously selected
+one of three envelopes via an active-EG knob is replaced by two pages that
+expose all three envelopes plus the voice LFO directly.
+
+Topic spec: `docs/planning/voice_envelopes.md`.
+
+#### voicecard/envelope.h
+
+- `Envelope::Update()` signature changed from `(attack, decay, curve, release)`
+  to `(rise, fall, curve)`. `fall` drives both `stage_phase_increment_[DECAY]`
+  and `stage_phase_increment_[RELEASE]`.
+- DECAY / SUSTAIN targets stay pinned to 0 (Phase 5 model).
+
+#### voicecard/voice.cc
+
+- Envelope update loop drops the `release_mod` clip and the `.release` field
+  read. Now reads `rise=patch_.env_lfo[i].attack`,
+  `fall=patch_.env_lfo[i].decay`, `curve=patch_.env_lfo[i].sustain`.
+- `Patch.env_lfo[i].release` byte left in struct but unread.
+
+#### controller/parameter.cc + parameter.h
+
+- `kNumParameters` 76 → 84.
+- Repurposed in place: param 24 (was active-EG selector) → E1 rise; 25 → E1
+  fall; 26 → E1 curv; 27 → E1 depth (virtual addr 200); 28 → E2 rise;
+  75 → E2 fall.
+- Appended params 76–83: E2 curv (34) / E2 depth (201) / E3 rise (40) / E3
+  fall (41) / E3 curv (42) / E3 depth (202) / LFO dest (72,
+  `UNIT_MODULATION_DESTINATION`) / LFO depth (73, `UNIT_INT8 -63..63`).
+- All new params use `instance_count=1, instance_stride=0,
+  indexed_by=0xff` — no more `PRM_UI_ACTIVE_ENV_LFO` indexing.
+- Depth knob doubles as row label: short_name = `STR_RES_AMP` / `_FLT` /
+  `_PCH` / `_DEPT`; full_name = `STR_RES_DEPTH` for all four.
+
+#### controller/resources.cc + resources.h
+
+- New strings (indices 388–392): `STR_RES_RISE` "rise", `STR_RES_FALL`
+  "fall", `STR_RES_CURV` "curv", `STR_RES_DEST` "dest", `STR_RES_SHAP`
+  "shap".
+- `STR_RES_PCH` retitled "pch" → "pitc" (filling the 4-char LCD column;
+  the EG selector that used the 3-char form is removed).
+
+#### controller/part.cc
+
+- `kSyncAddresses[]` drops 27, 35, 43 (envelope release bytes) — voicecard
+  no longer reads them.
+
+#### controller/ui.cc
+
+- `PAGE_ENV_LFO` knob slots `{ 24, 25, 26, 27, 28, 75, 76, 77 }` —
+  E1 rise/fall/curv/depth on top row, E2 rise/fall/curv/depth on bottom.
+- `PAGE_VOICE_LFO` knob slots `{ 78, 79, 80, 81, 32, 33, 82, 83 }` —
+  E3 rise/fall/curv/depth on top, LFO rate/shape/dest/depth on bottom.
+
+#### docs/planning/
+
+- New: `voice_envelopes.md` — topic spec for the 3-value envelope model.
+- New: `BOARD.md` — Now / Next / Later kanban for ongoing work.
+
+#### Notes
+
+- No `SeqTrack` layout change; no EEPROM force-reset required.
+- `kP2E1REL` / `kP2E2REL` / `kP2E3REL` slots in `defaults.page2` are dead
+  bytes after this change. Will be reclaimed when the sequencer-mode UI
+  lands.
+- LFO destination + depth params (addresses 72/73) were defined in Phase 5
+  but had no UI page; they're now on `PAGE_VOICE_LFO` bottom row.
+- `UNIT_EG_SELECT` enum entry stays in `parameter.h` but no longer
+  references any param — harmless until a future cleanup.
+
+---
+
 ### Phase 5 — Voice Parameter System & Envelope Redesign (2026-05-02)
 
 **Flash result:** 43,224B (66.0% of 64KB), up ~1,810B from Phase 4.

@@ -525,40 +525,40 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 9,
     STR_RES_LFO2TVCF, STR_RES_LFO2TVCF, STR_RES_FILTER_1 },
   
-  // 24
-  { PARAMETER_LEVEL_UI,
-    PRM_UI_ACTIVE_ENV_LFO,
-    UNIT_EG_SELECT, 0, 2,
+  // 24 — E1 rise (was active EG selector)
+  { PARAMETER_LEVEL_PATCH,
+    24,
+    UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
-    STR_RES_EG, STR_RES_LFO_EG, 0 },
-  
-  // 25
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_ENV_ATTACK,
-    UNIT_RAW_UINT8, 0, 127,
-    3, 8, PRM_UI_ACTIVE_ENV_LFO, 73,
-    STR_RES_ATTK, STR_RES_ATTACK, STR_RES_ENVELOPE },
-  
-  // 26
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_ENV_DECAY,
-    UNIT_RAW_UINT8, 0, 127,
-    3, 8, PRM_UI_ACTIVE_ENV_LFO, 75,
-    STR_RES_DECAY, STR_RES_DECAY, STR_RES_ENVELOPE },
+    STR_RES_RISE, STR_RES_ATTACK, STR_RES_ENVELOPE },
 
-  // 27
+  // 25 — E1 fall (was indexed env attack)
   { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_ENV_SUSTAIN,
+    25,
     UNIT_RAW_UINT8, 0, 127,
-    3, 8, PRM_UI_ACTIVE_ENV_LFO, 70,
-    STR_RES_SUSTAIN, STR_RES_SUSTAIN, STR_RES_ENVELOPE },
-  
-  // 28
+    1, 0, 0xff, 0xff,
+    STR_RES_FALL, STR_RES_DECAY, STR_RES_ENVELOPE },
+
+  // 26 — E1 curv (was indexed env decay)
   { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_ENV_RELEASE,
+    26,
     UNIT_RAW_UINT8, 0, 127,
-    3, 8, PRM_UI_ACTIVE_ENV_LFO, 72,
-    STR_RES_RELEASE, STR_RES_RELEASE, STR_RES_ENVELOPE },
+    1, 0, 0xff, 0xff,
+    STR_RES_CURV, STR_RES_CURV, STR_RES_ENVELOPE },
+
+  // 27 — E1 depth (was indexed env sustain). Virtual addr 200 → mod slot 10 amount.
+  { PARAMETER_LEVEL_PATCH,
+    200,
+    UNIT_UINT8, 0, 63,
+    1, 0, 0xff, 0xff,
+    STR_RES_AMP, STR_RES_DEPTH, STR_RES_ENVELOPE },
+
+  // 28 — E2 rise (was indexed env release)
+  { PARAMETER_LEVEL_PATCH,
+    32,
+    UNIT_RAW_UINT8, 0, 127,
+    1, 0, 0xff, 0xff,
+    STR_RES_RISE, STR_RES_ATTACK, STR_RES_ENVELOPE },
   
   // 29
   { PARAMETER_LEVEL_PATCH,
@@ -883,12 +883,68 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 109,
     STR_RES_KEYBTVCF, STR_RES_KEYBTVCF, STR_RES_FILTER_1 },
 
-  // 75: EG depth — indexed by active_env_lfo; virtual addr 200/201/202
+  // 75 — E2 fall (was indexed EG depth)
   { PARAMETER_LEVEL_PATCH,
-    200,
+    33,
+    UNIT_RAW_UINT8, 0, 127,
+    1, 0, 0xff, 0xff,
+    STR_RES_FALL, STR_RES_DECAY, STR_RES_ENVELOPE },
+
+  // 76 — E2 curv
+  { PARAMETER_LEVEL_PATCH,
+    34,
+    UNIT_RAW_UINT8, 0, 127,
+    1, 0, 0xff, 0xff,
+    STR_RES_CURV, STR_RES_CURV, STR_RES_ENVELOPE },
+
+  // 77 — E2 depth (virtual addr 201 → filter_env / E2DEPT)
+  { PARAMETER_LEVEL_PATCH,
+    201,
     UNIT_UINT8, 0, 63,
-    3, 1, PRM_UI_ACTIVE_ENV_LFO, 0xff,
-    STR_RES_DEPT, STR_RES_DEPTH, STR_RES_ENVELOPE },
+    1, 0, 0xff, 0xff,
+    STR_RES_FLT, STR_RES_DEPTH, STR_RES_ENVELOPE },
+
+  // 78 — E3 rise
+  { PARAMETER_LEVEL_PATCH,
+    40,
+    UNIT_RAW_UINT8, 0, 127,
+    1, 0, 0xff, 0xff,
+    STR_RES_RISE, STR_RES_ATTACK, STR_RES_ENVELOPE },
+
+  // 79 — E3 fall
+  { PARAMETER_LEVEL_PATCH,
+    41,
+    UNIT_RAW_UINT8, 0, 127,
+    1, 0, 0xff, 0xff,
+    STR_RES_FALL, STR_RES_DECAY, STR_RES_ENVELOPE },
+
+  // 80 — E3 curv
+  { PARAMETER_LEVEL_PATCH,
+    42,
+    UNIT_RAW_UINT8, 0, 127,
+    1, 0, 0xff, 0xff,
+    STR_RES_CURV, STR_RES_CURV, STR_RES_ENVELOPE },
+
+  // 81 — E3 depth (virtual addr 202 → mod slot 2 amount)
+  { PARAMETER_LEVEL_PATCH,
+    202,
+    UNIT_UINT8, 0, 63,
+    1, 0, 0xff, 0xff,
+    STR_RES_PCH, STR_RES_DEPTH, STR_RES_ENVELOPE },
+
+  // 82 — LFO4 destination (mod slot 7 destination, addr 72)
+  { PARAMETER_LEVEL_PATCH,
+    72,
+    UNIT_MODULATION_DESTINATION, 0, MOD_DST_LAST - 1,
+    1, 0, 0xff, 0xff,
+    STR_RES_DEST, STR_RES_DESTINATION, STR_RES_VOICE_LFO },
+
+  // 83 — LFO4 depth (mod slot 7 amount, addr 73)
+  { PARAMETER_LEVEL_PATCH,
+    73,
+    UNIT_INT8, -63, 63,
+    1, 0, 0xff, 0xff,
+    STR_RES_DEPT, STR_RES_DEPTH, STR_RES_VOICE_LFO },
 };
 
 /* static */

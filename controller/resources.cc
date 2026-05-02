@@ -386,7 +386,12 @@ static const prog_char str_res_dept[] PROGMEM = "dept";
 static const prog_char str_res_depth[] PROGMEM = "depth";
 static const prog_char str_res_amp[] PROGMEM = "amp";
 static const prog_char str_res_flt[] PROGMEM = "flt";
-static const prog_char str_res_pch[] PROGMEM = "pch";
+static const prog_char str_res_pch[] PROGMEM = "pitc";
+static const prog_char str_res_rise[] PROGMEM = "rise";
+static const prog_char str_res_fall[] PROGMEM = "fall";
+static const prog_char str_res_curv[] PROGMEM = "curv";
+static const prog_char str_res_dest[] PROGMEM = "dest";
+static const prog_char str_res_shap[] PROGMEM = "shap";
 
 
 PROGMEM const prog_char* const string_table[] = {
@@ -778,6 +783,11 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_amp,
   str_res_flt,
   str_res_pch,
+  str_res_rise,
+  str_res_fall,
+  str_res_curv,
+  str_res_dest,
+  str_res_shap,
 };
 
 const prog_uint16_t lut_res_lfo_increments[] PROGMEM = {

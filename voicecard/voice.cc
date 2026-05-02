@@ -343,19 +343,12 @@ inline void Voice::UpdateDestinations() {
   
   int8_t attack_mod = U15ShiftRight7(dst_[MOD_DST_ATTACK]) - 64;
   int8_t decay_mod = U15ShiftRight7(dst_[MOD_DST_DECAY]) - 64;
-  int8_t release_mod = U15ShiftRight7(dst_[MOD_DST_RELEASE]) - 64;
   for (int i = 0; i < kNumEnvelopes; ++i) {
-    int16_t new_attack = patch_.env_lfo[i].attack;
-    new_attack = Clip(new_attack + attack_mod, 0, 127);
-    int16_t new_decay = patch_.env_lfo[i].decay;
-    new_decay = Clip(new_decay + decay_mod, 0, 127);
-    int16_t new_release = patch_.env_lfo[i].release;
-    new_release = Clip(new_release + release_mod, 0, 127);
-    envelope_[i].Update(
-          new_attack,
-          new_decay,
-          patch_.env_lfo[i].sustain,
-          new_release);
+    int16_t new_rise = patch_.env_lfo[i].attack;
+    new_rise = Clip(new_rise + attack_mod, 0, 127);
+    int16_t new_fall = patch_.env_lfo[i].decay;
+    new_fall = Clip(new_fall + decay_mod, 0, 127);
+    envelope_[i].Update(new_rise, new_fall, patch_.env_lfo[i].sustain);
   }
   
   voice_lfo_.set_phase_increment(

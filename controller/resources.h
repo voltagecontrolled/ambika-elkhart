@@ -471,7 +471,12 @@ extern const prog_uint8_t wav_res_lfo_waveforms[] PROGMEM;
 #define STR_RES_DEPTH 384  // depth
 #define STR_RES_AMP 385  // amp
 #define STR_RES_FLT 386  // flt
-#define STR_RES_PCH 387  // pch
+#define STR_RES_PCH 387  // pitc
+#define STR_RES_RISE 388  // rise
+#define STR_RES_FALL 389  // fall
+#define STR_RES_CURV 390  // curv
+#define STR_RES_DEST 391  // dest
+#define STR_RES_SHAP 392  // shap
 #define LUT_RES_LFO_INCREMENTS 0
 #define LUT_RES_LFO_INCREMENTS_SIZE 128
 #define LUT_RES_SCALE_JUST 1
