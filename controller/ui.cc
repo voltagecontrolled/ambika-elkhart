@@ -75,12 +75,13 @@ const prog_PageInfo page_registry[] PROGMEM = {
   { PAGE_PART,
     &ParameterEditor::event_handlers_,
     { 42, 57, 47, 48, 43, 44, 45, 46 },
-    PAGE_PART_ARPEGGIATOR, 4, 0xf0,
+    PAGE_PART, 4, 0xf0,
   },
-  
+
+  // PAGE_PART_ARPEGGIATOR: stub — arpeggiator removed, sequencer page pending.
   { PAGE_PART_ARPEGGIATOR,
     &ParameterEditor::event_handlers_,
-    { 49, 50, 51, 52, 53, 54, 55, 56 },
+    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
     PAGE_PART, 4, 0x0f,
   },
 
@@ -270,19 +271,28 @@ void Ui::Poll() {
 void Ui::ShowPageRelative(int8_t increment) {
   // Disable page scrolling for the system pages.
   if (page_info_.index >= PAGE_LIBRARY) {
-    return; 
+    return;
   }
-  
+
   int8_t current_page = page_info_.index;
-  current_page += increment;
-  if (current_page < 0) {
-    current_page = PAGE_MULTI_CLOCK;
-  }
-  if (current_page > PAGE_MULTI_CLOCK) {
-    current_page = 0;
-  }
+  PageInfo candidate;
+  uint8_t guard = PAGE_LIBRARY;
+  do {
+    current_page += increment;
+    if (current_page < 0) {
+      current_page = PAGE_MULTI_CLOCK;
+    } else if (current_page > PAGE_MULTI_CLOCK) {
+      current_page = 0;
+    }
+    ResourcesManager::Load(page_registry, current_page, &candidate);
+    --guard;
+  } while (guard &&
+      candidate.data[0] == 0xff && candidate.data[1] == 0xff &&
+      candidate.data[2] == 0xff && candidate.data[3] == 0xff &&
+      candidate.data[4] == 0xff && candidate.data[5] == 0xff &&
+      candidate.data[6] == 0xff && candidate.data[7] == 0xff);
+
   ShowPage(static_cast<UiPageNumber>(current_page));
-  // Jump to the last control when scrolling backwards.
   if (increment >= 0) {
     (*event_handlers_.SetActiveControl)(ACTIVE_CONTROL_FIRST);
   } else {
