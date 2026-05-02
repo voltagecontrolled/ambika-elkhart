@@ -76,6 +76,12 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // OSC2D = osc2 detune center
   0,    // FMOP = no FM crossmod
   0,    // FUZZ = no fuzz
+  20,   // E1SUS = Env1 sustain (matches init_patch)
+  60,   // E1REL = Env1 release
+  20,   // E2SUS = Env2 sustain
+  60,   // E2REL = Env2 release
+  20,   // E3SUS = Env3 sustain
+  60,   // E3REL = Env3 release
 };
 
 static const prog_uint8_t kDefaultPattern[] PROGMEM = {

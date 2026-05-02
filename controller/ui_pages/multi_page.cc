@@ -38,7 +38,7 @@ uint8_t MultiPage::OnIncrement(int8_t increment) {
 uint8_t MultiPage::OnPot(uint8_t index, uint8_t value) {
   if (index == 0) {
     uint8_t bpm = 40 + static_cast<uint8_t>(
-        (static_cast<uint16_t>(value) * 200) >> 8);
+        (static_cast<uint16_t>(value) * 200) >> 7);
     multi.SetValue(PRM_MULTI_CLOCK_BPM, bpm);
     return 1;
   }
@@ -58,7 +58,7 @@ uint8_t MultiPage::OnKey(uint8_t key) {
       sequencer.Reset();
       return 1;
     case SWITCH_8:
-      ui.ShowPreviousPage();
+      ui.ShowPageRelative(-1);
       return 1;
   }
   return 0;
@@ -82,11 +82,14 @@ void MultiPage::UpdateScreen() {
 
 /* static */
 void MultiPage::UpdateLeds() {
+  UiPage::UpdateLeds();
   uint8_t transport = sequencer.global().transport;
   if (transport == kSeqPlaying) {
     leds.set_pixel(LED_STATUS, 0xf0);
+    leds.set_pixel(LED_1, 0xf0);
   } else if (transport == kSeqPaused) {
     leds.set_pixel(LED_STATUS, 0x0f);
+    leds.set_pixel(LED_2, 0x0f);
   }
 }
 

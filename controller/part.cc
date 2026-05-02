@@ -56,16 +56,22 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 17: return &tr.config[kCfgRES];   // filter resonance
     case 18: return &tr.config[kCfgTYPE];  // filter mode
     case 23: return &tr.config[kCfgLFOA];  // filter_lfo → LFO amount
-    // ENV_LFO page — envelope attacks + LFO params
+    // ENV_LFO page — envelope attacks/sustains/releases + LFO params
     case 24: return &tr.config[kCfgE1ATK]; // env[0].attack
+    case 26: return &tr.config[kCfgE1SUS]; // env[0].sustain
+    case 27: return &tr.config[kCfgE1REL]; // env[0].release
     case 28: return &tr.config[kCfgLSHP];  // env[0].lfo_shape
     case 29: return &tr.config[kCfgLFOS];  // env[0].lfo_rate
     case 31: return &tr.config[kCfgLFOR];  // env[0].retrigger
     case 32: return &tr.config[kCfgE2ATK]; // env[1].attack
+    case 34: return &tr.config[kCfgE2SUS]; // env[1].sustain
+    case 35: return &tr.config[kCfgE2REL]; // env[1].release
     case 36: return &tr.config[kCfgLSHP];  // env[1].lfo_shape (shared)
     case 37: return &tr.config[kCfgLFOS];  // env[1].lfo_rate  (shared)
     case 39: return &tr.config[kCfgLFOR];  // env[1].retrigger (shared)
     case 40: return &tr.config[kCfgE3ATK]; // env[2].attack
+    case 42: return &tr.config[kCfgE3SUS]; // env[2].sustain
+    case 43: return &tr.config[kCfgE3REL]; // env[2].release
     case 44: return &tr.config[kCfgLSHP];  // env[2].lfo_shape (shared)
     case 45: return &tr.config[kCfgLFOS];  // env[2].lfo_rate  (shared)
     case 47: return &tr.config[kCfgLFOR];  // env[2].retrigger (shared)
@@ -90,6 +96,24 @@ void Part::SetValue(uint8_t address, uint8_t value, uint8_t) {
   uint8_t* p = PatchAddrToSeqField(
       *sequencer.mutable_track(voice_id_), address);
   if (p) *p = value;
+}
+
+void Part::Touch() {
+  static const uint8_t kSyncAddresses[] = {
+    0, 1, 2, 3, 4, 5, 6, 7,
+    8, 9, 10, 11, 12, 13, 14, 15,
+    16, 17, 18, 23,
+    24, 25, 26, 27, 28, 29, 31,
+    32, 33, 34, 35, 36, 37, 39,
+    40, 41, 42, 43, 44, 45, 47,
+    48, 49, 105,
+  };
+  for (uint8_t i = 0; i < sizeof(kSyncAddresses); ++i) {
+    uint8_t addr = kSyncAddresses[i];
+    voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, addr, GetValue(addr));
+  }
+  // VCA mod amount full cut: init_patch default (32) leaves VCA at 50% on release
+  voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, 82, 63);
 }
 
 void Part::NoteOn(uint8_t note, uint8_t velocity) {

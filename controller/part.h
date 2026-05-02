@@ -121,7 +121,7 @@ class Part {
   uint8_t GetValue(uint8_t address) const;
 
   void TouchPatch() {}
-  void Touch() {}
+  void Touch();
 
   // Stubs for storage.cc compatibility — return NULL; storage guards against null.
   const uint8_t* raw_patch_data() const { return NULL; }

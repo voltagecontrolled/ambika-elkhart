@@ -102,8 +102,14 @@ static const uint8_t kCfgOSC2R = 21;  // osc2 range
 static const uint8_t kCfgOSC2D = 22;  // osc2 detune
 static const uint8_t kCfgFMOP  = 23;  // FM/crossmod operator mode
 static const uint8_t kCfgFUZZ  = 24;  // fuzz
+static const uint8_t kCfgE1SUS = 25;  // Env1 sustain
+static const uint8_t kCfgE1REL = 26;  // Env1 release
+static const uint8_t kCfgE2SUS = 27;  // Env2 sustain
+static const uint8_t kCfgE2REL = 28;  // Env2 release
+static const uint8_t kCfgE3SUS = 29;  // Env3 sustain
+static const uint8_t kCfgE3REL = 30;  // Env3 release
 
-static const uint8_t kCfgSIZE  = 25;
+static const uint8_t kCfgSIZE  = 31;
 
 // ---- shadow[] indices (transient playhead state; zeroed on Reset/load) ----
 static const uint8_t kShdwSTEP = 0;  // next step index to fire (0–7)
@@ -125,17 +131,17 @@ static const uint8_t kModReset   = 3;
 static const uint8_t kModAccent  = 4;
 static const uint8_t kModNone    = 0xff;
 
-// SeqTrack — 297 bytes per track.
+// SeqTrack — sizeof(SeqTrack) bytes per track (232+8+24+kCfgSIZE+5+8).
 // defaults[N]: default value for lockable param N (live knob position in Seq Mode).
 //   defaults[0..7] = page1, [8..15] = page2, [16..23] = steppage.
-// config[20]: voice config (filter, LFO, envelope attack/curve); Normal Mode only.
+// config[kCfgSIZE]: voice config (filter, LFO, env attacks/sustains/releases, osc range/detune/FM/fuzz).
 // shadow[5]:  transient playhead; zeroed on Reset.
 // mod[8]:     2 outgoing mod relationship slots (Phase 9).
 struct SeqTrack {
   SeqStep steps[8];      // 232 bytes
   uint8_t pattern[8];    // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, BPCH, OLEV
   uint8_t defaults[24];  // default value per lockable param
-  uint8_t config[20];    // voice config
+  uint8_t config[kCfgSIZE];  // voice config
   uint8_t shadow[5];     // transient playhead state
   uint8_t mod[8];        // 2 mod slots (Phase 9)
 };

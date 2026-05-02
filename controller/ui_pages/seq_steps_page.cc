@@ -88,6 +88,7 @@ void SeqStepsPage::UpdateScreen() {
 
 /* static */
 void SeqStepsPage::UpdateLeds() {
+  UiPage::UpdateLeds();
   uint8_t track = ui.state().active_part;
   const SeqTrack& tr = sequencer.track(track);
   uint8_t transport = sequencer.global().transport;

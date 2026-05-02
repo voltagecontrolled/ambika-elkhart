@@ -53,10 +53,9 @@ void Multi::Init(bool force_reset) {
     if (!Storage::LoadMultiFromEeprom()) {
       InitSettings(INITIALIZATION_DEFAULT);
       Storage::WriteMultiToEeprom();
-    } else {
-      Touch();
     }
   }
+  Touch();
   running_ = 0;
 }
 
@@ -72,6 +71,9 @@ void Multi::InitSettings(InitializationMode mode) {
 /* static */
 void Multi::Touch() {
   ComputeTickDuration();
+  for (uint8_t i = 0; i < kNumParts; ++i) {
+    parts_[i].Touch();
+  }
   flags_ = FLAG_HAS_CHANGE;
 }
 
