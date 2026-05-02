@@ -38,34 +38,36 @@ There are no dedicated drum voice types. The same voice that makes a plonky kick
 - **Knobs 1–8:** Always edit the 8 parameters currently displayed.
 - **Buttons 1–8:** Context-dependent based on the current page:
   - **On most normal-mode pages:** quick-jump shortcut to that page (Button 1 → Oscillator, Button 2 → Filter, etc.).
-  - **On the Master / Transport page (Button 7):** buttons 4–6 act as PLAY / PAUSE / RESET. Page-jump shortcuts are not available while on Master — use the encoder to scroll back to other pages.
+  - **On the Voice / Parts page (Button 6):** buttons 4–6 act as PLAY / PAUSE / RESET. Page-jump shortcuts are not available while on this page — use the encoder to scroll back to other pages.
   - **In Sequencer Mode:** buttons are step triggers. Page shortcuts are not available — use the encoder to navigate.
 - **Button 5:** Toggles Sequencer Mode (symmetric — second press exits).
 
-The currently selected **voice** is set by `VSEL` — accessible on Page 1 Top 1 and Page 7 Top 1 (placeholder pending final UI). All edits apply to the selected voice.
+The currently selected **voice** is set by `VSEL` — accessible on Page 6 (Voice / Parts). All edits apply to the selected voice.
 
 ---
 
 ## Normal Mode
 
-### Page 1 — Oscillator
+### Page 1 — OSC / Mixer
 
-The dual oscillator. Two oscillators with full algorithm-palette selection on each, plus a single bipolar `BLND` knob that controls whether they're mixed in parallel or one FMs the other.
+Non-lockable oscillator voice configuration. The per-step lockable oscillator parameters (NOTE, WAVE, PARA, BLND, RTIO, FINE) are set in Sequencer Mode via Voice Page 1 — voice defaults for those are the current knob positions in Sequencer Mode when no step is held.
 
 | Knob | Name | Description |
 |------|------|-------------|
-| Top 1 | `NOTE` Base Note | Base pitch of Osc 1 (the carrier) in semitones. Drives the perceived pitch of the voice. Lockable per step — different notes per step build melodic patterns. |
-| Top 2 | `WAVE` Osc 1 Wave | Selects the Osc 1 algorithm/wave shape from the palette. Sine, triangle, polyblep saw/pwm, vowel, fm, fm_fb, wavetables, and more. |
-| Top 3 | `PARA` Osc 1 Parameter | Algorithm-specific timbral parameter for Osc 1. Behavior depends on the selected wave shape — PWM amount for square, formant select for vowel, modulation index for fm, etc. The LCD second line shows the algorithm-specific name when adjusting. |
-| Top 4 | `BLND` Oscillator Interaction | Bipolar. **0–63:** Crossfade between Osc 1 and Osc 2 in the audio path (0 = Osc 1 only, 63 = Osc 2 only). No FM. **64–127:** Osc 2 modulates Osc 1's pitch (Osc 2 leaves the audio path). FM depth scales from 0 at 64 up to maximum at 127. The 63→64 transition is acoustically silent. |
-| Bot 1 | `RTIO` Osc 2 Ratio | Frequency ratio of Osc 2 relative to Osc 1. DX-style ratio table — 0.125, 0.25, 0.5, 0.707, 1.0, √2, 7/4, 2, 9/4, π, 4, 5, 8, etc. The single most important timbral knob in FM mode. |
-| Bot 2 | `WAVE` Osc 2 Wave | Selects the Osc 2 algorithm/wave shape — same palette as Osc 1. |
-| Bot 3 | `PARA` Osc 2 Parameter | Algorithm-specific timbral parameter for Osc 2. |
-| Bot 4 | `FINE` Osc 2 Fine Tune | ±100 cents detune on Osc 2. Slight non-integer detune produces FM beating and shimmer without altering perceived pitch. |
+| Top 1 | `FTYP` FM Type | Linear vs. exponential FM response. Linear FM produces metallic/inharmonic sidebands; exponential FM stays pitch-stable across BLND sweeps. |
+| Top 2 | — | TBD — portamento mode, phase reset behavior, or voice-level tuning offset |
+| Top 3 | — | TBD |
+| Top 4 | — | TBD |
+| Bot 1 | — | TBD |
+| Bot 2 | — | TBD |
+| Bot 3 | — | TBD |
+| Bot 4 | — | TBD |
 
-### Page 2 — Filter
+Knob layout is placeholder pending Phase 7 (UI). The exact non-lockable oscillator settings on this page will be determined empirically once the sequencer is running.
 
-The state-variable filter and bit-reduction stage. The filter envelope is on Page 3.
+### Page 2 — VCF
+
+The state-variable filter and bit-reduction stage. The filter envelope (LPG macro) is controlled per step via Sequencer Voice Page 2; Page 2 sets the voice-level base values and range.
 
 | Knob | Name | Description |
 |------|------|-------------|
@@ -74,25 +76,28 @@ The state-variable filter and bit-reduction stage. The filter envelope is on Pag
 | Top 3 | `TYPE` Filter Mode | LP / BP / HP output select. LP for body and warmth, HP for hats and cymbals, BP for nasal/metallic character. |
 | Top 4 | `DRIV` Filter Drive | Gain into the SVF. At high levels adds saturation and grit. Interacts with resonance — drive + high resonance gets aggressive. |
 | Bot 1 | `BITS` Bit Reduction | Reduces the digital signal's bit depth before the SVF and DAC. 0 = full resolution. Max = 1-bit (extreme digital grit). The filter then shapes the added harmonics. |
+| Bot 2 | — | TBD — LPG range floor/ceiling, filter envelope minimum, or additional voice config |
+| Bot 3 | — | TBD |
+| Bot 4 | — | TBD |
 
 Knob mappings on this page are placeholder until empirical UI tuning. Filter bypass: `FREQ` to max and `RES` to min.
 
-### Page 3 — Modulation
+### Page 3 — ENV / LFO
 
-Envelope amounts and curves, plus LFO settings. These are voice-level; the per-step decay times for each envelope live on Sequencer Voice Page 2.
+Non-lockable envelope and LFO voice configuration. Attack times, envelope curves, and loop modes for the three function generators — the settings that stay fixed across all steps. Per-step decay times (LPGD), filter depths (LPGA), and personality (LPGO) live in Sequencer Voice Page 2.
 
 | Knob | Name | Description |
 |------|------|-------------|
-| Top 1 | `VCAA` VCA Env Amount | Amplitude envelope (Env1) overall depth. Voice-level. (Placeholder slot — VCA env is generally always-on.) |
-| Top 2 | — | TBD |
-| Top 3 | — | TBD |
-| Top 4 | — | TBD |
+| Top 1 | `ATK1` VCA Attack | Env1 (VCA) attack time. Voice-level. How quickly amplitude rises at trigger. |
+| Top 2 | `ATK2` Filter Attack | Env2 (Filter/LPG) attack time. Voice-level. How quickly the filter opens. |
+| Top 3 | `ATK3` Pitch Attack | Env3 (Pitch) attack time. Voice-level. |
+| Top 4 | — | TBD — envelope loop mode, curve shapes, or LFO speed |
 | Bot 1 | `LSHP` LFO Shape | Sine, triangle, square, ramp, or random/S&H. |
 | Bot 2 | `LFOR` LFO Reset | Free-running, per-step (resets each trigger), or per-pattern (resets on pattern start). |
 | Bot 3 | `LFOA` LFO Amount | Modulation depth. |
 | Bot 4 | `LFOD` LFO Destination | LFO target: pitch, cutoff, fold (when applicable), or FM depth. |
 
-The exact knob layout on Page 3 is settled empirically during Phase 7 (UI). The LFO is voice-level only in v1 — audio-rate operation is not supported. If empirical use reveals a need for per-step LFO control, `LFOD` / `LFOS` / `LFOA` are candidates for elevation to a future third lockable page.
+Envelope looping (turning a function generator into a self-cycling LFO) and curve shapes (exponential, linear, s-curve) are voice-level settings with TBD knob placement. Exact layout settled empirically during Phase 7 (UI). The LFO is voice-level only in v1 — no per-step LFO control in the initial release.
 
 ### Page 4 — Track Relationships
 
@@ -114,51 +119,45 @@ The encoder scrolls through relationship slots. Knobs set source, destination, t
 | **Reset** | Source track's step 1 resets destination to step 1. |
 | **Accent** | When source and destination fire simultaneously, destination's velocity is boosted. |
 
-### Page 5
+### Page 5 — KeyBed/Arp/Seq
 
 Pressing Button 5 enters Sequencer Mode. Pressing Button 5 again returns to Normal Mode. See the Sequencer Mode section below.
 
-### Page 6 — Track Settings
+### Page 6 — Voice / Parts + Transport
 
-Pattern, scale, and timing settings for the selected track. The original Mutable Ambika "voice parts" hierarchy and the 6a/6b split are gone — track settings now live on a single page.
+Voice selection, track pattern settings, and global timing. **This is the only page where buttons act as transport controls** — pressing any other page button exits transport mode and jumps to that page.
 
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `SCAL` Scale | Scale quantization. Used by the Mutate `Scale` interval and pitch resolution. |
-| Top 2 | `ROOT` Root Note | Root note for scale-relative operations. |
-| Top 3 | `BPCH` Base Pitch | Default pitch for unlocked NOTE; starting point for Mutate. |
-| Top 4 | `OLEV` Output Level | Voice output level in the mix. |
-| Bot 1 | `DIRN` Direction | Forward / Reverse / Pendulum / Random. |
-| Bot 2 | `CDIV` Clock Div | Per-track clock division: 1, 2, 3, 4, 6, 8, 12, 16. **The polymeter engine.** Two tracks at different divisions drift in and out of phase as their patterns play. |
-| Bot 3 | `ROTA` Rotate | Shifts the pattern start point (0–7) without altering step data. |
-| Bot 4 | `LENG` Pat Length | Pattern length 1–8 steps. Combined with `CDIV`, creates polymeters. |
-
-Voice-config items not on the Sequencer pages or Page 1/2/3 (filter mode, drive, bits, env curves, LFO settings, smoothing, phase sync, etc.) live here or on Page 3 — exact placement TBD during Phase 7.
-
-### Page 7 — Master / Transport
-
-The transport page. Tempo and groove on the top row of knobs; transport buttons on the bottom row. **This is the only page where buttons act as transport** — leaving the page returns the buttons to their normal page-jump function.
-
-#### Top Row — Knobs
+#### Top Row — Voice + Global
 
 | Knob | Name | Description |
 |------|------|-------------|
-| Top 1 | `BPM ` Tempo | Master tempo. |
-| Top 2 | `GROO` Groove Type | Groove preset (TBD: may collapse into single SWING knob). |
-| Top 3 | `AMNT` Groove Amount | Groove depth. |
-| Top 4 | `LTCK` Hold Mode | Voltage Block / Elektron — the global step-hold behavior (see Step Hold Modes). |
+| Top 1 | `VSEL` Voice Select | Which of the 6 voices is being edited. All knob edits on Pages 1–3 apply to this voice. |
+| Top 2 | `BPM ` Tempo | Master tempo in BPM. |
+| Top 3 | `SWNG` Swing | Groove amount — delays even-numbered steps to add push/pull feel. |
+| Top 4 | `LTCK` Hold Mode | Step-hold behavior: Voltage Block (pause + snap) or Elektron (keep running). See Step Hold Modes. |
 
-#### Bottom Row — Transport Buttons
+#### Bottom Row — Track Pattern
 
-The bottom row of the LCD shows pipe-separated button labels. Buttons 4-5-6 act as transport while on this page.
+| Knob | Name | Description |
+|------|------|-------------|
+| Bot 1 | `CDIV` Clock Div | Per-track clock division: 1, 2, 3, 4, 6, 8, 12, 16. **The polymeter engine.** Two tracks at different divisions drift in and out of phase as their patterns cycle. |
+| Bot 2 | `LENG` Pat Length | Pattern length 1–8 steps. Combined with `CDIV`, creates independent polymeters per track. |
+| Bot 3 | `DIRN` Direction | Forward / Reverse / Pendulum / Random. |
+| Bot 4 | `ROTA` Rotate | Shifts the pattern start point (0–7) without altering step data. |
+
+Additional track settings (`SCAL`, `ROOT`, `BPCH`, `OLEV`) are reachable via the encoder from this page — exact placement TBD during Phase 7.
+
+#### Transport Buttons
+
+The bottom row of the LCD shows pipe-separated labels while on Page 6. Buttons 4–6 act as transport:
 
 ```
                 |PLAY|PAUS|RST |
 ```
 
 - **PLAY (Button 4):** Starts playback from the current position. If already playing, no-op. From paused, resumes.
-- **PAUSE (Button 5):** Pauses playback, preserving position. From paused, resumes (same as Play). When stopped, no-op.
-- **RESET (Button 6):** All track playheads jump to step 1. Transport state is preserved — if playing, stays playing; if stopped, stays stopped.
+- **PAUSE (Button 5):** Pauses playback, preserving position. From paused, resumes. When stopped, no-op.
+- **RESET (Button 6):** All track playheads jump to step 1. Transport state is preserved — playing stays playing, stopped stays stopped.
 
 #### LED Feedback
 
@@ -166,9 +165,19 @@ The bottom row of the LCD shows pipe-separated button labels. Buttons 4-5-6 act 
 - **PAUSE LED:** Blinks while paused. Off otherwise.
 - **RESET LED:** Brief flash on press.
 
-Slot 4 of the bottom row may carry `MRST` (master reset count, an automatic playhead-reset cycle) or other voice-config — TBD. Currently `MRST` is the strongest candidate.
+A dedicated **Stop** button (full halt, distinct from Pause) is reserved for a future revision. To fully stop with current controls: press Pause, then Reset.
 
-A dedicated **Stop** button (full halt of all voices, distinct from Pause) is reserved for a future revision once empirical use confirms it's needed. To fully stop with current controls: press Pause, then Reset.
+### Page 7 — Perf
+
+Performance and sequencer tricks. Placeholder — feature set TBD pending empirical use of the instrument.
+
+Candidate features:
+
+- **Beat repeat:** Loop a sub-section of the active pattern for fills or stutter effects — e.g., hold Button 7 + turn a knob to select a 1- or 2-step loop window.
+- **Mute / solo:** Toggle individual track output without stopping the sequencer.
+- **Stutter:** Real-time gate-length reduction for chop effects.
+
+Knob assignments and final feature set determined in Phase 10.
 
 ### Page 8 — Load / Save
 
@@ -275,7 +284,7 @@ Mutation is resolved entirely on the motherboard. The voice card only receives t
 
 ## Step Hold Modes
 
-Set on Page 7 (`LTCK`). Global — applies to all tracks.
+Set on Page 6 (`LTCK`). Global — applies to all tracks.
 
 ### Voltage Block Mode
 
@@ -353,20 +362,16 @@ The sub-oscillator slot doubles as a transient generator. Eleven shapes total: s
 
 `†` = also appears as a per-step lockable in Sequencer Mode
 
-### Page 1 — Oscillator (Voice Defaults)
+### Page 1 — OSC / Mixer (Non-lockable Osc Voice Config)
 
 | Abbrev | Name | Notes |
 |--------|------|-------|
-| `NOTE` † | Base Note | Carrier pitch in semitones |
-| `WAVE` † | Osc 1 Wave | Algorithm select for Osc 1 |
-| `PARA` † | Osc 1 Parameter | Algorithm-specific timbral knob (Osc 1) |
-| `BLND` † | Oscillator Interaction | Bipolar 0–63 mix / 64+ FM |
-| `RTIO` † | Osc 2 Ratio | Frequency ratio Osc 2 : Osc 1 |
-| `WAVE` † | Osc 2 Wave | Algorithm select for Osc 2 |
-| `PARA` † | Osc 2 Parameter | Algorithm-specific timbral knob (Osc 2) |
-| `FINE` † | Osc 2 Fine Tune | ±100 cents detune on Osc 2 |
+| `FTYP` | FM Type | Linear vs. exponential FM response |
+| — | (TBD) | Portamento, phase reset, tuning offset, or other non-lockable osc config |
 
-### Page 2 — Filter
+Exact parameter set TBD in Phase 7.
+
+### Page 2 — VCF (Non-lockable Filter Voice Config)
 
 | Abbrev | Name | Notes |
 |--------|------|-------|
@@ -375,74 +380,78 @@ The sub-oscillator slot doubles as a transient generator. Eleven shapes total: s
 | `TYPE` | Filter Mode | LP / BP / HP |
 | `DRIV` | Filter Drive | Saturation gain into SVF |
 | `BITS` | Bit Reduction | Pre-DAC bit depth reduction |
+| — | (TBD) | LPG range floor/ceiling or additional filter voice config |
 
 (Knob layout placeholder — final assignment in Phase 7.)
 
-### Page 3 — Modulation
+### Page 3 — ENV / LFO (Non-lockable Envelope + LFO Voice Config)
 
-LFO and envelope amount/curve voice-level settings. Final knob layout TBD in Phase 7.
+Final knob layout TBD in Phase 7.
 
 | Abbrev | Name | Notes |
 |--------|------|-------|
+| `ATK1` | VCA Attack | Env1 (VCA) attack time |
+| `ATK2` | Filter Attack | Env2 (Filter/LPG) attack time |
+| `ATK3` | Pitch Attack | Env3 (Pitch) attack time |
 | `LSHP` | LFO Shape | Sine / triangle / square / ramp / random |
 | `LFOR` | LFO Reset | Free / per-step / per-pattern |
 | `LFOA` | LFO Amount | Modulation depth |
 | `LFOD` | LFO Destination | Pitch / cutoff / fold / FM |
 | `LFOS` | LFO Speed | (TBD location) |
-| `RANG` | LFO Range | (TBD whether retained) |
 | `TRAK` | LFO Tracking | Pitch tracking on/off (TBD location) |
+| — | Loop modes, curves | Envelope looping and curve shape per FG (TBD) |
 
-### Page 6 — Track Settings
-
-| Abbrev | Name | Notes |
-|--------|------|-------|
-| `SCAL` | Scale | Scale quantization |
-| `ROOT` | Root Note | Root for scale-relative ops |
-| `BPCH` | Base Pitch | Default pitch / Mutate base |
-| `OLEV` | Output Level | Voice mix level |
-| `DIRN` | Direction | Fwd / Rev / Pendulum / Random |
-| `CDIV` | Clock Div | 1, 2, 3, 4, 6, 8, 12, 16 |
-| `ROTA` | Rotate | Pattern start offset (0–7) |
-| `LENG` | Pat Length | Steps per cycle (1–8) |
-
-### Page 7 — Master / Transport
+### Page 6 — Voice / Parts + Transport
 
 | Slot | Abbrev | Name | Notes |
 |------|--------|------|-------|
-| Top 1 | `BPM ` | Tempo | Master tempo |
-| Top 2 | `GROO` | Groove Type | (May collapse with AMNT into single SWING) |
-| Top 3 | `AMNT` | Groove Amount | |
+| Top 1 | `VSEL` | Voice Select | 1–6 |
+| Top 2 | `BPM ` | Tempo | Master tempo |
+| Top 3 | `SWNG` | Swing | Groove amount |
 | Top 4 | `LTCK` | Hold Mode | Voltage Block / Elektron |
+| Bot 1 | `CDIV` | Clock Div | 1, 2, 3, 4, 6, 8, 12, 16 |
+| Bot 2 | `LENG` | Pat Length | Steps per cycle (1–8) |
+| Bot 3 | `DIRN` | Direction | Fwd / Rev / Pendulum / Random |
+| Bot 4 | `ROTA` | Rotate | Pattern start offset (0–7) |
 | Btn 4 | `PLAY` | Play | LED blinks while playing |
 | Btn 5 | `PAUS` | Pause | LED blinks while paused |
 | Btn 6 | `RST ` | Reset | All playheads → step 1 |
-| Bot 4 | `MRST` | Master Reset | (Placeholder — global cycle length) |
+
+Additional track context (`SCAL`, `ROOT`, `BPCH`, `OLEV`) reachable via encoder from this page — exact placement TBD in Phase 7.
+
+### Page 7 — Perf
+
+Placeholder. Feature set TBD in Phase 10. Candidate: beat repeat, mute/solo, stutter.
 
 ### Sequencer Voice Page 1 — Oscillators (Lockable)
 
-| Abbrev | Name | Voice Default From |
-|--------|------|--------------------|
-| `NOTE` | Base Note | Page 1 Top 1 |
-| `WAVE` | Osc 1 Wave | Page 1 Top 2 |
-| `PARA` | Osc 1 Parameter | Page 1 Top 3 |
-| `BLND` | Oscillator Interaction | Page 1 Top 4 |
-| `RTIO` | Osc 2 Ratio | Page 1 Bot 1 |
-| `WAVE` | Osc 2 Wave | Page 1 Bot 2 |
-| `PARA` | Osc 2 Parameter | Page 1 Bot 3 |
-| `FINE` | Osc 2 Fine Tune | Page 1 Bot 4 |
+Voice defaults for these params are the current knob positions in Sequencer Mode when no step is held — unlocked steps always read live knobs.
+
+| Abbrev | Name | Notes |
+|--------|------|-------|
+| `NOTE` | Base Note | Carrier pitch in semitones |
+| `WAVE` | Osc 1 Wave | Algorithm select for Osc 1 |
+| `PARA` | Osc 1 Parameter | Algorithm-specific timbral knob (Osc 1) |
+| `BLND` | Oscillator Interaction | Bipolar 0–63 mix / 64+ FM |
+| `RTIO` | Osc 2 Ratio | Frequency ratio Osc 2 : Osc 1 |
+| `WAVE` | Osc 2 Wave | Algorithm select for Osc 2 |
+| `PARA` | Osc 2 Parameter | Algorithm-specific timbral knob (Osc 2) |
+| `FINE` | Osc 2 Fine Tune | ±100 cents detune on Osc 2 |
 
 ### Sequencer Voice Page 2 — Modulation (Lockable)
 
-| Abbrev | Name | Voice Default From |
-|--------|------|--------------------|
-| `LPGD` | LPG Decay | Page 3 (TBD slot) |
-| `LPGA` | LPG Amount | Page 3 (TBD slot) |
-| `LPGO` | LPG Offset | Page 3 (TBD slot) |
-| `NOIS` | Noise Amount | Page 1 (TBD location) or Page 3 |
-| `PITD` | Pitch Env Decay | Page 3 (TBD slot) |
-| `PITA` | Pitch Env Amount | Page 3 (TBD slot) |
-| `WAVE` | Sub-Osc Wave | Page 1 / Page 3 (TBD) |
-| `SUB ` | Sub-Osc Level | Page 1 / Page 3 (TBD) |
+Voice defaults for these params are the current knob positions in Sequencer Mode when no step is held.
+
+| Abbrev | Name | Notes |
+|--------|------|-------|
+| `LPGD` | LPG Decay | Anchor decay time (Env1 + Env2) |
+| `LPGA` | LPG Amount | Filter env depth |
+| `LPGO` | LPG Offset | Bipolar personality macro |
+| `NOIS` | Noise Amount | White noise mix into main path |
+| `PITD` | Pitch Env Decay | Env3 fall time |
+| `PITA` | Pitch Env Amount | Env3 → carrier pitch (bipolar) |
+| `WAVE` | Sub-Osc Wave | 11-shape palette (6 traditional + 5 transient) |
+| `SUB ` | Sub-Osc Level | Sub layer mix amount |
 
 ### Sequencer Step Page — Step Behavior (Lockable)
 

@@ -170,9 +170,9 @@ Two modes of operation, switched via Button 5:
 ```
 NORMAL MODE (default):
   Buttons 1–8     = page select (quick-jump to first param of that page)
-                    Exception: on the Master page (Page 7), buttons act as
+                    Exception: on the Voice/Parts page (Page 6), buttons act as
                     transport (PLAY/PAUS/RST) instead of page-select. To reach
-                    other pages from Master, use the encoder.
+                    other pages from this page, use the encoder.
   Knobs           = edit the 8 parameters currently displayed on the LCD
   Encoder turn    = scroll continuously through ALL parameters on ALL pages
                     (each page is exactly 8 params; encoder flows between pages
@@ -197,29 +197,31 @@ The 2×40 LCD shows 4-character abbreviations per parameter in the overview (8 p
 
 ## Normal Mode — Button Assignments
 
-| Button | Function |
-|--------|----------|
-| 1 | **Oscillator** (voice defaults for lockable Osc params + Osc routing voice config) |
-| 2 | **Filter** (cutoff, resonance, mode, drive, bit reduction) |
-| 3 | **Modulation** (envelope amounts/curves, LFO) |
-| 4 | **Track Relationships / Mod Matrix** |
-| 5 | **Toggle Sequencer Mode** (symmetric) |
-| 6 | **Track Settings** (pattern + voice config; the stock 6a/6b split is gone with the parts hierarchy) |
-| 7 | **Master / Transport** |
-| 8 | **Load / Save** |
+| Button | Hardware Label | Function |
+|--------|----------------|----------|
+| 1 | OSC / Mixer | **Oscillator config** — non-lockable oscillator voice settings (FM type, portamento, phase reset, tuning offsets) |
+| 2 | VCF | **Filter config** — cutoff, resonance, mode, drive, bit reduction, LPG range adjustments |
+| 3 | ENV / LFO | **Envelope + LFO config** — attack times, curves, and loop mode for Env1/2/3; LFO settings |
+| 4 | MOD MATRIX | **Track Relationships** |
+| 5 | KeyBed/Arp/Seq | **Toggle Sequencer Mode** (symmetric) |
+| 6 | Voice / Parts | **Voice + Transport** — voice select, track pattern settings, BPM, swing, hold mode; transport buttons (PLAY/PAUS/RST while on this page) |
+| 7 | Perf | **Performance** — sequencer tricks, beat repeat, mute/solo (placeholder) |
+| 8 | Load / Save | **Load / Save** — state snapshot save/load, global settings, firmware update |
 
-Knob mappings on Pages 1, 2, 3, 6, and 7 are placeholder pending empirical tuning during Phase 7 (UI). The lockable params (Voice Page 1 / Voice Page 2 / Step Page in sequencer mode) are firm; voice-default presentation in normal mode follows from those plus voice-config items.
+Normal Mode pages 1–3 expose **non-lockable** voice config settings. The lockable parameters (NOTE, WAVE, PARA, BLND, RTIO, FINE, LPGD, LPGA, LPGO, NOIS, PITD, PITA, SUB, WAVE_sub) are accessible only in Sequencer Mode — voice defaults for these are the current knob positions in Sequencer Mode when no step is held.
 
-### Page 7 — Master / Transport (placeholder layout)
+Knob mappings on Pages 1, 2, 3, 6, 7, and 8 are placeholder pending empirical tuning during Phase 7 (UI). The lockable params and the transport state machine are firm.
 
-The transport page combines tempo/groove/swing settings with playback controls.
+### Page 6 — Voice / Parts + Transport (placeholder layout)
 
-- **Top knobs:** `BPM` | `GROO` (Groove Type) | `AMNT` (Groove Amount) | `LTCK` (Hold Mode: Voltage Block / Elektron — TBD)
-  - GROO + AMNT may collapse into a single `SWING` knob, freeing one top slot.
+The voice configuration and transport page. Top knobs configure global timing and per-track pattern settings for the selected voice; the bottom button row carries transport controls while on this page.
+
+- **Top knobs (placeholder):** `VSEL` (Voice Select, 1–6) | `BPM` | `SWNG` (Swing) | `LTCK` (Hold Mode: Voltage Block / Elektron)
+- **Bottom knobs (placeholder):** `CDIV` | `LENG` | `DIRN` | `ROTA` — primary track pattern settings. `SCAL` / `ROOT` / `BPCH` / `OLEV` accessible via encoder from this page; exact placement TBD.
 - **Bottom row = button labels** (pipe-separated on LCD), centered on Buttons 4-5-6:
   - `      |PLAY|PAUS|RST |     ` (exact framing TBD)
-  - The bottom-row knobs may carry MRST (Master Reset count) or other non-transport voice-config items at their existing positions; transport buttons override the central button-press meanings *while on this page only*.
-- **Transport buttons are modal: only active on Page 7.** Other pages have no transport access; navigation between Master and elsewhere uses the encoder turn or returning to a non-Master page first.
+  - Transport buttons override the central button-press meanings *while on this page only*.
+- **Transport buttons are modal: only active on Page 6.** Other pages have no transport access; navigation to other pages uses the encoder turn or pressing a different page button.
 - **LED feedback:**
   - PLAY LED: blinks during playback, off when stopped or paused.
   - PAUS LED: blinks when paused, off otherwise.
@@ -234,6 +236,16 @@ The transport page combines tempo/groove/swing settings with playback controls.
 | Paused | Playing (resume from current position) | Playing (resume) | Paused, all playheads → step 1 |
 
 A dedicated **Stop** button (full halt of all voices, distinct from Pause) is reserved for a future revision once empirical use confirms it's needed.
+
+### Page 7 — Perf (placeholder)
+
+Performance and sequencer tricks. Placeholder pending empirical use. Candidate features:
+
+- **Beat repeat:** Loop a sub-section of the active pattern for fills or stutter effects.
+- **Mute / solo:** Toggle individual track output without stopping the sequencer.
+- **Stutter / gate reduction:** Real-time gate length shortening for chop effects.
+
+Knob assignments and final feature set TBD in Phase 10.
 
 ---
 
@@ -320,7 +332,7 @@ Pitch-walk feature applied across a step's repeats and sub-steps. Resolved entir
 
 Unlocked steps read current physical knob positions in real time. Sweeping a knob during playback affects all unlocked steps immediately; locked steps are pinned and unaffected. This tension between locked and unlocked steps is the primary performance dimension.
 
-### Pattern Settings (per track, Track Settings page — Button 6)
+### Pattern Settings (per track, Voice/Parts page — Button 6)
 
 | Parameter | Abbrev | Range |
 |-----------|--------|-------|
@@ -333,9 +345,9 @@ Unlocked steps read current physical knob positions in real time. Sweeping a kno
 | Base Pitch | `BPCH` | Base pitch for unlocked NOTE / starting point for Mutate |
 | Output Level | `OLEV` | Track output level |
 
-### Step Hold Modes (LTCK on Master page — TBD location)
+### Step Hold Modes (LTCK on Voice/Parts page — Button 6)
 
-Configurable on Master page (Button 7), top slot 4 (LTCK placeholder). Global setting affecting all tracks.
+Configurable on Voice/Parts page (Button 6), top slot 4 (LTCK). Global setting affecting all tracks.
 
 #### Voltage Block Mode (Snap)
 
@@ -607,10 +619,10 @@ Validation:
 - Global mode toggle on Master page (`LTCK`).
 
 ### Phase 7: UI
-- Remap normal-mode pages with final knob assignments (Pages 1, 2, 3, 6, 7).
-- Master/Transport page final layout including any centering/labeling decisions, MRST or other slot 4 fillers.
+- Remap normal-mode pages with final knob assignments (Pages 1, 2, 3, 6, 7, 8).
+- Voice/Parts page (Page 6) final layout: VSEL, BPM, SWING, LTCK on top; CDIV, LENG, DIRN, ROTA on bottom; transport button centering.
 - Encoder focused-edit mode implementation.
-- Full LCD layout — 4-char abbreviations on line 1, full names on line 2 when adjusting; pipe-separated button labels on Master page.
+- Full LCD layout — 4-char abbreviations on line 1, full names on line 2 when adjusting; pipe-separated button labels on Voice/Parts page.
 
 ### Phase 8: Voice Engine Refinement
 **Voice engine modifications happen against a known-working sequencer.**
