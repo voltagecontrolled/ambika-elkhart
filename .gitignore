@@ -30,3 +30,11 @@
 
 # OS X crap
 .DS_Stor?
+
+# Local dev tooling (private — Claude Code, build wrappers, build notes)
+/CLAUDE.md
+/toolchain/
+
+# Hardware flashing artifacts and third-party reference materials (untracked)
+/firmware/
+/reference/
