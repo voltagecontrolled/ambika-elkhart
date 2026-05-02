@@ -76,13 +76,32 @@ class VoicecardProtocolRx {
     }
   }
   
+  // Patch byte addresses for the 16-byte trigger snapshot. Mirrors the
+  // controller's PatchAddrToSeqField mapping for page1[8] + page2[8].
+  // 0xff = skip (NOTE has its own bytes; REL slots are dead).
+  static const uint8_t kSnapshotAddrs[16];
+
   static void DoLongCommand() {
     switch (command_ & 0xf0) {
       case COMMAND_NOTE_ON:
-        voice.Trigger(
-            (arguments_[0] << 8) | arguments_[1],
-            arguments_[2],
-            command_ & 1);
+        if (command_ & 0x02) {
+          // Snapshot variant: bytes 0..15 = page1+page2, 16..17 = note, 18 = vel.
+          for (uint8_t i = 0; i < 16; ++i) {
+            uint8_t addr = pgm_read_byte(&kSnapshotAddrs[i]);
+            if (addr != 0xff) {
+              voice.set_patch_data(addr, arguments_[i]);
+            }
+          }
+          voice.Trigger(
+              (arguments_[16] << 8) | arguments_[17],
+              arguments_[18],
+              command_ & 1);
+        } else {
+          voice.Trigger(
+              (arguments_[0] << 8) | arguments_[1],
+              arguments_[2],
+              command_ & 1);
+        }
         if (!lights_out_) {
           note_led.High();
         }
@@ -165,7 +184,10 @@ class VoicecardProtocolRx {
         command_ = byte;
         data_ptr_ = arguments_;
         state_ = EXPECTING_ARGUMENTS;
-        if (command_ >= COMMAND_NOTE_ON &&
+        if (command_ == COMMAND_NOTE_ON_WITH_SNAPSHOT ||
+            command_ == COMMAND_NOTE_ON_WITH_SNAPSHOT_LEGATO) {
+          data_size_ = 19;
+        } else if (command_ >= COMMAND_NOTE_ON &&
             command_ < COMMAND_WRITE_PATCH_DATA) {
           data_size_ = 3;
         } else if (command_ >= COMMAND_WRITE_PATCH_DATA
@@ -197,7 +219,9 @@ class VoicecardProtocolRx {
   static uint8_t state_;
   static uint8_t data_size_;
   static uint8_t* data_ptr_;
-  static uint8_t arguments_[3];
+  // 19 bytes covers COMMAND_NOTE_ON_WITH_SNAPSHOT (16-byte snapshot + note H/L + vel);
+  // shorter commands write into the same buffer head.
+  static uint8_t arguments_[19];
   static uint8_t rx_led_counter_;
   static uint8_t lights_out_;
    

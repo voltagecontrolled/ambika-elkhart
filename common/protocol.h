@@ -20,6 +20,8 @@
 // 0x00 BULK size data...
 // 0x10 noteH noteL velocity: triggers note
 // 0x11 noteH noteL velocity: triggers note with legato
+// 0x12 snap[16] noteH noteL velocity: applies 16-byte param snapshot then triggers
+// 0x13 snap[16] noteH noteL velocity: same, with legato
 // 0x20 address value: write patch data
 // 0x30 address value: write part data
 // 0x40 address value: write entry in modulation matrix
@@ -48,7 +50,9 @@ enum ProtocolCommands {
   
   COMMAND_NOTE_ON = 0x10,
   COMMAND_NOTE_ON_LEGATO = 0x11,
-  
+  COMMAND_NOTE_ON_WITH_SNAPSHOT = 0x12,
+  COMMAND_NOTE_ON_WITH_SNAPSHOT_LEGATO = 0x13,
+
   COMMAND_WRITE_PATCH_DATA = 0x20,
   COMMAND_WRITE_PART_DATA = 0x30,
   COMMAND_WRITE_MOD_MATRIX = 0x40,

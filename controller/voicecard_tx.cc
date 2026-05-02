@@ -96,6 +96,23 @@ void VoicecardProtocolTx::Trigger(
 }
 
 /* static */
+void VoicecardProtocolTx::TriggerWithSnapshot(
+    uint8_t voice_id,
+    uint16_t note,
+    uint8_t velocity,
+    uint8_t legato,
+    const uint8_t* snapshot) {
+  voice_status_[voice_id] = velocity;
+  Write(voice_id, COMMAND_NOTE_ON_WITH_SNAPSHOT + legato);
+  for (uint8_t i = 0; i < 16; ++i) {
+    Write(voice_id, snapshot[i]);
+  }
+  Write(voice_id, note >> 8);
+  Write(voice_id, note & 0xff);
+  Write(voice_id, velocity << 1);
+}
+
+/* static */
 void VoicecardProtocolTx::WriteData(
     uint8_t voice_id,
     uint8_t data_type,

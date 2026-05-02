@@ -115,6 +115,8 @@ static const uint8_t kShdwTICK = 1;  // ticks elapsed within current CDIV period
 static const uint8_t kShdwREPT = 2;  // step repeats remaining (Phase 5)
 static const uint8_t kShdwSSUB = 3;  // sub-step position (Phase 5)
 static const uint8_t kShdwDIR  = 4;  // pendulum direction: 0=fwd, 1=rev
+static const uint8_t kShdwLAST = 5;  // most-recently-fired step (for chaselight LED)
+static const uint8_t kShdwSIZE = 6;
 
 // SeqTrack — 232+8+24+kCfgSIZE+5 bytes per track.
 // defaults[N]: default value for lockable param N.
@@ -127,7 +129,7 @@ struct SeqTrack {
   uint8_t pattern[8];        // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, BPCH, OLEV
   uint8_t defaults[24];      // default value per lockable param
   uint8_t config[kCfgSIZE];  // voice config
-  uint8_t shadow[5];         // transient playhead state
+  uint8_t shadow[kShdwSIZE]; // transient playhead state
 };
 
 struct SeqGlobal {

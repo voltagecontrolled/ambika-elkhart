@@ -76,27 +76,31 @@ enum ActiveControl {
 enum UiPageNumber {
   PAGE_OSCILLATORS,
   PAGE_MIXER,
-  
+
   PAGE_FILTER,
-  
+
   PAGE_ENV_LFO,
   PAGE_VOICE_LFO,
-  
+
   PAGE_MODULATIONS,
-  
+
+  // Order matters for encoder navigation: registry index = enum value, and
+  // ShowPageRelative steps through enum values in order. We want encoder
+  // right from S3 → S5 → S6 → S7 (button order), so SEQUENCER comes before
+  // PART (track settings) and ARPEGGIATOR.
+  PAGE_PART_SEQUENCER,
   PAGE_PART,
   PAGE_PART_ARPEGGIATOR,
-  PAGE_PART_SEQUENCER,
-  
+
   PAGE_MULTI,
   PAGE_MULTI_CLOCK,
-  
+
   PAGE_PERFORMANCE,
   PAGE_KNOB_ASSIGN,
-  
+
   PAGE_LIBRARY,
   PAGE_VERSION_MANAGER,
-  PAGE_SYSTEM_SETTINGS,  
+  PAGE_SYSTEM_SETTINGS,
   PAGE_OS_INFO,
 };
 
@@ -200,6 +204,12 @@ class Ui {
   }
   
   static uint8_t shifted() { return switches_.low(7); }
+  // Currently-pressed: most-recent debounce read was low (bit 0 of state).
+  // More responsive than `low()` (which requires 8 consecutive lows).
+  static uint8_t switch_held(uint8_t i) {
+    return !(switches_.state(i) & 0x01);
+  }
+  static void inhibit_switch(uint8_t mask) { inhibit_switch_ |= mask; }
   
  private:
   static UiPageNumber active_page_;

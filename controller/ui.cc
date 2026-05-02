@@ -32,6 +32,7 @@
 #include "controller/ui_pages/multi_page.h"
 #include "controller/ui_pages/os_info_page.h"
 #include "controller/ui_pages/seq_steps_page.h"
+#include "controller/ui_pages/seq_track_page.h"
 #include "controller/ui_pages/parameter_editor.h"
 #include "controller/voicecard_tx.h"
 
@@ -74,10 +75,18 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_ENV_LFO, 2, 0xf0,
   },
   
+  // S5 group 4: sequencer mode (3 lock pages cycled by encoder).
+  { PAGE_PART_SEQUENCER,
+    &SeqStepsPage::event_handlers_,
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    PAGE_PART_SEQUENCER, 4, 0xff,
+  },
+
+  // S6 group 5: per-track sequencer settings (DIRN/CDIV/ROTA/LENG, SCAL/ROOT/BPCH/OLEV).
   { PAGE_PART,
-    &ParameterEditor::event_handlers_,
-    { 42, 57, 47, 48, 43, 44, 45, 46 },
-    PAGE_PART_SEQUENCER, 5, 0xf0,
+    &SeqTrackPage::event_handlers_,
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    PAGE_PART, 5, 0xf0,
   },
 
   // PAGE_PART_ARPEGGIATOR: stub — unreachable from cycle, kept for registry completeness.
@@ -87,22 +96,17 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_PART, 5, 0x0f,
   },
 
-  { PAGE_PART_SEQUENCER,
-    &SeqStepsPage::event_handlers_,
-    { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_PART, 5, 0xff,
-  },
-
+  // S7 group 6: transport (relocated from S5).
   { PAGE_MULTI,
     &MultiPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_MULTI, 4, 0xf0,
+    PAGE_MULTI_CLOCK, 6, 0xf0,
   },
 
   { PAGE_MULTI_CLOCK,
     &ParameterEditor::event_handlers_,
     { 62, 63, 64, 65, 0xff, 0xff, 0xff, 0xff },
-    PAGE_MULTI_CLOCK, 4, 0x0f,
+    PAGE_MULTI, 6, 0x0f,
   },
 
   // PAGE_PERFORMANCE and PAGE_KNOB_ASSIGN: placeholder until Perf page is built.
@@ -145,14 +149,14 @@ const prog_PageInfo page_registry[] PROGMEM = {
 };
 
 static const prog_uint8_t default_most_recent_page_in_group[9] PROGMEM = {
-  PAGE_OSCILLATORS,
-  PAGE_FILTER,
-  PAGE_ENV_LFO,
-  PAGE_ENV_LFO,
-  PAGE_MULTI,
-  PAGE_PART,
-  PAGE_PERFORMANCE,
-  PAGE_OS_INFO,
+  PAGE_OSCILLATORS,        // S1
+  PAGE_FILTER,             // S2
+  PAGE_ENV_LFO,            // S3
+  PAGE_ENV_LFO,            // S4 (shares group 2 with S3 — both env+LFO)
+  PAGE_PART_SEQUENCER,     // S5: sequencer mode (lock pages)
+  PAGE_PART,               // S6: per-track settings
+  PAGE_MULTI,              // S7: transport
+  PAGE_OS_INFO,            // S8
   PAGE_SYSTEM_SETTINGS
 };
 
@@ -208,11 +212,16 @@ void Ui::Poll() {
     uint8_t control_id = 0;
     if (switches_.low(0)) {
       increment *= 8;
-      inhibit_switch_ = 0x01;
+      inhibit_switch_ |= 0x01;
+    }
+    // SR-index 6 = SWITCH_2: hold to jump by full page (×8 like SWITCH_8).
+    if (switches_.low(6)) {
+      increment *= 8;
+      inhibit_switch_ |= 0x40;
     }
     if (switches_.low(7)) {
       ++control_id;
-      inhibit_switch_ = 0x80;
+      inhibit_switch_ |= 0x80;
     }
     queue_.AddEvent(CONTROL_ENCODER, control_id, increment);
   }

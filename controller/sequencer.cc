@@ -65,9 +65,9 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // E1ATK = fast attack
   0,    // E2ATK = fast attack
   0,    // E3ATK = fast attack
-  192,  // E1CRV = strongly exponential decay curve
-  192,  // E2CRV
-  192,  // E3CRV
+  64,   // E1CRV = centered (range 0=linear .. 127=expo per voice_envelopes.md)
+  64,   // E2CRV
+  64,   // E3CRV
   0,    // PHSE = no phase reset
   0,    // SMTH = no portamento
   0,    // reserved
@@ -130,7 +130,7 @@ void Sequencer::Init() {
     memcpy_P(&tr.defaults[8],  kDefaultPage2,    8);
     memcpy_P(&tr.defaults[16], kDefaultStepPage, 8);
     memcpy_P(tr.config,        kDefaultConfig,   kCfgSIZE);
-    memset(tr.shadow, 0, 5);
+    memset(tr.shadow, 0, kShdwSIZE);
   }
   global_.transport    = kSeqStopped;
   global_.hold_mode    = 0;
@@ -156,6 +156,7 @@ void Sequencer::Clock(uint8_t ticks) {
       uint8_t step  = tr.shadow[kShdwSTEP];
       uint8_t fired = (step + tr.pattern[kPatROTA]) % len;
       voicecard_tx.Release(t);
+      tr.shadow[kShdwLAST] = fired;
       if (tr.steps[fired].step_flags & kStepFlagOn) {
         FireStep(t, fired);
       }
@@ -204,10 +205,31 @@ void Sequencer::AdvanceStep(uint8_t t) {
 
 void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
   SeqTrack& tr = tracks_[t];
-  // Phase 3: no lock processing yet — always use track defaults.
-  uint8_t note     = tr.defaults[kP1NOTE];
-  uint8_t velocity = tr.defaults[16 + kSPVEL];
-  voicecard_tx.Trigger(t, static_cast<uint16_t>(note) << 7, velocity, 0);
+  const SeqStep& step = tr.steps[step_index];
+
+  // Resolve 16-byte snapshot: page1[8] || page2[8].
+  // For each lockable index N in [0..15], pick the per-step lock value
+  // when lock_flags bit N is set, otherwise the track default.
+  uint8_t snapshot[16];
+  for (uint8_t i = 0; i < 16; ++i) {
+    uint8_t locked = step.lock_flags[i >> 3] & (1 << (i & 7));
+    const uint8_t* src = locked
+        ? (i < 8 ? &step.page1[i] : &step.page2[i - 8])
+        : &tr.defaults[i];
+    snapshot[i] = *src;
+  }
+
+  // Note (page1 index 0 = kP1NOTE) and velocity (steppage index kSPVEL,
+  // bit 16+kSPVEL in lock_flags) — same lock-or-default pattern.
+  uint8_t note = snapshot[kP1NOTE];
+  uint8_t vel_locked = step.lock_flags[2] & (1 << kSPVEL);
+  uint8_t velocity = vel_locked
+      ? step.steppage[kSPVEL]
+      : tr.defaults[16 + kSPVEL];
+
+  // GLID (legato) is a future step-behavior feature; pass 0 for now.
+  voicecard_tx.TriggerWithSnapshot(
+      t, static_cast<uint16_t>(note) << 7, velocity, 0, snapshot);
 }
 
 void Sequencer::Play() {

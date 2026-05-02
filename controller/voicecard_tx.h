@@ -61,7 +61,16 @@ class VoicecardProtocolTx {
       uint16_t note,
       uint8_t velocity,
       uint8_t legato);
-      
+
+  // Sends a 16-byte param snapshot atomically followed by note/vel/legato.
+  // snapshot layout matches voicecard kSnapshotAddrs[]: page1[0..7] then page2[0..7].
+  static void TriggerWithSnapshot(
+      uint8_t voice_id,
+      uint16_t note,
+      uint8_t velocity,
+      uint8_t legato,
+      const uint8_t* snapshot);
+
   static void WriteData(
       uint8_t voice_id,
       uint8_t data_type,
