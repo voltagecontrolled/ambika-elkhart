@@ -1,6 +1,6 @@
 # Voice Envelopes + LFO
 
-> Supersedes the LPGD/LPGA/LPGO macro envelope sections in `SPEC_v2.md`. The
+> Supersedes the LPGD/LPGA/LPGO macro envelope sections in `SPEC.md`. The
 > macro design was abandoned during the Phase 5 envelope rework; this document
 > captures the as-built voice envelope architecture and the current UI layout.
 

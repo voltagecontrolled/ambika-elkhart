@@ -12,6 +12,247 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Sequencer foundation: hardware-pass fixes (2026-05-02)
+
+**Flash result:** controller 45,578 B (69.5%), +366 B over the foundation
+entry; voicecard 26,196 B (no functional change). **RAM:** controller
+3,469 B (+7 B for `kShdwLAST` shadow byte ×6 tracks plus a few static
+fields). `kSystemVersion` bumped to `0x23` on both sides.
+
+Round-2 and round-3 fixes against initial hardware testing of the
+foundation. Locks went from "not working" to "working" via the indexing
+fix; the rest are layout, scaling, defaults, and UI-routing
+corrections.
+
+#### Lock authoring (round 2)
+
+- **Indexing fix in `SeqStepsPage::OnPot`.** `switches_[]` is indexed
+  reverse of the `SwitchNumber` enum (SR-index 0 = `SWITCH_8`, 7 =
+  `SWITCH_1`, per `Ui::Poll`'s `control = SWITCH_8 - i`). The held-step
+  detection was iterating SR-index but treating the result as a step
+  index, so locks were authored on the wrong step. Fixed by deriving
+  `held_step = 7 - sr_index`. `inhibit_switch_` continues to use SR-index
+  (matches `Poll`'s release-event loop); `step_lock_dirty_` and
+  `steps[]` are step-index.
+- **`Ui::switch_held(i)` switched to bit-0 immediate detection** (most
+  recent debounce sample low) instead of `low()` (8 consecutive lows).
+  Removes the ~25 ms latency before a hold gesture registered, so quick
+  press-and-turn is caught.
+- **`Ui::inhibit_switch(mask)` added** as a public accessor so page
+  handlers can suppress the next switch event for chord-style gestures.
+  Existing `Poll` chord patterns now use `|=` instead of `=` to
+  preserve concurrent inhibits.
+
+#### LCD layout (round 2)
+
+- Sequencer pages adopt the YAM 4-cells-per-row convention: 10 chars
+  per cell, delimiters at 0/10/20/30 (skip outer edges), short_name
+  left-justified at offset 1 (4 chars), value right-justified at
+  offset 5 (4 chars).
+- Active control's name uppercased (matches `ParameterEditor`).
+- `>` cursor marker before the focused knob's label.
+- `UpdateScreen` now reads from the held step's locked value when a
+  step is being held + that param is locked; falls through to defaults
+  otherwise. Provides feedback during lock authoring.
+
+#### Chaselight (round 2)
+
+- New `kShdwLAST` shadow byte tracks the actually-fired step.
+  `Sequencer::Clock` writes `tr.shadow[kShdwLAST] = fired` before
+  calling `FireStep`. `SeqStepsPage::UpdateLeds` reads that instead of
+  computing `(next + len - 1) % len`, which was wrong in reverse and
+  pendulum directions.
+- `SeqTrack.shadow[]` size bumped from 5 to 6 (`kShdwSIZE`).
+
+#### Page traversal (round 3)
+
+- `UiPageNumber` enum reordered so `PAGE_PART_SEQUENCER` (S5) precedes
+  `PAGE_PART` (S6) and `PAGE_PART_ARPEGGIATOR` (stub). Encoder
+  navigation now walks S3 → S5 → S6 → S7 in left-to-right button
+  order. `page_registry[]` array entries reordered to match (registry
+  index = enum value).
+- New `S2 + encoder` chord wired in `Ui::Poll`: `switches_.low(6)`
+  multiplies `increment` by 8, giving a full-page (8-cursor) jump.
+  Mirrors the existing `S8 + encoder` ×8 acceleration.
+- `SeqStepsPage::OnIncrement` and `SeqTrackPage::OnIncrement` spill out
+  to the previous/next page via `ui.ShowPageRelative(±1)` at cursor
+  boundaries (cursor 23 / 7) so the encoder can leave the sequencer
+  surface even though buttons are step triggers.
+
+#### Pot scaling and label cleanup (round 3)
+
+- All `kAbbr` strings lowercased by default; `UpdateScreen` continues
+  to uppercase the cursor's slot.
+- `E1RL` / `E2RL` / `E3RL` slot labels replaced with `----` (the slots
+  are dead per `voice_envelopes.md`).
+- Renamed `E1DC` / `E2DC` / `E3DC` → `adec` / `fdec` / `pdec`.
+- **`HysteresisPotScanner<8, 0, 8, 7>` produces values 0..127** (not
+  0..255). All seq-page pot scaling rewritten:
+  - **WAVE1/WAVE2** (`SeqStepsPage::OnPot`) clamped to
+    `0..WAVEFORM_LAST-1` (= 0..42). Unconstrained values past the enum
+    were silencing voicecard oscillators (out-of-range index into
+    dispatch tables → bad pointer / silent state requiring reboot).
+  - **DIRN** `>>5` → 0..3.
+  - **CDIV / ROTA** `>>4` → 0..7.
+  - **LENG** `(>>4)+1` → 1..8 (was `(>>5)+1` capping at 4).
+  - **ROOT** `(value*12)>>7` → 0..11.
+  - **BPCH** raw value (already 0..127, MIDI range).
+  - **OLEV** `<<1` → 0..254.
+- `ScalePot(value, max)` helper added in `seq_steps_page.cc`.
+
+#### Defaults (round 3)
+
+- `kDefaultConfig` `E1CRV`/`E2CRV`/`E3CRV` changed from 192 → 64.
+  Per `voice_envelopes.md` the curve range is 0..127 (0=linear,
+  127=expo), so 192 was out of range. 64 is centered.
+
+#### Documentation (round 3)
+
+- `docs/planning/SPEC_v2.md` renamed to `docs/planning/SPEC.md`. The
+  "v2" framing referred to the second design iteration (post-Carcosa)
+  and is no longer load-bearing. Renamed via `git mv`; references in
+  `README.md`, `CLAUDE.md`, `BOARD.md`, `voice_envelopes.md`,
+  `sequencer.md`, `MANUAL.md`, and `CHANGELOG.md` updated.
+- `docs/planning/sequencer.md` status table reorganized into Done /
+  Open with a "Notes for next session" section pointing at the
+  central code paths for the deferred work (focused-edit display,
+  step-behavior parameters, mutate, hold modes).
+- `docs/planning/BOARD.md` Now/Next reshaped — sequencer foundation
+  shipped pending hardware verification; encoder-click focused-edit,
+  WAVE strip-aware LUT, and signed-param display offsets surfaced as
+  the next iteration's targets.
+
+#### Known issues carried into the next session
+
+- **Encoder click is a no-op on the seq pages.** No focused-edit
+  display yet; full-row layout (`<page> | <full param name> <value>`)
+  pending.
+- **WAVE pot can still hit stripped CZ indices (6..14)** within the
+  clamped 0..42 range. Those produce silence per Phase 2 strip but
+  the byte is not invalid.
+- **Signed/biased params** (FINE / OSC2D / LFO depth / curve as
+  signed) render as raw bytes on seq pages — `64` instead of `0` for
+  centered. Parameter system handles this on `PAGE_OSCILLATORS`;
+  seq pages need their own renderer.
+- **Step-behavior resolution** in `FireStep` is still a passthrough
+  for note / velocity. PROB / REPT / RATE / SSUB / MINT / MDIR / GLID
+  are stored but not acted on.
+
+---
+
+### Sequencer foundation: locks + track settings (2026-05-02)
+
+**Flash result:** controller 45,212 B (69.0%), +1,834 B over the
+envelope refactor; voicecard 26,196 B (79.9%), +114 B for the snapshot
+handler. **RAM:** controller 3,462 B (+2 B), voicecard 1,049 B
+(51.2%, +16 B for the expanded `arguments_` buffer).
+`kSystemVersion` bumped to `0x22` on both sides.
+
+Per-step parameter locks are now wired end-to-end. Every trigger
+delivers a resolved 16-byte param snapshot (page1+page2) atomically to
+the voicecard alongside note + velocity. Locks naturally don't bleed —
+each trigger's snapshot fully describes the voice. Sequencer-mode UI
+lands on S5 with three knob-pages cycled by the encoder, and per-track
+settings (DIRN/CDIV/ROTA/LENG/SCAL/ROOT/BPCH/OLEV) get their own page on
+S6. Transport relocates to S7. See `docs/planning/sequencer.md` for the
+topic spec.
+
+#### common/protocol.h
+
+- New opcodes: `COMMAND_NOTE_ON_WITH_SNAPSHOT = 0x12` and
+  `COMMAND_NOTE_ON_WITH_SNAPSHOT_LEGATO = 0x13`. Same `0xf0` family as
+  existing note-on; bit 1 = snapshot variant; bit 0 = legato.
+
+#### voicecard/voicecard_rx.h + voicecard_rx.cc
+
+- `arguments_[]` expanded from 3 → 19 bytes to hold a 16-byte snapshot
+  plus note MSB/LSB plus velocity. Other commands write into the same
+  buffer head; no functional change.
+- `Process()` dispatch adds an explicit branch: snapshot variants set
+  `data_size_ = 19`; existing 0x10/0x11 keep `data_size_ = 3`.
+- `DoLongCommand()`'s `case COMMAND_NOTE_ON` discriminates on
+  `command_ & 0x02`. Snapshot path walks `kSnapshotAddrs[16]` PROGMEM
+  and calls `voice.set_patch_data(addr, value)` for each non-`0xff`
+  slot, then `voice.Trigger(...)` exactly as the legacy path.
+- `kSnapshotAddrs[16]`: voicecard-side mirror of the controller's
+  `PatchAddrToSeqField` map for the 16 lockable patch bytes. NOTE and
+  the three dead REL slots are `0xff` (skipped).
+
+#### controller/voicecard_tx.h + voicecard_tx.cc
+
+- New `TriggerWithSnapshot(voice_id, note, velocity, legato, snapshot)`.
+  Emits the new opcode, 16 snapshot bytes, note MSB/LSB, and velocity
+  through the existing odd/even ring buffer infrastructure.
+- Legacy `Trigger(...)` retained for MIDI input from `Part::NoteOn`
+  (which has no snapshot context).
+
+#### controller/sequencer.cc — `FireStep()`
+
+- Replaced the 3-line stub. For each `i` in `[0..15]`, the resolver
+  picks `step.pageX[i]` if `lock_flags` bit `i` is set, otherwise
+  `defaults[i]`. Velocity follows the same pattern using lock bit
+  `16+kSPVEL`. The resolved note is `snapshot[kP1NOTE]`.
+- Mutate (MINT/MDIR), track transpose, and per-step rate are still
+  out of scope; the note byte is just the lock-or-default value.
+
+#### controller/ui_pages/seq_steps_page.h + seq_steps_page.cc
+
+- Extended from a single-knob (note-only) toggle stub to a 3-page lock
+  authoring UI. `cursor_` (static, 0..23) advances on encoder turn;
+  `cursor_ >> 3` becomes `SeqGlobal.lock_page` (Voice1/Voice2/Step).
+- `OnPot(index, value)`: if any step button is currently held
+  (`Ui::switch_held(i)`), write a lock for that step+param and inhibit
+  the next switch event for that step. Otherwise write the track
+  default.
+- `OnKey(key)`: tap toggles `step_flags & kStepFlagOn`. If a pot moved
+  while held (tracked in `step_lock_dirty_`), the toggle is suppressed
+  for that release.
+- LCD: 8-column abbreviation row + value row, 2-char page tag at the
+  right edge (`v1`/`v2`/`sp`), `>` cursor marker on the focused knob.
+
+#### controller/ui_pages/seq_track_page.h + seq_track_page.cc — new files
+
+- 8-pot custom UI mirroring `MultiPage` shape. Knobs map directly into
+  `SeqTrack.pattern[8]`: DIRN/CDIV/ROTA/LENG on top, SCAL/ROOT/BPCH/OLEV
+  on bottom. Pot ranges quantized per-knob; LCD displays named values
+  for DIRN/CDIV/ROOT.
+
+#### controller/ui.h
+
+- New public accessors `Ui::switch_held(i)` and `Ui::inhibit_switch(mask)`
+  so page handlers can read switch hold state and suppress the
+  corresponding release event (used by the lock-edit gesture).
+
+#### controller/ui.cc — page registry reshuffle
+
+- `PAGE_PART_SEQUENCER`: group 5 → 4 (S5). Now the default landing for
+  the Sequencer button.
+- `PAGE_PART`: handler swapped from `ParameterEditor` →
+  `SeqTrackPage::event_handlers_`. Stays on group 5 (S6).
+- `PAGE_MULTI` + `PAGE_MULTI_CLOCK`: group 4 → 6 (S7). Chain
+  `MULTI ↔ MULTI_CLOCK` for cycling.
+- `default_most_recent_page_in_group[]` updated:
+  - group 4 → `PAGE_PART_SEQUENCER`
+  - group 5 → `PAGE_PART`
+  - group 6 → `PAGE_MULTI`
+
+#### docs/planning/
+
+- New: `sequencer.md` — topic spec with protocol bytes, snapshot table,
+  UI layout, and sub-project status table.
+- `BOARD.md` — `Now` lane consolidated to "Sequencer foundation"; the
+  retired locks/UI items moved out. Added `Later` items for per-voice
+  defaults sub-page on S6 and reclaiming the dead REL slots.
+
+#### Notes
+
+- Hardware-flash and on-instrument verification still pending; controller
+  + voicecard binaries built clean under the Squeeze toolchain.
+- The `*REL` page-2 slots remain dead per `voice_envelopes.md` —
+  voicecard ignores writes (snapshot table marks them `0xff`).
+
+---
+
 ### Voice envelopes + LFO UI refactor (2026-05-02)
 
 **Flash result:** controller 43,378 B (66.2%), +154 B over Phase 5; voicecard
@@ -98,7 +339,7 @@ Topic spec: `docs/planning/voice_envelopes.md`.
 **Flash result:** 43,224B (66.0% of 64KB), up ~1,810B from Phase 4.
 **RAM:** 3,462B used, 634B free. kSystemVersion = 0x20 on both controller and voicecard.
 
-**Architectural pivot:** LPG macro (LPGD/LPGA/LPGO) from SPEC_v2 was not implemented. Instead: three independent ADR+Curve envelopes with fixed routing, LFO1/2/3 removed from controller side (LFO4 voice-side only), `patch_mod[]` removed from SeqTrack (saves 252B), fixed routing table in PROGMEM replaces the per-track mod matrix shadow.
+**Architectural pivot:** LPG macro (LPGD/LPGA/LPGO) from SPEC (then SPEC_v2) was not implemented. Instead: three independent ADR+Curve envelopes with fixed routing, LFO1/2/3 removed from controller side (LFO4 voice-side only), `patch_mod[]` removed from SeqTrack (saves 252B), fixed routing table in PROGMEM replaces the per-track mod matrix shadow.
 
 #### voicecard/envelope.h — ADR+Curve (no sustain)
 

@@ -17,8 +17,13 @@ phases. See `CHANGELOG.md` for the as-built record and known issues.
 ## Documentation
 
 - **`CHANGELOG.md`** — authoritative as-built architecture, phase history
-- **`docs/planning/SPEC_v2.md`** — original design intent (⚠️ diverged from
+- **`docs/planning/SPEC.md`** — original design intent (⚠️ diverged from
   implementation; see banner at top of file)
+- **`docs/planning/sequencer.md`** — topic spec for the per-step parameter
+  lock system + sequencer mode UI
+- **`docs/planning/voice_envelopes.md`** — topic spec for the as-built
+  3-envelope voice architecture
+- **`docs/planning/BOARD.md`** — Now / Next / Later work board
 - **`docs/wiki/MANUAL.md`** — user-facing manual draft
 
 ## Hardware platform

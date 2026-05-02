@@ -1,6 +1,6 @@
 # Elkhart — User Manual
 
-*Draft 0.2 — based on SPEC_v2 (YAM-based), pre-hardware*
+*Draft 0.2 — based on SPEC (YAM-based), pre-hardware*
 
 ---
 
