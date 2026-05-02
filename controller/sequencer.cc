@@ -71,6 +71,11 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // PHSE = no phase reset
   0,    // SMTH = no portamento
   0,    // reserved
+  0,    // OSC1R = osc1 range 0
+  0,    // OSC2R = osc2 range 0
+  0,    // OSC2D = osc2 detune center
+  0,    // FMOP = no FM crossmod
+  0,    // FUZZ = no fuzz
 };
 
 static const prog_uint8_t kDefaultPattern[] PROGMEM = {
@@ -181,7 +186,7 @@ void Sequencer::AdvanceStep(uint8_t t) {
 void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
   SeqTrack& tr = tracks_[t];
   // Phase 3: no lock processing yet — always use track defaults.
-  uint8_t note     = tr.steps[step_index].page1[kP1NOTE];
+  uint8_t note     = tr.defaults[kP1NOTE];
   uint8_t velocity = tr.defaults[16 + kSPVEL];
   voicecard_tx.Trigger(t, static_cast<uint16_t>(note) << 7, velocity, 0);
 }
@@ -196,6 +201,9 @@ void Sequencer::Play() {
 void Sequencer::Pause() {
   if (global_.transport == kSeqPlaying) {
     global_.transport = kSeqPaused;
+    for (uint8_t t = 0; t < kNumVoices; ++t) {
+      voicecard_tx.Release(t);
+    }
   } else if (global_.transport == kSeqPaused) {
     global_.transport = kSeqPlaying;
   }
@@ -203,6 +211,7 @@ void Sequencer::Pause() {
 
 void Sequencer::Reset() {
   for (uint8_t t = 0; t < kNumVoices; ++t) {
+    voicecard_tx.Release(t);
     tracks_[t].shadow[kShdwSTEP] = 0;
     tracks_[t].shadow[kShdwTICK] = 0;
     tracks_[t].shadow[kShdwREPT] = 0;

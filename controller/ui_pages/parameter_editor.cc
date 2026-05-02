@@ -159,7 +159,7 @@ void ParameterEditor::UpdateScreen() {
   uint8_t detailed_info_line = 2;
   // If we are in editing mode, draw the detailed information for the edited
   // parameter. Disable this detailed information when "help" is set to off.
-  if (edit_mode_ && system_settings.data().show_help) {
+  if (edit_mode_) {
     uint8_t parameter_id = parameter_index(active_control_);
     // Depending on the active control, draw on first or second line.
     uint8_t line = active_control_ < 4 ? 0 : 1;

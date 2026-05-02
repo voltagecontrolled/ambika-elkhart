@@ -71,14 +71,6 @@ void MultiPage::UpdateScreen() {
   UnsafeItoa<uint8_t>(multi.data().clock_bpm, 3, &buffer[4]);
   AlignRight(&buffer[4], 3);
   buffer[14] = kDelimiter;
-  uint8_t transport = sequencer.global().transport;
-  if (transport == kSeqPlaying) {
-    memcpy_P(&buffer[15], PSTR("playing"), 7);
-  } else if (transport == kSeqPaused) {
-    memcpy_P(&buffer[15], PSTR("paused "), 7);
-  } else {
-    memcpy_P(&buffer[15], PSTR("stopped"), 7);
-  }
 
   buffer = display.line_buffer(1) + 1;
   memcpy_P(&buffer[0],  PSTR("play "), 5);

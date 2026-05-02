@@ -97,7 +97,13 @@ static const uint8_t kCfgE3CRV = 16;  // Env3 curve
 static const uint8_t kCfgPHSE  = 17;  // oscillator phase reset on trigger
 static const uint8_t kCfgSMTH  = 18;  // portamento / smoothing
 // config[19]: reserved
-static const uint8_t kCfgSIZE  = 20;
+static const uint8_t kCfgOSC1R = 20;  // osc1 range (semitone transpose)
+static const uint8_t kCfgOSC2R = 21;  // osc2 range
+static const uint8_t kCfgOSC2D = 22;  // osc2 detune
+static const uint8_t kCfgFMOP  = 23;  // FM/crossmod operator mode
+static const uint8_t kCfgFUZZ  = 24;  // fuzz
+
+static const uint8_t kCfgSIZE  = 25;
 
 // ---- shadow[] indices (transient playhead state; zeroed on Reset/load) ----
 static const uint8_t kShdwSTEP = 0;  // next step index to fire (0–7)

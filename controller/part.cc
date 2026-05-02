@@ -32,16 +32,21 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     // OSC page — page1 (defaults[0..7])
     case 0:  return &tr.defaults[kP1WAVE1];  // osc1.shape
     case 1:  return &tr.defaults[kP1PARA1];  // osc1.parameter
+    case 2:  return &tr.config[kCfgOSC1R];   // osc1.range
     case 3:  return &tr.defaults[kP1FINE];   // osc1.detune
     case 4:  return &tr.defaults[kP1WAVE2];  // osc2.shape
     case 5:  return &tr.defaults[kP1PARA2];  // osc2.parameter
+    case 6:  return &tr.config[kCfgOSC2R];   // osc2.range
+    case 7:  return &tr.config[kCfgOSC2D];   // osc2.detune
     // MIXER page — blend/ratio/sub (defaults[])
     case 8:  return &tr.defaults[kP1BLND];   // mix_balance
+    case 9:  return &tr.config[kCfgFMOP];    // mix_operator (FM mode)
     case 10: return &tr.defaults[kP1RTIO];   // mix_parameter
     // MIXER page — page2 (defaults[8..15])
     case 11: return &tr.defaults[8 + kP2WSUB]; // mix_sub_osc_shape
     case 12: return &tr.defaults[8 + kP2SUB];  // mix_sub_osc level
     case 13: return &tr.defaults[8 + kP2NOIS]; // mix_noise
+    case 14: return &tr.config[kCfgFUZZ];    // mix_fuzz
     case 25: return &tr.defaults[8 + kP2LPGD]; // env[0].decay  → LPG decay
     case 33: return &tr.defaults[8 + kP2LPGD]; // env[1].decay  → LPG decay
     case 41: return &tr.defaults[8 + kP2LPGD]; // env[2].decay  → LPG decay
