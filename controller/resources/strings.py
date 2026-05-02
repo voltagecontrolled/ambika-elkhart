@@ -393,4 +393,12 @@ PROGRAM
 MULTI
 ___
 equal
+
+eg
+dept
+depth
+
+amp
+flt
+pch
 """

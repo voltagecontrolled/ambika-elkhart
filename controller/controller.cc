@@ -125,7 +125,7 @@ int main(void) {
     while (midi_in_buffer.readable()) {
       midi_parser.PushByte(midi_in_buffer.ImmediateRead());
     }
-    // Do some LFOs and clocks.
+    // Do some clocks.
     multi.UpdateClocks();
     // Do some display.
     ui.DoEvents();

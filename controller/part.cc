@@ -16,7 +16,9 @@
 
 #include "controller/part.h"
 
+#include <avr/pgmspace.h>
 #include "avrlib/op.h"
+#include "controller/resources.h"
 #include "controller/sequencer.h"
 #include "controller/voicecard_tx.h"
 #include "midi/midi.h"
@@ -29,57 +31,59 @@ namespace ambika {
 // Returns NULL for offsets with no SeqTrack equivalent.
 static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
   switch (address) {
-    // OSC page — page1 (defaults[0..7])
-    case 0:  return &tr.defaults[kP1WAVE1];  // osc1.shape
-    case 1:  return &tr.defaults[kP1PARA1];  // osc1.parameter
-    case 2:  return &tr.config[kCfgOSC1R];   // osc1.range
-    case 3:  return &tr.defaults[kP1FINE];   // osc1.detune
-    case 4:  return &tr.defaults[kP1WAVE2];  // osc2.shape
-    case 5:  return &tr.defaults[kP1PARA2];  // osc2.parameter
-    case 6:  return &tr.config[kCfgOSC2R];   // osc2.range
-    case 7:  return &tr.config[kCfgOSC2D];   // osc2.detune
-    // MIXER page — blend/ratio/sub (defaults[])
-    case 8:  return &tr.defaults[kP1BLND];   // mix_balance
-    case 9:  return &tr.config[kCfgFMOP];    // mix_operator (FM mode)
-    case 10: return &tr.defaults[kP1RTIO];   // mix_parameter
-    // MIXER page — page2 (defaults[8..15])
-    case 11: return &tr.defaults[8 + kP2WSUB]; // mix_sub_osc_shape
-    case 12: return &tr.defaults[8 + kP2SUB];  // mix_sub_osc level
-    case 13: return &tr.defaults[8 + kP2NOIS]; // mix_noise
-    case 14: return &tr.config[kCfgFUZZ];    // mix_fuzz
-    case 25: return &tr.defaults[8 + kP2LPGD]; // env[0].decay  → LPG decay
-    case 33: return &tr.defaults[8 + kP2LPGD]; // env[1].decay  → LPG decay
-    case 41: return &tr.defaults[8 + kP2LPGD]; // env[2].decay  → LPG decay
-    // MIXER/FILTER — config[]
-    case 15: return &tr.config[kCfgBITS];  // mix_crush  → bit reduction
-    case 16: return &tr.config[kCfgFREQ];  // filter cutoff
-    case 17: return &tr.config[kCfgRES];   // filter resonance
-    case 18: return &tr.config[kCfgTYPE];  // filter mode
-    case 23: return &tr.config[kCfgLFOA];  // filter_lfo → LFO amount
-    // ENV_LFO page — envelope attacks/sustains/releases + LFO params
-    case 24: return &tr.config[kCfgE1ATK]; // env[0].attack
-    case 26: return &tr.config[kCfgE1SUS]; // env[0].sustain
-    case 27: return &tr.config[kCfgE1REL]; // env[0].release
-    case 28: return &tr.config[kCfgLSHP];  // env[0].lfo_shape
-    case 29: return &tr.config[kCfgLFOS];  // env[0].lfo_rate
-    case 31: return &tr.config[kCfgLFOR];  // env[0].retrigger
-    case 32: return &tr.config[kCfgE2ATK]; // env[1].attack
-    case 34: return &tr.config[kCfgE2SUS]; // env[1].sustain
-    case 35: return &tr.config[kCfgE2REL]; // env[1].release
-    case 36: return &tr.config[kCfgLSHP];  // env[1].lfo_shape (shared)
-    case 37: return &tr.config[kCfgLFOS];  // env[1].lfo_rate  (shared)
-    case 39: return &tr.config[kCfgLFOR];  // env[1].retrigger (shared)
-    case 40: return &tr.config[kCfgE3ATK]; // env[2].attack
-    case 42: return &tr.config[kCfgE3SUS]; // env[2].sustain
-    case 43: return &tr.config[kCfgE3REL]; // env[2].release
-    case 44: return &tr.config[kCfgLSHP];  // env[2].lfo_shape (shared)
-    case 45: return &tr.config[kCfgLFOS];  // env[2].lfo_rate  (shared)
-    case 47: return &tr.config[kCfgLFOR];  // env[2].retrigger (shared)
-    // VOICE_LFO page
-    case 48: return &tr.config[kCfgLSHP];  // voice_lfo_shape
-    case 49: return &tr.config[kCfgLFOS];  // voice_lfo_rate
-    // FILTER KB tracking
-    case 105: return &tr.config[kCfgTRAK]; // filter_kbt → pitch tracking
+    // OSC page — page1 defaults
+    case 0:  return &tr.defaults[kP1WAVE1];
+    case 1:  return &tr.defaults[kP1PARA1];
+    case 2:  return &tr.config[kCfgOSC1R];
+    case 3:  return &tr.defaults[kP1FINE];
+    case 4:  return &tr.defaults[kP1WAVE2];
+    case 5:  return &tr.defaults[kP1PARA2];
+    case 6:  return &tr.config[kCfgOSC2R];
+    case 7:  return &tr.config[kCfgOSC2D];
+    // Mixer
+    case 8:  return &tr.defaults[kP1BLND];
+    case 9:  return &tr.config[kCfgFMOP];
+    case 10: return &tr.defaults[kP1RTIO];
+    case 11: return &tr.config[kCfgWSUB];          // sub-osc shape (non-lockable)
+    case 12: return &tr.defaults[8 + kP2SUB];
+    case 13: return &tr.defaults[8 + kP2NOIS];
+    case 14: return &tr.config[kCfgFUZZ];
+    case 15: return &tr.config[kCfgBITS];
+    // Filter
+    case 16: return &tr.config[kCfgFREQ];
+    case 17: return &tr.config[kCfgRES];
+    case 18: return &tr.config[kCfgTYPE];
+    case 22: return &tr.config[kCfgE2DEPT];        // filter_env = ENV2→VCF depth
+    // Envelope attacks (voice-wide config)
+    case 24: return &tr.config[kCfgE1ATK];
+    case 32: return &tr.config[kCfgE2ATK];
+    case 40: return &tr.config[kCfgE3ATK];
+    // Envelope decays (per-step lockable)
+    case 25: return &tr.defaults[8 + kP2E1DEC];
+    case 33: return &tr.defaults[8 + kP2E2DEC];
+    case 41: return &tr.defaults[8 + kP2E3DEC];
+    // Envelope curves (voice-wide, sustain byte repurposed)
+    case 26: return &tr.config[kCfgE1CRV];
+    case 34: return &tr.config[kCfgE2CRV];
+    case 42: return &tr.config[kCfgE3CRV];
+    // Envelope releases (per-step lockable)
+    case 27: return &tr.defaults[8 + kP2E1REL];
+    case 35: return &tr.defaults[8 + kP2E2REL];
+    case 43: return &tr.defaults[8 + kP2E3REL];
+    // LFO4 (voice_lfo on voicecard)
+    case 48: return &tr.config[kCfgLSHP];          // voice_lfo_shape
+    case 49: return &tr.config[kCfgLFOS];          // voice_lfo_rate
+    // Configurable mod amounts (fixed routing slots)
+    case 58: return &tr.config[kCfgE3DEPT];        // slot 2 amount: ENV3→pitch depth
+    case 72: return &tr.config[kCfgLFO4D];         // slot 7 dest: LFO4 destination
+    case 73: return &tr.config[kCfgLFO4A];         // slot 7 amount: LFO4 amount
+    case 82: return &tr.config[kCfgE1DEPT];        // slot 10 amount: ENV1→VCA depth
+    // Filter KB tracking
+    case 105: return &tr.config[kCfgTRAK];
+    // EG depth (virtual; indexed by active_env_lfo; 200=Amp/E1, 201=Filt/E2, 202=Pitch/E3)
+    case 200: return &tr.config[kCfgE1DEPT];
+    case 201: return &tr.config[kCfgE2DEPT];
+    case 202: return &tr.config[kCfgE3DEPT];
     default: return NULL;
   }
 }
@@ -92,29 +96,41 @@ uint8_t Part::GetValue(uint8_t address) const {
 }
 
 void Part::SetValue(uint8_t address, uint8_t value, uint8_t) {
-  voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, address, value);
+  uint8_t tx_addr = address;
+  if (address == 200) tx_addr = 82;
+  else if (address == 201) tx_addr = 22;
+  else if (address == 202) tx_addr = 58;
+  voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, tx_addr, value);
   uint8_t* p = PatchAddrToSeqField(
       *sequencer.mutable_track(voice_id_), address);
   if (p) *p = value;
 }
 
 void Part::Touch() {
+  // Send fixed mod routing base (42 bytes) from PROGMEM, then override amounts.
+  for (uint8_t i = 0; i < 42; ++i) {
+    voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, 50 + i,
+        pgm_read_byte(&kDefaultMod[i]));
+  }
+  // All other patch addresses (configurable amounts override kDefaultMod slots).
   static const uint8_t kSyncAddresses[] = {
     0, 1, 2, 3, 4, 5, 6, 7,
     8, 9, 10, 11, 12, 13, 14, 15,
-    16, 17, 18, 23,
-    24, 25, 26, 27, 28, 29, 31,
-    32, 33, 34, 35, 36, 37, 39,
-    40, 41, 42, 43, 44, 45, 47,
-    48, 49, 105,
+    16, 17, 18, 22,
+    24, 25, 26, 27,
+    32, 33, 34, 35,
+    40, 41, 42, 43,
+    48, 49,
+    58, 72, 73, 82,
+    105,
+    200, 201, 202,
   };
   for (uint8_t i = 0; i < sizeof(kSyncAddresses); ++i) {
     uint8_t addr = kSyncAddresses[i];
     voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, addr, GetValue(addr));
   }
-  // VCA mod amount full cut: init_patch default (32) leaves VCA at 50% on release
-  voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, 82, 63);
 }
+
 
 void Part::NoteOn(uint8_t note, uint8_t velocity) {
   if (velocity == 0) { NoteOff(note); return; }

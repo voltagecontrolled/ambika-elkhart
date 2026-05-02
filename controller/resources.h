@@ -466,6 +466,12 @@ extern const prog_uint8_t wav_res_lfo_waveforms[] PROGMEM;
 #define STR_RES_KAUSHIK_TODI 379  // kaushik todi
 #define STR_RES_JOGESHWARI 380  // jogeshwari
 #define STR_RES_RASIA 381  // rasia
+#define STR_RES_EG 382  // eg
+#define STR_RES_DEPT 383  // dept
+#define STR_RES_DEPTH 384  // depth
+#define STR_RES_AMP 385  // amp
+#define STR_RES_FLT 386  // flt
+#define STR_RES_PCH 387  // pch
 #define LUT_RES_LFO_INCREMENTS 0
 #define LUT_RES_LFO_INCREMENTS_SIZE 128
 #define LUT_RES_SCALE_JUST 1

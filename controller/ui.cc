@@ -52,57 +52,57 @@ const prog_PageInfo page_registry[] PROGMEM = {
   
   { PAGE_FILTER,
     &ParameterEditor::event_handlers_,
-    { 16, 17, 0xff, 18, 22, 23, 73, 74 },
+    { 16, 17, 0xff, 18, 22, 0xff, 0xff, 0xff },
     PAGE_FILTER, 1, 0xf0,
   },
-  
+
   { PAGE_ENV_LFO,
     &ParameterEditor::event_handlers_,
-    { 24, 30, 31, 29, 25, 26, 27, 28 },
+    { 24, 0xff, 0xff, 75, 25, 26, 27, 28 },
     PAGE_VOICE_LFO, 2, 0xf0,
   },
-  
+
   { PAGE_VOICE_LFO,
     &ParameterEditor::event_handlers_,
-    { 0xff, 32, 33, 0xff, 0xff, 0xff, 0xff, 0xff },
+    { 32, 33, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
     PAGE_ENV_LFO, 2, 0x0f,
   },
-  
+
   { PAGE_MODULATIONS,
     &ParameterEditor::event_handlers_,
-    { 34, 35, 36, 37, 38, 39, 40, 41 },
-    PAGE_MODULATIONS, 3, 0xf0,
+    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
+    PAGE_ENV_LFO, 2, 0xf0,
   },
   
   { PAGE_PART,
     &ParameterEditor::event_handlers_,
     { 42, 57, 47, 48, 43, 44, 45, 46 },
-    PAGE_PART_SEQUENCER, 4, 0xf0,
+    PAGE_PART_SEQUENCER, 5, 0xf0,
   },
 
   // PAGE_PART_ARPEGGIATOR: stub — unreachable from cycle, kept for registry completeness.
   { PAGE_PART_ARPEGGIATOR,
     &ParameterEditor::event_handlers_,
     { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    PAGE_PART, 4, 0x0f,
+    PAGE_PART, 5, 0x0f,
   },
 
   { PAGE_PART_SEQUENCER,
     &SeqStepsPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_PART, 4, 0xff,
+    PAGE_PART, 5, 0xff,
   },
 
   { PAGE_MULTI,
     &MultiPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_MULTI, 5, 0xf0,
+    PAGE_MULTI, 4, 0xf0,
   },
 
   { PAGE_MULTI_CLOCK,
     &ParameterEditor::event_handlers_,
     { 62, 63, 64, 65, 0xff, 0xff, 0xff, 0xff },
-    PAGE_MULTI_CLOCK, 5, 0x0f,
+    PAGE_MULTI_CLOCK, 4, 0x0f,
   },
 
   // PAGE_PERFORMANCE and PAGE_KNOB_ASSIGN: placeholder until Perf page is built.
@@ -148,9 +148,9 @@ static const prog_uint8_t default_most_recent_page_in_group[9] PROGMEM = {
   PAGE_OSCILLATORS,
   PAGE_FILTER,
   PAGE_ENV_LFO,
-  PAGE_MODULATIONS,
-  PAGE_PART,
+  PAGE_ENV_LFO,
   PAGE_MULTI,
+  PAGE_PART,
   PAGE_PERFORMANCE,
   PAGE_OS_INFO,
   PAGE_SYSTEM_SETTINGS

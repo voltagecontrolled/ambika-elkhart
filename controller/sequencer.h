@@ -21,14 +21,14 @@ static const uint8_t kP1WAVE2 = 5;
 static const uint8_t kP1PARA2 = 6;
 static const uint8_t kP1FINE  = 7;
 
-// ---- page2[] indices (Voice Page 2 — Modulation) ----
-static const uint8_t kP2LPGD  = 0;
-static const uint8_t kP2LPGA  = 1;
-static const uint8_t kP2LPGO  = 2;
-static const uint8_t kP2NOIS  = 3;
-static const uint8_t kP2PITD  = 4;
-static const uint8_t kP2PITA  = 5;
-static const uint8_t kP2WSUB  = 6;
+// ---- page2[] indices (Voice Page 2 — Envelope DEC/REL + mixer) ----
+static const uint8_t kP2E1DEC = 0;
+static const uint8_t kP2E1REL = 1;
+static const uint8_t kP2E2DEC = 2;
+static const uint8_t kP2E2REL = 3;
+static const uint8_t kP2E3DEC = 4;
+static const uint8_t kP2E3REL = 5;
+static const uint8_t kP2NOIS  = 6;
 static const uint8_t kP2SUB   = 7;
 
 // ---- steppage[] indices (Step Page — Behavior) ----
@@ -76,40 +76,38 @@ static const uint8_t kDirnRev  = 1;
 static const uint8_t kDirnPend = 2;
 static const uint8_t kDirnRnd  = 3;
 
-// ---- config[] indices (voice config — non-lockable; Normal Mode pages 1–3) ----
+// ---- config[] indices (voice config — non-lockable) ----
 static const uint8_t kCfgFREQ  = 0;   // filter cutoff
 static const uint8_t kCfgRES   = 1;   // filter resonance
 static const uint8_t kCfgTYPE  = 2;   // filter mode (LP/BP/HP)
 static const uint8_t kCfgDRIV  = 3;   // drive
 static const uint8_t kCfgBITS  = 4;   // bit reduction
-static const uint8_t kCfgLSHP  = 5;   // LFO shape
-static const uint8_t kCfgLFOD  = 6;   // LFO destination
-static const uint8_t kCfgLFOS  = 7;   // LFO speed
-static const uint8_t kCfgLFOA  = 8;   // LFO amount
-static const uint8_t kCfgLFOR  = 9;   // LFO reset mode
-static const uint8_t kCfgTRAK  = 10;  // pitch tracking
-static const uint8_t kCfgE1ATK = 11;  // Env1 (VCA) attack
-static const uint8_t kCfgE2ATK = 12;  // Env2 (filter) attack
-static const uint8_t kCfgE3ATK = 13;  // Env3 (pitch) attack
-static const uint8_t kCfgE1CRV = 14;  // Env1 curve
-static const uint8_t kCfgE2CRV = 15;  // Env2 curve
-static const uint8_t kCfgE3CRV = 16;  // Env3 curve
+static const uint8_t kCfgLSHP  = 5;   // LFO4 shape
+static const uint8_t kCfgLFO4D = 6;   // LFO4 destination
+static const uint8_t kCfgLFOS  = 7;   // LFO4 rate
+static const uint8_t kCfgLFO4A = 8;   // LFO4 amount
+static const uint8_t kCfgLFOR  = 9;   // LFO4 reset mode
+static const uint8_t kCfgTRAK  = 10;  // filter KB tracking
+static const uint8_t kCfgE1ATK = 11;  // Env1 attack
+static const uint8_t kCfgE2ATK = 12;  // Env2 attack
+static const uint8_t kCfgE3ATK = 13;  // Env3 attack
+static const uint8_t kCfgE1CRV = 14;  // Env1 decay curve (0=linear, 255=expo)
+static const uint8_t kCfgE2CRV = 15;  // Env2 decay curve
+static const uint8_t kCfgE3CRV = 16;  // Env3 decay curve
 static const uint8_t kCfgPHSE  = 17;  // oscillator phase reset on trigger
 static const uint8_t kCfgSMTH  = 18;  // portamento / smoothing
 // config[19]: reserved
-static const uint8_t kCfgOSC1R = 20;  // osc1 range (semitone transpose)
+static const uint8_t kCfgOSC1R = 20;  // osc1 range
 static const uint8_t kCfgOSC2R = 21;  // osc2 range
 static const uint8_t kCfgOSC2D = 22;  // osc2 detune
 static const uint8_t kCfgFMOP  = 23;  // FM/crossmod operator mode
 static const uint8_t kCfgFUZZ  = 24;  // fuzz
-static const uint8_t kCfgE1SUS = 25;  // Env1 sustain
-static const uint8_t kCfgE1REL = 26;  // Env1 release
-static const uint8_t kCfgE2SUS = 27;  // Env2 sustain
-static const uint8_t kCfgE2REL = 28;  // Env2 release
-static const uint8_t kCfgE3SUS = 29;  // Env3 sustain
-static const uint8_t kCfgE3REL = 30;  // Env3 release
+static const uint8_t kCfgE1DEPT = 25; // ENV1→VCA depth (mod slot 10 amount)
+static const uint8_t kCfgE2DEPT = 26; // ENV2→VCF depth (filter_env)
+static const uint8_t kCfgE3DEPT = 27; // ENV3→pitch depth (mod slot 2 amount)
+static const uint8_t kCfgWSUB  = 28;  // sub-osc waveform shape
 
-static const uint8_t kCfgSIZE  = 31;
+static const uint8_t kCfgSIZE  = 29;
 
 // ---- shadow[] indices (transient playhead state; zeroed on Reset/load) ----
 static const uint8_t kShdwSTEP = 0;  // next step index to fire (0–7)
@@ -118,36 +116,20 @@ static const uint8_t kShdwREPT = 2;  // step repeats remaining (Phase 5)
 static const uint8_t kShdwSSUB = 3;  // sub-step position (Phase 5)
 static const uint8_t kShdwDIR  = 4;  // pendulum direction: 0=fwd, 1=rev
 
-// ---- mod[] layout: 2 slots × 4 bytes: { src_track, dst_track, type, amount } ----
-static const uint8_t kModSRC     = 0;
-static const uint8_t kModDST     = 1;
-static const uint8_t kModTYPE    = 2;
-static const uint8_t kModAMT     = 3;
-
-static const uint8_t kModTXpose1 = 0;   // transpose Osc 1
-static const uint8_t kModTXpose2 = 1;   // transpose Osc 2
-static const uint8_t kModClock   = 2;
-static const uint8_t kModReset   = 3;
-static const uint8_t kModAccent  = 4;
-static const uint8_t kModNone    = 0xff;
-
-// SeqTrack — sizeof(SeqTrack) bytes per track (232+8+24+kCfgSIZE+5+8).
-// defaults[N]: default value for lockable param N (live knob position in Seq Mode).
-//   defaults[0..7] = page1, [8..15] = page2, [16..23] = steppage.
-// config[kCfgSIZE]: voice config (filter, LFO, env attacks/sustains/releases, osc range/detune/FM/fuzz).
-// shadow[5]:  transient playhead; zeroed on Reset.
-// mod[8]:     2 outgoing mod relationship slots (Phase 9).
+// SeqTrack — 232+8+24+kCfgSIZE+5 bytes per track.
+// defaults[N]: default value for lockable param N.
+//   defaults[0..7] = page1, [8..15] = page2 (E1DEC/REL/E2DEC/REL/E3DEC/REL/NOIS/SUB), [16..23] = steppage.
+// config[kCfgSIZE]: voice config (filter, LFO4, env ATK/CRV/DEPT, osc, mixer).
+// shadow[5]: transient playhead; zeroed on Reset.
+// Mod matrix routing is fixed; only amounts (at Patch bytes 58/72/73/82) live in config[].
 struct SeqTrack {
-  SeqStep steps[8];      // 232 bytes
-  uint8_t pattern[8];    // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, BPCH, OLEV
-  uint8_t defaults[24];  // default value per lockable param
+  SeqStep steps[8];          // 232 bytes
+  uint8_t pattern[8];        // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, BPCH, OLEV
+  uint8_t defaults[24];      // default value per lockable param
   uint8_t config[kCfgSIZE];  // voice config
-  uint8_t shadow[5];     // transient playhead state
-  uint8_t mod[8];        // 2 mod slots (Phase 9)
+  uint8_t shadow[5];         // transient playhead state
 };
 
-// SeqGlobal — 32 bytes of global settings and mod matrix.
-// mod[16]: 4 globally-active mod relationships × 4 bytes (Phase 9).
 struct SeqGlobal {
   uint8_t transport;     // kSeqStopped / kSeqPlaying / kSeqPaused
   uint8_t hold_mode;     // 0=Voltage Block, 1=Elektron
@@ -155,8 +137,6 @@ struct SeqGlobal {
   uint8_t active_track;  // 0–5
   uint8_t lock_page;     // 0=Voice1, 1=Voice2, 2=Step
   uint8_t held_step;     // 0xff=none; step index during parameter lock edit
-  uint8_t mod[16];       // 4 global mod slots × 4 bytes (Phase 9)
-  uint8_t _reserved[10]; // pad to 32 bytes
 };
 
 static const uint8_t kSeqStopped = 0;
@@ -186,6 +166,7 @@ class Sequencer {
 };
 
 extern Sequencer sequencer;
+extern const uint8_t kDefaultMod[42];
 
 }  // namespace ambika
 

@@ -38,7 +38,7 @@ uint8_t MultiPage::OnIncrement(int8_t increment) {
 uint8_t MultiPage::OnPot(uint8_t index, uint8_t value) {
   if (index == 0) {
     uint8_t bpm = 40 + static_cast<uint8_t>(
-        (static_cast<uint16_t>(value) * 200) >> 7);
+        (static_cast<uint16_t>(value < 127 ? value : 128) * 200) >> 7);
     multi.SetValue(PRM_MULTI_CLOCK_BPM, bpm);
     return 1;
   }
@@ -91,6 +91,7 @@ void MultiPage::UpdateLeds() {
     leds.set_pixel(LED_STATUS, 0x0f);
     leds.set_pixel(LED_2, 0x0f);
   }
+  leds.set_pixel(LED_8, 0xf0);
 }
 
 }  // namespace ambika

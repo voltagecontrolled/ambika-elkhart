@@ -131,8 +131,6 @@ class Part {
   const uint8_t* raw_sequence_data() const { return NULL; }
   uint8_t* mutable_raw_sequence_data() { return NULL; }
 
-  uint8_t lfo_value(uint8_t) const { return 0; }
-
   uint8_t flags() const { return flags_; }
   void ClearFlag(uint8_t flag) { flags_ &= ~flag; }
 

@@ -66,7 +66,7 @@ class Envelope {
   inline void Update(
       uint8_t attack,
       uint8_t decay,
-      uint8_t sustain,
+      uint8_t curve,
       uint8_t release) {
     stage_phase_increment_[ATTACK] = ResourcesManager::Lookup<
         uint16_t, uint8_t>(lut_res_env_portamento_increments, attack);
@@ -74,8 +74,9 @@ class Envelope {
         uint16_t, uint8_t>(lut_res_env_portamento_increments, decay);
     stage_phase_increment_[RELEASE] = ResourcesManager::Lookup<
         uint16_t, uint8_t>(lut_res_env_portamento_increments, release);
-    stage_target_[DECAY] = sustain << 1;
-    stage_target_[SUSTAIN] = stage_target_[DECAY];
+    stage_target_[DECAY] = 0;
+    stage_target_[SUSTAIN] = 0;
+    curve_ = curve;
   }
 
   uint8_t Render() {
@@ -85,7 +86,10 @@ class Envelope {
       Trigger(++stage_);
     }
     if (phase_increment_) {
-      uint8_t step = InterpolateSample(wav_res_env_expo, phase_);
+      uint8_t expo = InterpolateSample(wav_res_env_expo, phase_);
+      uint8_t step = (stage_ == DECAY || stage_ == RELEASE)
+          ? U8Mix(static_cast<uint8_t>(phase_ >> 8), expo, curve_)
+          : expo;
       value_ = U8MixU16(a_, b_, step);
     }
     return value_ >> 8;
@@ -109,6 +113,8 @@ class Envelope {
 
   // Current value of the envelope.
   uint16_t value_;
+
+  uint8_t curve_;
 
   DISALLOW_COPY_AND_ASSIGN(Envelope);
 };

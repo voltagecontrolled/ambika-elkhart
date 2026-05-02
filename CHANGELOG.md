@@ -8,6 +8,67 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 
 ## [Unreleased]
 
+### Phase 5 — Voice Parameter System & Envelope Redesign (2026-05-02)
+
+**Flash result:** 43,224B (66.0% of 64KB), up ~1,810B from Phase 4.
+**RAM:** 3,462B used, 634B free. kSystemVersion = 0x20 on both controller and voicecard.
+
+**Architectural pivot:** LPG macro (LPGD/LPGA/LPGO) from SPEC_v2 was not implemented. Instead: three independent ADR+Curve envelopes with fixed routing, LFO1/2/3 removed from controller side (LFO4 voice-side only), `patch_mod[]` removed from SeqTrack (saves 252B), fixed routing table in PROGMEM replaces the per-track mod matrix shadow.
+
+#### voicecard/envelope.h — ADR+Curve (no sustain)
+
+- `stage_target_[DECAY]` and `stage_target_[SUSTAIN]` both set to 0; decay always falls to zero.
+- `curve_` blends linear (`phase_>>8`) with exponential (`wav_res_env_expo`) via `U8Mix` for DECAY and RELEASE stages only. ATTACK stays exponential.
+- Sustain byte in voicecard Patch struct repurposed as `curve_`.
+
+#### controller/sequencer.h — SeqTrack restructuring
+
+- `patch_mod[42]` removed (saves 252B across 6 tracks).
+- `config[kCfgSIZE=29]`: voice-wide non-lockable settings (filter FREQ/RES/TYPE, osc ranges OSC1R/OSC2R/OSC2D, LFO4 LSHP/LFOS/LFO4D/LFO4A/LFOBYR, env ATK/CRV/DEPT × 3, E2DEPT, misc FUZZ/BITS/WSUB/FMOP/TRAK).
+- `defaults[24]`: default lockable params (`page1[8]` + `page2[8]` + `steppage[8]`). SeqStep.page2[] reordered: E1DEC/E1REL/E2DEC/E2REL/E3DEC/E3REL/NOIS/SUB.
+- `kP1XXX`, `kP2XXX`, `kCfgXXX` enums added for type-safe indexing.
+
+#### controller/part.cc — Part rewired to SeqTrack
+
+- `PatchAddrToSeqField()`: maps Patch byte offsets to SeqTrack fields. OSC page (0–7), Mixer (8–15), Filter (16–18, 22), EG ATK/DEC/CRV/REL × 3 (24–43), LFO4 (48–49), fixed routing amounts (58, 72, 73, 82), filter tracking (105), virtual EG depth (200–202).
+- `GetValue()`: reads SeqTrack field via the map.
+- `SetValue()`: translates virtual addresses (200→82, 201→22, 202→58) before voicecard write, then writes SeqTrack field.
+- `Touch()`: sends `kDefaultMod[42]` from PROGMEM (fixed routing base), then iterates `kSyncAddresses[]` to push all voice config to voicecard.
+
+#### Fixed mod routing (kDefaultMod PROGMEM)
+
+- Slot 2: ENV3 → OSC_1_2_COARSE (E3DEPT, default 0)
+- Slot 7: LFO4 → configurable dest/amount (LFO4D/LFO4A)
+- Slot 10: ENV1 → VCA (E1DEPT, default 63 = full)
+- Slot 11: VELOCITY → VCA
+- Slot 12: PITCHBEND → coarse pitch
+- ENV2→VCF: hardcoded in voicecard `voice.cc` `filter_env` path (E2DEPT)
+
+#### controller/resources.h / resources.cc — manually added strings
+
+- STR_RES_EG=382, STR_RES_DEPT=383, STR_RES_DEPTH=384, STR_RES_AMP=385, STR_RES_FLT=386, STR_RES_PCH=387
+
+#### controller/parameter.h / parameter.cc — EG parameter system
+
+- `UNIT_EG_SELECT` added to `Unit` enum. `PrintValue` looks up `STR_RES_AMP + value` → "amp"/"flt"/"pch".
+- `kNumParameters` bumped from 75 to 76.
+- Param 24 changed from UNIT_INDEX to UNIT_EG_SELECT, short name STR_RES_EG.
+- Param 75 (new): EG depth, PARAMETER_LEVEL_PATCH, offset 200, 3 instances, stride 1, indexed by PRM_UI_ACTIVE_ENV_LFO.
+
+#### controller/ui.cc — PAGE_ENV_LFO layout
+
+- Changed from `{ 24, 25, 26, 28, 27, 0xff, 0xff, 0xff }` to `{ 24, 0xff, 0xff, 75, 25, 26, 27, 28 }`.
+- Top: EG selector ("amp"/"flt"/"pch"), empty, empty, EG depth.
+- Bottom: attack, decay, curve, release.
+
+#### Known issues
+
+- **EEPROM incompatible:** SeqTrack layout changed. Force-reset required on first boot (hold button during power-on) after flashing v2.0.
+- **LFO4 dest/amount (params 72/73) not on any UI page yet:** PatchAddrToSeqField maps them but no page displays them.
+- **Step parameter locks not yet applied during playback:** lock_flags/page1/page2 fields exist but FireStep() doesn't apply them.
+
+---
+
 ### Phase 4 — Transport UI (2026-05-01)
 
 **Flash result:** 41,414B (63% of 64KB), up from 41,414B — +776B for MultiPage.

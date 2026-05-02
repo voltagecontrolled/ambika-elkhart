@@ -29,13 +29,13 @@ static const prog_uint8_t kDefaultPage1[] PROGMEM = {
 };
 
 static const prog_uint8_t kDefaultPage2[] PROGMEM = {
-  128,  // LPGD = medium decay
-  0,    // LPGA = no filter envelope
-  64,   // LPGO = center (vactrol-like spread)
+  40,   // E1DEC = env1 decay (matches init_patch)
+  60,   // E1REL = env1 release
+  40,   // E2DEC
+  60,   // E2REL
+  40,   // E3DEC
+  60,   // E3REL
   0,    // NOIS = no noise
-  64,   // PITD = medium pitch env decay
-  64,   // PITA = center (no pitch env amount)
-  0,    // WAVE_sub = none
   0,    // SUB = no sub-osc
 };
 
@@ -56,32 +56,48 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // TYPE = LP mode
   0,    // DRIV = no drive
   0,    // BITS = no bit reduction
-  0,    // LSHP = triangle LFO
-  0,    // LFOD = destination: pitch
-  128,  // LFOS = medium speed
-  0,    // LFOA = no LFO amount
+  0,    // LSHP = triangle LFO4 shape
+  0,    // LFO4D = destination: PARAMETER_1
+  128,  // LFOS = medium LFO4 rate
+  0,    // LFO4A = no LFO4 amount
   0,    // LFOR = free-run
-  0,    // TRAK = no pitch tracking
-  0,    // E1ATK = fast Env1 attack
-  0,    // E2ATK = fast Env2 attack
-  0,    // E3ATK = fast Env3 attack
-  0,    // E1CRV = linear curve
-  0,    // E2CRV = linear curve
-  0,    // E3CRV = linear curve
+  0,    // TRAK = no KB tracking
+  0,    // E1ATK = fast attack
+  0,    // E2ATK = fast attack
+  0,    // E3ATK = fast attack
+  192,  // E1CRV = strongly exponential decay curve
+  192,  // E2CRV
+  192,  // E3CRV
   0,    // PHSE = no phase reset
   0,    // SMTH = no portamento
   0,    // reserved
-  0,    // OSC1R = osc1 range 0
-  0,    // OSC2R = osc2 range 0
-  0,    // OSC2D = osc2 detune center
-  0,    // FMOP = no FM crossmod
+  0,    // OSC1R = 0
+  0,    // OSC2R = 0
+  0,    // OSC2D = center
+  0,    // FMOP = no FM
   0,    // FUZZ = no fuzz
-  20,   // E1SUS = Env1 sustain (matches init_patch)
-  60,   // E1REL = Env1 release
-  20,   // E2SUS = Env2 sustain
-  60,   // E2REL = Env2 release
-  20,   // E3SUS = Env3 sustain
-  60,   // E3REL = Env3 release
+  63,   // E1DEPT = ENV1→VCA full depth
+  63,   // E2DEPT = ENV2→VCF depth (matches init_patch filter_env)
+  0,    // E3DEPT = ENV3→pitch depth (default off)
+  0,    // WSUB = WAVEFORM_SUB_OSC_SQUARE_1
+};
+
+// Fixed mod routing sent by Part::Touch() — amounts at bytes 58/72/73/82 come from config[].
+const prog_uint8_t kDefaultMod[42] PROGMEM = {
+  0, 0, 0,    // slot  0: cleared
+  0, 0, 0,    // slot  1: cleared
+  2, 4, 0,    // slot  2: ENV_3 → OSC_1_2_COARSE (pitch depth, amount from E3DEPT)
+  0, 0, 0,    // slot  3: cleared
+  0, 0, 0,    // slot  4: cleared
+  0, 0, 0,    // slot  5: cleared
+  0, 0, 0,    // slot  6: cleared
+  6, 0, 0,    // slot  7: LFO_4 → dest/amount from LFO4D/LFO4A
+  11, 0, 0,   // slot  8: SEQ_1 → PARAMETER_1
+  12, 1, 0,   // slot  9: SEQ_2 → PARAMETER_2
+  0, 18, 63,  // slot 10: ENV_1 → VCA (amount from E1DEPT)
+  14, 18, 0,  // slot 11: VELOCITY → VCA
+  16, 4, 0,   // slot 12: PITCH_BEND → OSC_1_2_COARSE
+  0, 0, 0,    // slot 13: cleared
 };
 
 static const prog_uint8_t kDefaultPattern[] PROGMEM = {
@@ -115,7 +131,6 @@ void Sequencer::Init() {
     memcpy_P(&tr.defaults[16], kDefaultStepPage, 8);
     memcpy_P(tr.config,        kDefaultConfig,   kCfgSIZE);
     memset(tr.shadow, 0, 5);
-    memset(tr.mod,    kModNone, 8);
   }
   global_.transport    = kSeqStopped;
   global_.hold_mode    = 0;
@@ -123,8 +138,6 @@ void Sequencer::Init() {
   global_.active_track = 0;
   global_.lock_page    = 0;
   global_.held_step    = 0xff;
-  memset(global_.mod,       kModNone, 16);
-  memset(global_._reserved, 0,        10);
 }
 
 void Sequencer::Clock(uint8_t ticks) {

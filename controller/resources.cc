@@ -381,6 +381,12 @@ static const prog_char str_res_chandradeep[] PROGMEM = "chandradeep";
 static const prog_char str_res_kaushik_todi[] PROGMEM = "kaushik todi";
 static const prog_char str_res_jogeshwari[] PROGMEM = "jogeshwari";
 static const prog_char str_res_rasia[] PROGMEM = "rasia";
+static const prog_char str_res_eg[] PROGMEM = "eg";
+static const prog_char str_res_dept[] PROGMEM = "dept";
+static const prog_char str_res_depth[] PROGMEM = "depth";
+static const prog_char str_res_amp[] PROGMEM = "amp";
+static const prog_char str_res_flt[] PROGMEM = "flt";
+static const prog_char str_res_pch[] PROGMEM = "pch";
 
 
 PROGMEM const prog_char* const string_table[] = {
@@ -766,6 +772,12 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_kaushik_todi,
   str_res_jogeshwari,
   str_res_rasia,
+  str_res_eg,
+  str_res_dept,
+  str_res_depth,
+  str_res_amp,
+  str_res_flt,
+  str_res_pch,
 };
 
 const prog_uint16_t lut_res_lfo_increments[] PROGMEM = {

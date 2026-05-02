@@ -244,14 +244,8 @@ void ParameterEditor::UpdateScreen() {
 /* static */
 void ParameterEditor::UpdateLeds() {
   UiPage::UpdateLeds();
-  if (info_->index == PAGE_ENV_LFO) {
-    uint8_t current_lfo_value = multi.part(ui.state().active_part).lfo_value(
-        ui.state().active_env_lfo);
-    leds.set_pixel(LED_STATUS, current_lfo_value & 0xf0);
-  } else {
-    if (multi.running() && (multi.step() & 3) == 0) {
-      leds.set_pixel(LED_STATUS, 0xf0);
-    }
+  if (multi.running() && (multi.step() & 3) == 0) {
+    leds.set_pixel(LED_STATUS, 0xf0);
   }
 }
 

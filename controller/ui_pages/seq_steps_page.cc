@@ -43,10 +43,7 @@ uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
 uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   if (index != 0) return 0;
   uint8_t track = ui.state().active_part;
-  // C2 (36) to B6 (95): 60-note range across pot sweep
-  uint8_t note = 36 + static_cast<uint8_t>(
-      (static_cast<uint16_t>(value) * 60) >> 8);
-  sequencer.mutable_track(track)->defaults[kP1NOTE] = note;
+  sequencer.mutable_track(track)->defaults[kP1NOTE] = value;
   return 1;
 }
 
@@ -59,13 +56,13 @@ uint8_t SeqStepsPage::OnKey(uint8_t key) {
   return 1;
 }
 
-// Write 3-char note name at buf: natural="C 4", sharp="C#4".
+// Write 3-char note name at buf: natural="C 4", sharp="C#4", sub-octave "C-1"→"C -".
 static void WriteNoteName(char* buf, uint8_t note) {
   uint8_t semi = note % 12;
-  uint8_t oct  = note / 12 - 1;  // standard MIDI: C4=60, octave=4
+  int8_t  oct  = static_cast<int8_t>(note / 12) - 1;
   buf[0] = pgm_read_byte(kNoteNames + semi * 2);
   buf[1] = pgm_read_byte(kNoteNames + semi * 2 + 1);
-  buf[2] = '0' + oct;
+  buf[2] = (oct < 0) ? '-' : ('0' + oct);
 }
 
 /* static */

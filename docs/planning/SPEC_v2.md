@@ -1,5 +1,13 @@
 # Ambika Percussive Synth — Firmware Spec (Elkhart, YAM-based)
 
+> ⚠️ **ASPIRATIONAL — DOES NOT MATCH IMPLEMENTATION.** This spec describes the
+> originally-intended LPG-macro architecture (LPGD/LPGA/LPGO, FG-A/FG-B coupling,
+> PITD/PITA pitch envelope). The shipped v2.0 architecture diverged: three independent
+> ADR+Curve envelopes (no sustain), fixed mod routing, LFO1/2/3 removed from the
+> controller side, `patch_mod[]` removed from `SeqTrack`. **For the as-built design,
+> read `../../CHANGELOG.md` first.** Use this file only as historical reference for
+> design intent, or as a target to converge toward when scope allows.
+
 ## Project Overview
 
 Fork of YAM (`bjoeri/ambika`, "Yet Another Mutation") to create a **6-voice polymetric percussive synthesizer** with per-step parameter locks, an LPG-coupled amp+filter envelope plus an independent pitch envelope, an FM-capable dual oscillator, and a transient layer. The design philosophy prioritizes **constrained playability over feature depth** — inspired by instruments like Fors Dyad, where limited but well-chosen parameters create a more engaging instrument than exhaustive control.
@@ -103,6 +111,8 @@ Two parameters expose this layer (both per-step lockable on Voice Page 2):
 - **`SUB`:** Sub-osc level mixed into the main signal path.
 
 ### Envelopes — LPG-Coupled Amp+Filter, Independent Pitch
+
+> **v2.0 implementation note:** The LPG macro (LPGD/LPGA/LPGO) described below was **not implemented**. The actual v2.0 architecture uses three independent ADR+Curve envelopes (no sustain) with fixed routing: ENV1→VCA (amount=E1DEPT), ENV2→VCF (hardcoded in `voice.cc` `filter_env` path, amount=E2DEPT), ENV3→pitch (mod slot 2, amount=E3DEPT). Attack, curve, and depth are voice-wide config; decay and release are per-step lockable. See `CHANGELOG.md` for as-built details.
 
 Three envelope instances internally, but **Env1 (VCA) and Env2 (Filter) are coupled through an LPG macro**. Env3 (Pitch) is fully independent. Re-introduces the LPG concept dropped from earlier YAM-spec drafts, motivated by the realization that lockable filter cutoff is unnecessary if the LPG mechanic provides per-step filter variation through depth and decay-personality controls.
 

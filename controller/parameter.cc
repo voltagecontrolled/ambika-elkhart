@@ -58,6 +58,8 @@ static const prog_uint16_t units_definitions[UNIT_LAST] PROGMEM = {
   STR_RES_SWING,      // UNIT_GROOVE_TEMPLATE
   STR_RES_____,       // UNIT_MIDI_IN_MASK
   STR_RES_THRU,       // UNIT_MIDI_OUT_MODE
+  0,                  // UNIT_MIDI_CHANNEL (handled inline)
+  STR_RES_AMP,        // UNIT_EG_SELECT
 };
 
 static const prog_char note_names[] PROGMEM = " CC# DD# E FF# GG# AA# B";
@@ -526,9 +528,9 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
   // 24
   { PARAMETER_LEVEL_UI,
     PRM_UI_ACTIVE_ENV_LFO,
-    UNIT_INDEX, 0, 2,
+    UNIT_EG_SELECT, 0, 2,
     1, 0, 0xff, 0xff,
-    STR_RES_LFO_EG, STR_RES_LFO_EG, 0 },
+    STR_RES_EG, STR_RES_LFO_EG, 0 },
   
   // 25
   { PARAMETER_LEVEL_PATCH,
@@ -880,6 +882,13 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     UNIT_INT8, -63, 63,
     1, 0, 0xff, 109,
     STR_RES_KEYBTVCF, STR_RES_KEYBTVCF, STR_RES_FILTER_1 },
+
+  // 75: EG depth — indexed by active_env_lfo; virtual addr 200/201/202
+  { PARAMETER_LEVEL_PATCH,
+    200,
+    UNIT_UINT8, 0, 63,
+    3, 1, PRM_UI_ACTIVE_ENV_LFO, 0xff,
+    STR_RES_DEPT, STR_RES_DEPTH, STR_RES_ENVELOPE },
 };
 
 /* static */
