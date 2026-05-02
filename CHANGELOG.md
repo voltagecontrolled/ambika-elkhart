@@ -88,6 +88,23 @@ allocator, arpeggiator, groove table, and dead UI pages.
 - Added `#include <avr/pgmspace.h>` — `patch.h` uses `PROGMEM` in its typedef but
   relied on transitive inclusion from headers we removed. Now self-contained.
 
+#### Known issues introduced or exposed by this phase
+
+- **`common/patch.h` missing pgmspace** (fixed): any header that uses `PROGMEM` in a
+  typedef and relies solely on `avrlib/base.h` will break if its transitive include
+  chain is shortened. Check for this pattern before stripping more includes.
+- **`avrlib/random.h` not in `part.cc`** (fixed): `Random::GetByte()` was only
+  reachable via the old `part.h` → `common/lfo.h` transitive chain. Now explicit.
+- **`midi::kAllSoundOff` / `midi::kAllNotesOff` don't exist** (fixed): `midi/midi.h`
+  has no named constants for CC 120/123. Replaced with raw values `0x78` / `0x7b` in
+  `part.cc`. If the MIDI library grows these constants, consolidate.
+- **`controller/voice_allocator.cc` is dead code**: still in PACKAGES and links, but
+  nothing calls it. Safe to remove from PACKAGES once confirmed no references remain.
+- **`PAGE_MULTI` is a fully-dead stub**: exists only to hold group-numbering. Can be
+  collapsed once the sequencer page absorbs its slot.
+- **Ch 10 base pitch hardcoded to middle C** (`multi.cc:101`): drum map fires all
+  voices at MIDI note 60. Should eventually derive from the voice's stored `NOTE`.
+
 ---
 
 ### Earlier work (doc and spec commits, pre-Phase 2)
