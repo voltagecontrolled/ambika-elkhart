@@ -14,7 +14,7 @@
 
 Elkhart is a 6-voice percussive synthesizer with a polymetric step sequencer. Each voice is independent — its own oscillator stack, filter, and envelopes — and each track has its own pattern that runs at its own length and clock division. The primary expressive dimensions are the tension between locked and unlocked steps and the rhythmic relationships that emerge when six independent step lengths and clock divisions interact.
 
-Each voice runs the same signal chain: **two oscillators** drawn from a wide algorithm palette (sines, vowels, FM, wavetables, more), with an interaction control that crossfades or FMs them; a **sub-oscillator and transient layer** providing both traditional sub-bass reinforcement and transient hits (clicks, pops, blows, glitches, metallic); a **multimode SVF filter** with drive and bit-reduction; and **three independent envelopes** routed to amplitude, filter cutoff, and pitch.
+Each voice runs the same signal chain: **two oscillators** drawn from a wide algorithm palette (sines, vowels, FM, wavetables, more), with an interaction control that crossfades or FMs them; a **sub-oscillator and transient layer** providing both traditional sub-bass reinforcement and transient hits (clicks, pops, blows, glitches, metallic); a **multimode SVF filter** with drive and bit-reduction; an **LPG-coupled amp+filter envelope** controlled by three macro knobs (decay, depth, personality offset); and an **independent pitch envelope** for transients and pitch sweeps.
 
 There are no dedicated drum voice types. The same voice that makes a plonky kick makes a metallic hi-hat via different oscillator algorithm, ratio, filter mode, envelope decay, and transient choice.
 
@@ -212,9 +212,9 @@ Envelope decays/amounts, noise, sub-osc.
 
 | Knob | Name | Description |
 |------|------|-------------|
-| Top 1 | `FLTD` Filter Env Decay | Env2 fall time. |
-| Top 2 | `FLTA` Filter Env Amount | How strongly Env2 modulates the cutoff. |
-| Top 3 | `VCAD` VCA Env Decay | Env1 fall time — the primary "decay" knob for percussion. |
+| Top 1 | `LPGD` LPG Decay | Anchor decay time. Drives the VCA envelope (Env1) directly and the filter envelope (Env2) with `LPGO`-derived offset. The primary "decay" knob for percussion. |
+| Top 2 | `LPGA` LPG Amount | How strongly the LPG opens/closes the filter. At 0, filter is static at the voice-config `FREQ` value. At max, full LPG sweep. |
+| Top 3 | `LPGO` LPG Offset | Bipolar personality macro. Center = vactrol-like (filter slightly faster than amp). CCW = plucky (filter much faster). CW = looser/resonant tail (filter holds longer). |
 | Top 4 | `NOIS` Noise Amount | White noise mixed into the main signal path. |
 | Bot 1 | `PITD` Pitch Env Decay | Env3 fall time. |
 | Bot 2 | `PITA` Pitch Env Amount | Env3 → carrier pitch (bipolar — positive sweeps up to base, negative sweeps down to base). |
@@ -306,21 +306,32 @@ Hold a step → the playhead **keeps running**. Knob turns write lock values to 
 └────────┘                                 │ + NOIS  │    └────┬─────┘
                                            └─────────┘         ▲
                                                                │
-                                                          Env2 (Filter, FLTA-scaled)
+                                                          Env2 (Filter, LPGA-scaled)
+                                                          (LPGD × LPGO)
 
-Env3 (Pitch) ──▶ Osc 1 base pitch (PITA-scaled, PITD time)
+Env3 (Pitch) ──▶ Osc 1 base pitch (PITA-scaled, PITD time) — independent
 LFO          ──▶ voice-config target
 ```
 
-### Three Independent Envelopes
+### Envelopes — LPG-Coupled Amp+Filter, Independent Pitch
 
-Three envelopes with fixed routing:
+Three envelopes, but **Env1 (VCA) and Env2 (Filter) are coupled through an LPG macro**. Env3 (Pitch) is fully independent.
 
-- **Env1 (VCA):** Shapes the output amplitude. Decay time is `VCAD`, lockable per step. Always-on; always shapes the level.
-- **Env2 (Filter):** Modulates the SVF cutoff. Decay time is `FLTD`; depth is `FLTA`. Setting `FLTA` to 0 makes the filter static — only the cutoff knob matters. Setting `FLTA` high makes Env2 sweep the filter up and back down.
-- **Env3 (Pitch):** Modulates Osc 1's base pitch. Decay time is `PITD`; depth is `PITA`. Bipolar — positive `PITA` sweeps pitch up to base; negative sweeps down to base. Used for kick thump, tom sweep, click attack.
+- **Env1 (VCA):** Shapes the output amplitude. Always-on. Decay time is set by `LPGD`.
+- **Env2 (Filter):** Modulates the SVF cutoff. Decay time is `LPGD` modified by `LPGO`'s offset; depth is `LPGA`. Setting `LPGA` to 0 makes the filter static at the cutoff knob value. Setting `LPGA` high makes Env2 sweep the filter.
+- **Env3 (Pitch):** Modulates Osc 1's base pitch. Decay is `PITD`; depth is `PITA` (bipolar — positive sweeps up to base, negative sweeps down to base). Independent of the LPG macro. Used for kick thump, tom sweep, click attack.
 
-Envelope curves are baked-in per envelope (different shapes suit each routing). Cross-coupling between envelopes is intentionally absent — set each independently. To approximate a vactrol-LPG character: set `VCAD` longer than `FLTD` with `FLTA` non-zero — the filter closes faster than the level decays, mimicking the spectral evolution of an LPG without the offset machinery from the prior Carcosa-based design.
+The three LPG macro knobs:
+
+- **`LPGD` (LPG Decay):** Anchor decay time. The most-tweaked per-step envelope knob.
+- **`LPGA` (LPG Amount):** Filter env depth. 0 = filter is static; max = full sweep.
+- **`LPGO` (LPG Offset):** Bipolar personality macro:
+  - **Center:** typical vactrol-like — filter decays slightly faster than amp.
+  - **CCW:** more plucky — filter closes much faster than amp; highs vanish well before body fades.
+  - **CW:** looser/resonant tail — filter holds longer than amp.
+  - At extremes, `LPGO` may also shift envelope curve and dial in a small filter Q to enhance the personality.
+
+Envelope curves are baked-in per envelope and tuned for the LPG behavior at center `LPGO`. There is no separate VCA decay or filter decay knob — the macro structure is intentional: one decay (LPGD), one personality knob (LPGO), one amount (LPGA).
 
 ### The BLND Knob
 
@@ -424,9 +435,9 @@ LFO and envelope amount/curve voice-level settings. Final knob layout TBD in Pha
 
 | Abbrev | Name | Voice Default From |
 |--------|------|--------------------|
-| `FLTD` | Filter Env Decay | Page 3 (TBD slot) |
-| `FLTA` | Filter Env Amount | Page 3 (TBD slot) |
-| `VCAD` | VCA Env Decay | Page 3 (TBD slot) |
+| `LPGD` | LPG Decay | Page 3 (TBD slot) |
+| `LPGA` | LPG Amount | Page 3 (TBD slot) |
+| `LPGO` | LPG Offset | Page 3 (TBD slot) |
 | `NOIS` | Noise Amount | Page 1 (TBD location) or Page 3 |
 | `PITD` | Pitch Env Decay | Page 3 (TBD slot) |
 | `PITA` | Pitch Env Amount | Page 3 (TBD slot) |

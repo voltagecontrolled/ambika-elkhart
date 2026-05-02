@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Fork of YAM (`bjoeri/ambika`, "Yet Another Mutation") to create a **6-voice polymetric percussive synthesizer** with per-step parameter locks, three independent envelopes, an FM-capable dual oscillator, and a transient layer. The design philosophy prioritizes **constrained playability over feature depth** — inspired by instruments like Fors Dyad, where limited but well-chosen parameters create a more engaging instrument than exhaustive control.
+Fork of YAM (`bjoeri/ambika`, "Yet Another Mutation") to create a **6-voice polymetric percussive synthesizer** with per-step parameter locks, an LPG-coupled amp+filter envelope plus an independent pitch envelope, an FM-capable dual oscillator, and a transient layer. The design philosophy prioritizes **constrained playability over feature depth** — inspired by instruments like Fors Dyad, where limited but well-chosen parameters create a more engaging instrument than exhaustive control.
 
 A prior iteration of this spec was Carcosa-based and committed to a West Coast complex oscillator. After hardware listening, that direction was abandoned in favor of YAM's broader oscillator palette plus a future wavefolder addition. The sequencer, parameter-lock system, polymetric track relationships, transport, and envelope architecture are the original contribution; the voice engine is YAM with targeted modifications.
 
@@ -50,7 +50,8 @@ Each voice card runs the same signal chain. All timbral variety comes from param
                                              └─────────┘         ▲
                                                                  │
                                                             Env2 (Filter)
-                                                            FLTA-scaled
+                                                            LPGA-scaled
+                                                            (LPGD × LPGO)
 
            Env3 (Pitch) ──▶ Osc 1 base pitch (PITA-scaled, PITD time)
            LFO          ──▶ voice-config target (non-lockable in v1)
@@ -101,30 +102,41 @@ Two parameters expose this layer (both per-step lockable on Voice Page 2):
 - **`WAVE` (sub):** Selects the sub-osc shape. Switching between traditional and transient shapes per step is a primary percussion-expressiveness tool.
 - **`SUB`:** Sub-osc level mixed into the main signal path.
 
-### Three Independent Envelopes
+### Envelopes — LPG-Coupled Amp+Filter, Independent Pitch
 
-Three envelope instances, each with a fixed routing. Decay times and (where applicable) amounts are per-step lockable; curves are baked-in per envelope. No cross-coupling — the LPG-emulation-via-decay-offsets approach from the prior Carcosa-based spec is dropped. A quasi-LPG character can be approximated empirically by setting `VCAD` longer than `FLTD` with `FLTA` non-zero.
+Three envelope instances internally, but **Env1 (VCA) and Env2 (Filter) are coupled through an LPG macro**. Env3 (Pitch) is fully independent. Re-introduces the LPG concept dropped from earlier YAM-spec drafts, motivated by the realization that lockable filter cutoff is unnecessary if the LPG mechanic provides per-step filter variation through depth and decay-personality controls.
 
-| Env | Fixed Routing | Per-step Lockable Params |
-|-----|---------------|--------------------------|
-| `Env1` (VCA) | Output amplitude | `VCAD` (decay) |
-| `Env2` (Filter) | SVF cutoff modulation | `FLTD` (decay), `FLTA` (amount) |
+| Env | Fixed Routing | Driven By |
+|-----|---------------|-----------|
+| `Env1` (VCA) | Output amplitude | `LPGD` (anchor decay) |
+| `Env2` (Filter) | SVF cutoff modulation | `LPGD` × `LPGO` (offset from Env1), depth = `LPGA` |
 | `Env3` (Pitch) | Osc 1 base pitch | `PITD` (decay), `PITA` (amount, bipolar) |
 
-VCA env amount is voice-config (always-on assumption: amplitude env always shapes output level).
+The three lockable LPG controls (Voice Page 2 top row, slots 1–3):
 
-In YAM stock, the envelopes are numbered with VCA on Env3. Phase 8 (Voice Engine Refinement) renumbers so VCA = Env1 to match the user mental model and natural editing order.
+- **`LPGD` (LPG Decay):** Shared anchor decay time. Drives Env1 directly; drives Env2 with `LPGO`-derived offset. Short = pluck. Long = pad-like.
+- **`LPGA` (LPG Amount):** How strongly Env2 modulates the filter cutoff. At `0`, the filter is static at the voice-config `FREQ` (env has no effect). At max, full LPG sweep. The Env1 amplitude path is unaffected by `LPGA` — it's purely the filter-side scaling.
+- **`LPGO` (LPG Offset):** Bipolar macro defining the personality of the LPG spread.
+  - **Center:** typical vactrol-like — filter decays slightly faster than amp.
+  - **CCW:** more plucky — filter closes much faster than amp; highs vanish well before body fades.
+  - **CW:** looser/resonant tail — filter holds longer than amp.
+  - At extremes, `LPGO` may also shift envelope curve and dial in a small amount of filter Q to enhance the personality (Phase 8 implementation detail).
+
+VCA env amount is implicit (always-on: amplitude env always shapes output level). Filter env amount is `LPGA`. There is no separate lockable `VCAD` or `FLTD` — both decays are derived from `LPGD` plus `LPGO`'s offset relationship.
+
+In YAM stock, the envelopes are numbered with VCA on Env3. Phase 8 (Voice Engine Refinement) renumbers so VCA = Env1 — which matches the user mental model and the LPG macro's structure (Env1 is the anchor, Env2 is offset from it).
 
 ### Filter Section
 
 The SVF provides simultaneous LP/BP/HP outputs; mode selects which output passes through.
 
-- **`FREQ` (Cutoff):** Base filter frequency. Voice-config.
-- **`RES` (Resonance):** SVF resonance. Voice-config.
+- **`FREQ` (Cutoff):** Base filter frequency. Voice-config. The LPG sweeps relative to this value; per-step variation comes from `LPGA` and `LPGO`, not from per-step `FREQ`.
+- **`RES` (Resonance):** SVF resonance. Voice-config. May receive a small offset from `LPGO` at extreme settings (Phase 8 implementation detail).
 - **`TYPE` (Mode):** LP/BP/HP. Voice-config (per Phase 1 open question — switching this mid-note may glitch).
-- **`FLTA` (Filter Env Amount):** Per-step lockable. How strongly Env2 modulates cutoff.
 - **`DRIV` (Drive):** Voice-config. Gain stage before SVF — adds saturation/grit at high levels.
 - **`BITS` (Bit Reduction):** Voice-config (TBD: candidate for lockable Page 3 if added later). Bit depth reduction pre-DAC.
+
+The filter envelope's amount and timing are controlled per step via `LPGA` and `LPGO` on Voice Page 2 — there is no separate `FLTA` knob.
 
 ### LFO
 
@@ -253,13 +265,13 @@ The primary timbre page — algorithm select, pitch relationship, interaction.
 
 ### Sequencer Voice Page 2 — Modulation (Lockable)
 
-Envelope decays/amounts, noise, sub-osc.
+LPG envelope macro, pitch envelope, noise, sub-osc.
 
 | Knob | Abbrev | Parameter | Notes |
 |------|--------|-----------|-------|
-| Top 1 | `FLTD` | Filter Env Decay | Env2 fall time |
-| Top 2 | `FLTA` | Filter Env Amount | Env2 → cutoff coupling depth |
-| Top 3 | `VCAD` | VCA Env Decay | Env1 fall time |
+| Top 1 | `LPGD` | LPG Decay | Anchor decay time. Drives Env1 directly; drives Env2 with `LPGO`-derived offset. |
+| Top 2 | `LPGA` | LPG Amount | Filter env depth. 0 = filter static at FREQ. |
+| Top 3 | `LPGO` | LPG Offset | Bipolar personality macro: CCW = plucky (filter much faster than amp), center = vactrol-like, CW = looser/resonant tail. |
 | Top 4 | `NOIS` | Noise Amount | White noise mixed into main path |
 | Bot 1 | `PITD` | Pitch Env Decay | Env3 fall time |
 | Bot 2 | `PITA` | Pitch Env Amount | Env3 → carrier pitch (bipolar) |
@@ -433,7 +445,7 @@ Stock YAM voicecard:                                     26,144 bytes
 - Strip wavequence (if not used):                           est.   -300 bytes
 - Strip vowel_2 (if dropped):                               est.   -150 bytes
 - Add wavefolder waveform (Phase 8):                        est.   +800 bytes
-- Refactor envelopes (3 instances, fixed curves):           est.   +300 bytes
+- Refactor envelopes (3 instances + LPG macro coupling):    est.   +400 bytes
 - Add NOTE byte to SPI snapshot path:                       est.   +100 bytes
 - Add transient layer routing (already infrastructure):     est.    +50 bytes
                                                            ────────
@@ -458,7 +470,7 @@ Trigger message:
   - Command byte:        1 byte  (TRIGGER_WITH_SNAPSHOT = 0x12)
   - Note (final pitch):  1 byte  (resolved by motherboard incl. mutate + track transpose)
   - Voice Page 1 params: 8 bytes (NOTE_default, WAVE1, PARA1, BLND, RTIO, WAVE2, PARA2, FINE)
-  - Voice Page 2 params: 8 bytes (FLTD, FLTA, VCAD, NOIS, PITD, PITA, WAVE_sub, SUB)
+  - Voice Page 2 params: 8 bytes (LPGD, LPGA, LPGO, NOIS, PITD, PITA, WAVE_sub, SUB)
   - Voice config bytes: ~10 bytes (filter cutoff/res/mode, drive, BITS, LFO config, env curves if dynamic, ...)
   - Velocity:            1 byte
   Total:                ~29 bytes per trigger
@@ -516,7 +528,7 @@ Phase 10 expands this with a slot picker. Each slot is a separate file (`STATE01
 1. **Filter mode (TYPE) switching glitch:** Switching LP/BP/HP via 3 GPIO lines per audio block — does mid-note switching produce an audible click? If yes, `TYPE` stays voice-config; if not, candidate for elevation to a third lockable page.
 2. **YAM oscillator strip flash savings:** Profile actual flash cost of each algorithm in isolation to confirm strip estimates and decide what else can go.
 3. **Motherboard RAM after Weight Reduction:** YAM's stock controller currently fills most of RAM (Multi/Patch/Program/Part state, voice parts UI, arpeggiator, sequencer). Profile actual usage after the strip.
-4. **YAM envelope code reusability:** Can three independent fixed-routing envelope instances be derived from YAM's envelope code, or does it need fresh implementation?
+4. **YAM envelope code reusability:** Can three envelope instances (Env1/VCA + Env2/Filter coupled via LPG macro, Env3/Pitch independent) be derived from YAM's envelope code, or does it need fresh implementation? Includes the macro logic that maps `LPGD`/`LPGO` onto Env1 and Env2 decay rates plus optional curve and Q dialing at `LPGO` extremes.
 5. **YAM LFO capabilities:** Range, shape, destination set. Verify what's already supported before re-implementing.
 6. **YAM noise generator:** Is there a separate LFSR available, or is noise only embedded in specific oscillator algorithms (`filtered_noise`)?
 7. **YAM SPI protocol extensibility:** Confirm `TRIGGER_WITH_SNAPSHOT` adds cleanly.
@@ -603,8 +615,9 @@ Validation:
 ### Phase 8: Voice Engine Refinement
 **Voice engine modifications happen against a known-working sequencer.**
 
-- Refactor envelope code to three independent fixed-routing instances; renumber so VCA = Env1.
-- Wire pitch envelope (Env3) to Osc 1 base pitch.
+- Refactor envelope code to three fixed-routing instances; renumber so VCA = Env1.
+- Implement LPG macro: `LPGD` drives Env1 decay; Env2 decay is `LPGD` × f(`LPGO`); `LPGA` scales Env2's contribution to filter cutoff. At `LPGO` extremes, optionally shift envelope curves and dial in a small filter Q offset (tune ranges empirically).
+- Wire pitch envelope (Env3) to Osc 1 base pitch — independent of the LPG macro.
 - Surface sub-osc as a layer addressable independently of Osc 1/Osc 2 selection (transient generator already in code).
 - Reshape voicecard parameter struct to natively understand the elkhart snapshot format (drops the translation layer used in Phases 3–7).
 - Optional: add wavefolder-bearing wave shape (Carcosa `westcoast.h` port) — `PARA` controls fold depth.
