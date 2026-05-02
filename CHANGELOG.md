@@ -8,6 +8,25 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 
 ## [Unreleased]
 
+### Phase 4 — Transport UI (2026-05-01)
+
+**Flash result:** 41,414B (63% of 64KB), up from 41,414B — +776B for MultiPage.
+**RAM:** no change (MultiPage has no static data).
+
+#### controller/ui_pages/multi_page.h + controller/ui_pages/multi_page.cc — new files
+
+- `MultiPage`: custom event handler routed to `PAGE_MULTI`.
+- `UpdateScreen`: line 0 shows `bpm NNN | stopped/playing/paused`; line 1 shows `play  paus  rst  | ... exit`.
+- `OnKey`: SWITCH_1 → `sequencer.Play()`, SWITCH_2 → `sequencer.Pause()`, SWITCH_3 → `sequencer.Reset()`, SWITCH_8 → `ui.ShowPreviousPage()`. SWITCH_6 falls through to default group navigation (cycles to `PAGE_MULTI_CLOCK`).
+- `UpdateLeds`: `LED_STATUS` bright when playing, dim when paused, off when stopped.
+
+#### controller/ui.cc
+
+- `PAGE_MULTI` now routes to `MultiPage::event_handlers_` instead of the all-0xff `ParameterEditor` stub.
+- `default_most_recent_page_in_group[5]` changed from `PAGE_MULTI_CLOCK` to `PAGE_MULTI` so pressing SWITCH_6 lands on the transport page by default.
+
+---
+
 ### Phase 3 — Sequencer data structures and clock core (2026-05-01)
 
 **RAM result:** 3,436B used, 660B free (was 2,393B / 1,703B free).

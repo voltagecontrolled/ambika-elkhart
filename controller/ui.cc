@@ -29,6 +29,7 @@
 
 #include "controller/ui_pages/card_info_page.h"
 #include "controller/ui_pages/dialog_box.h"
+#include "controller/ui_pages/multi_page.h"
 #include "controller/ui_pages/os_info_page.h"
 #include "controller/ui_pages/parameter_editor.h"
 #include "controller/voicecard_tx.h"
@@ -92,10 +93,9 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_PART, 4, 0xff,
   },
 
-  // PAGE_MULTI: placeholder — voice assignment removed; clock on PAGE_MULTI_CLOCK.
   { PAGE_MULTI,
-    &ParameterEditor::event_handlers_,
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
+    &MultiPage::event_handlers_,
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
     PAGE_MULTI_CLOCK, 5, 0xf0,
   },
 
@@ -150,7 +150,7 @@ static const prog_uint8_t default_most_recent_page_in_group[9] PROGMEM = {
   PAGE_ENV_LFO,
   PAGE_MODULATIONS,
   PAGE_PART,
-  PAGE_MULTI_CLOCK,
+  PAGE_MULTI,
   PAGE_PERFORMANCE,
   PAGE_OS_INFO,
   PAGE_SYSTEM_SETTINGS
