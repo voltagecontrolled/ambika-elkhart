@@ -52,6 +52,7 @@ uint8_t OsInfoPage::found_firmware_files_;
 /* static */
 void OsInfoPage::OnInit(PageInfo* info) {
   active_control_ = 0;
+  storage.InitFilesystem();
   FindFirmwareFiles();
 }
 
@@ -114,8 +115,7 @@ uint8_t OsInfoPage::OnKey(uint8_t key) {
       break;
       
     case SWITCH_8:
-      storage.InitFilesystem();
-      FindFirmwareFiles();
+      ui.ShowPreviousPage();
       break;
   }
   return 1;
@@ -157,7 +157,7 @@ void OsInfoPage::UpdateScreen() {
       strncpy_P(&buffer[15], PSTR("install"), 7);
     }
   }
-  strncpy_P(&buffer[35], PSTR("scan"), 4);
+  strncpy_P(&buffer[35], PSTR("exit"), 4);
 }
 
 /* static */
