@@ -14,6 +14,7 @@ class MultiPage : public UiPage {
   MultiPage() { }
 
   static uint8_t OnIncrement(int8_t increment);
+  static uint8_t OnPot(uint8_t index, uint8_t value);
   static uint8_t OnKey(uint8_t key);
   static void UpdateScreen();
   static void UpdateLeds();

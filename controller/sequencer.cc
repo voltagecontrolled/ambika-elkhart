@@ -95,7 +95,7 @@ void Sequencer::Init() {
       step.lock_flags[0] = 0;
       step.lock_flags[1] = 0;
       step.lock_flags[2] = 0;
-      step.step_flags    = kStepFlagOn;
+      step.step_flags    = 0;
       step.substep_bits  = 0;
     }
     memcpy_P(tr.pattern,       kDefaultPattern,  8);
@@ -131,6 +131,7 @@ void Sequencer::Clock(uint8_t ticks) {
       if (len == 0) len = 1;
       uint8_t step  = tr.shadow[kShdwSTEP];
       uint8_t fired = (step + tr.pattern[kPatROTA]) % len;
+      voicecard_tx.Release(t);
       if (tr.steps[fired].step_flags & kStepFlagOn) {
         FireStep(t, fired);
       }
@@ -180,7 +181,7 @@ void Sequencer::AdvanceStep(uint8_t t) {
 void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
   SeqTrack& tr = tracks_[t];
   // Phase 3: no lock processing yet — always use track defaults.
-  uint8_t note     = tr.defaults[kP1NOTE];
+  uint8_t note     = tr.steps[step_index].page1[kP1NOTE];
   uint8_t velocity = tr.defaults[16 + kSPVEL];
   voicecard_tx.Trigger(t, static_cast<uint16_t>(note) << 7, velocity, 0);
 }

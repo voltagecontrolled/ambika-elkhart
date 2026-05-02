@@ -77,33 +77,32 @@ const prog_PageInfo page_registry[] PROGMEM = {
   { PAGE_PART,
     &ParameterEditor::event_handlers_,
     { 42, 57, 47, 48, 43, 44, 45, 46 },
-    PAGE_PART, 4, 0xf0,
+    PAGE_PART_SEQUENCER, 4, 0xf0,
   },
 
-  // PAGE_PART_ARPEGGIATOR: stub — arpeggiator removed, sequencer page pending.
+  // PAGE_PART_ARPEGGIATOR: stub — unreachable from cycle, kept for registry completeness.
   { PAGE_PART_ARPEGGIATOR,
     &ParameterEditor::event_handlers_,
     { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
     PAGE_PART, 4, 0x0f,
   },
 
-  // PAGE_PART_SEQUENCER: placeholder until elkhart sequencer is implemented.
   { PAGE_PART_SEQUENCER,
-    &ParameterEditor::event_handlers_,
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
+    &SeqStepsPage::event_handlers_,
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
     PAGE_PART, 4, 0xff,
   },
 
   { PAGE_MULTI,
     &MultiPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_MULTI_CLOCK, 5, 0xf0,
+    PAGE_MULTI, 5, 0xf0,
   },
 
   { PAGE_MULTI_CLOCK,
-    &SeqStepsPage::event_handlers_,
-    { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_MULTI, 5, 0x0f,
+    &ParameterEditor::event_handlers_,
+    { 62, 63, 64, 65, 0xff, 0xff, 0xff, 0xff },
+    PAGE_MULTI_CLOCK, 5, 0x0f,
   },
 
   // PAGE_PERFORMANCE and PAGE_KNOB_ASSIGN: placeholder until Perf page is built.

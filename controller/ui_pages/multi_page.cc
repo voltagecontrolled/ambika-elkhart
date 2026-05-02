@@ -9,6 +9,7 @@
 #include "controller/leds.h"
 #include "controller/multi.h"
 #include "controller/sequencer.h"
+#include "controller/ui.h"
 
 namespace ambika {
 
@@ -29,11 +30,19 @@ const prog_EventHandlers MultiPage::event_handlers_ PROGMEM = {
 
 /* static */
 uint8_t MultiPage::OnIncrement(int8_t increment) {
-  int16_t bpm = static_cast<int16_t>(multi.data().clock_bpm) + increment;
-  if (bpm < 40) bpm = 40;
-  if (bpm > 240) bpm = 240;
-  multi.SetValue(PRM_MULTI_CLOCK_BPM, static_cast<uint8_t>(bpm));
+  ui.ShowPageRelative(increment);
   return 1;
+}
+
+/* static */
+uint8_t MultiPage::OnPot(uint8_t index, uint8_t value) {
+  if (index == 0) {
+    uint8_t bpm = 40 + static_cast<uint8_t>(
+        (static_cast<uint16_t>(value) * 200) >> 8);
+    multi.SetValue(PRM_MULTI_CLOCK_BPM, bpm);
+    return 1;
+  }
+  return 0;
 }
 
 /* static */

@@ -1,6 +1,7 @@
 // Copyright 2011 Emilie Gillet.
 //
-// Phase 4: Step grid — 8 buttons toggle steps on/off; encoder selects track.
+// Step grid: 8 buttons toggle steps; S1+encoder selects track;
+// encoder navigates pages; pots set per-step note; LEDs green=on red=chaselight.
 
 #include "controller/ui_pages/seq_steps_page.h"
 
@@ -9,10 +10,14 @@
 #include "controller/leds.h"
 #include "controller/multi.h"
 #include "controller/sequencer.h"
+#include "controller/ui.h"
 
 namespace ambika {
 
-static const prog_char kDirnNames[] PROGMEM = "fwd rev pnd rnd ";
+// 2-char names for 12 semitones: "C ", "C#", "D ", "D#", "E ", "F ",
+//                                 "F#", "G ", "G#", "A ", "A#", "B "
+static const prog_char kNoteNames[] PROGMEM =
+  "C C#D D#E F F#G G#A A#B ";
 
 /* static */
 const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
@@ -31,80 +36,53 @@ const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
 
 /* static */
 uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
-  SeqGlobal& g = *sequencer.mutable_global();
-  int8_t t = static_cast<int8_t>(g.active_track) + increment;
-  if (t < 0) t = 0;
-  if (t >= kNumVoices) t = kNumVoices - 1;
-  g.active_track = static_cast<uint8_t>(t);
-  ui.mutable_state()->active_part = g.active_track;
+  ui.ShowPageRelative(increment);
+  return 1;
+}
+
+/* static */
+uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
+  uint8_t track = ui.state().active_part;
+  sequencer.mutable_track(track)->steps[index].page1[kP1NOTE] = value >> 1;
   return 1;
 }
 
 /* static */
 uint8_t SeqStepsPage::OnKey(uint8_t key) {
   if (key > SWITCH_8) return 0;
-  uint8_t step = SWITCH_8 - key;  // SWITCH_1=step7, SWITCH_8=step0
-  // Invert: SWITCH_1 = step 0, SWITCH_8 = step 7
-  step = key;  // SWITCH_1=0, SWITCH_2=1, ..., SWITCH_8=7
-  uint8_t track = sequencer.global().active_track;
-  SeqStep& s = sequencer.mutable_track(track)->steps[step];
+  uint8_t track = ui.state().active_part;
+  SeqStep& s = sequencer.mutable_track(track)->steps[key];
   s.step_flags ^= kStepFlagOn;
   return 1;
 }
 
 /* static */
 void SeqStepsPage::UpdateScreen() {
-  uint8_t track = sequencer.global().active_track;
+  uint8_t track = ui.state().active_part;
   const SeqTrack& tr = sequencer.track(track);
-  uint8_t transport = sequencer.global().transport;
 
-  char* buffer = display.line_buffer(0) + 1;
-  buffer[0] = 't';
-  buffer[1] = '1' + track;
-  buffer[2] = ' ';
-  // Direction name (3 chars)
-  uint8_t dirn = tr.pattern[kPatDIRN];
-  if (dirn > kDirnRnd) dirn = kDirnFwd;
-  memcpy_P(&buffer[3], kDirnNames + (dirn * 4), 3);
-  buffer[6] = ' ';
-  // Pattern length
-  UnsafeItoa<uint8_t>(tr.pattern[kPatLENG], 2, &buffer[7]);
-  AlignRight(&buffer[7], 2);
-  buffer[14] = kDelimiter;
-  if (transport == kSeqPlaying) {
-    memcpy_P(&buffer[15], PSTR("playing"), 7);
-  } else if (transport == kSeqPaused) {
-    memcpy_P(&buffer[15], PSTR("paused "), 7);
-  } else {
-    memcpy_P(&buffer[15], PSTR("stopped"), 7);
-  }
-
-  // Line 1: step indicators — each step gets 5 chars centered around position
-  // SWITCH_1=buf[2], SWITCH_2=buf[7], SWITCH_3=buf[12], SWITCH_4=buf[17]...
-  // SWITCH_5=buf[22], SWITCH_6=buf[27], SWITCH_7=buf[32], SWITCH_8=buf[37]
-  buffer = display.line_buffer(1) + 1;
-  uint8_t playhead = tr.shadow[kShdwSTEP];
-  uint8_t len = tr.pattern[kPatLENG];
-  if (len == 0) len = 1;
-  static const uint8_t kStepPositions[8] = { 2, 7, 12, 17, 22, 27, 32, 37 };
+  // Line 0: per-step note names (3 chars centered in each 5-char column).
+  // kStepPositions center: 2, 7, 12, [14=delim], 17, 22, 27, 32, 37
+  static const uint8_t kCenters[8] = { 2, 7, 12, 17, 22, 27, 32, 37 };
+  char* buf = display.line_buffer(0) + 1;
+  buf[14] = kDelimiter;
   for (uint8_t i = 0; i < kNumStepsPerTrack; ++i) {
-    uint8_t pos = kStepPositions[i];
-    uint8_t on = tr.steps[i].step_flags & kStepFlagOn;
-    uint8_t active = (transport == kSeqPlaying) && (i == playhead) && (i < len);
-    if (active) {
-      buffer[pos] = '>';
-    } else if (on) {
-      buffer[pos] = '*';
-    } else {
-      buffer[pos] = '.';
-    }
+    uint8_t note = tr.steps[i].page1[kP1NOTE];
+    uint8_t semi = note % 12;
+    uint8_t oct  = note / 12;
+    uint8_t pos  = kCenters[i];
+    buf[pos - 1] = pgm_read_byte(kNoteNames + semi * 2);
+    buf[pos]     = pgm_read_byte(kNoteNames + semi * 2 + 1);
+    buf[pos + 1] = '0' + oct;
   }
-  buffer[14] = kDelimiter;
+
+  // Line 1: reserved for additional lockable params.
+  display.line_buffer(1)[15] = kDelimiter;
 }
 
 /* static */
 void SeqStepsPage::UpdateLeds() {
-  uint8_t track = sequencer.global().active_track;
+  uint8_t track = ui.state().active_part;
   const SeqTrack& tr = sequencer.track(track);
   uint8_t transport = sequencer.global().transport;
   if (transport == kSeqPlaying) {
@@ -112,11 +90,18 @@ void SeqStepsPage::UpdateLeds() {
   } else if (transport == kSeqPaused) {
     leds.set_pixel(LED_STATUS, 0x0f);
   }
-  // Button LEDs: bright if step ON, off if OFF
+  // Green for ON steps; chaselight overrides with red.
   for (uint8_t i = 0; i < kNumStepsPerTrack; ++i) {
     if (tr.steps[i].step_flags & kStepFlagOn) {
-      leds.set_pixel(LED_1 + (7 - i), 0xf0);
+      leds.set_pixel(LED_1 + i, 0x0f);
     }
+  }
+  if (transport == kSeqPlaying) {
+    uint8_t len  = tr.pattern[kPatLENG];
+    if (len == 0) len = 1;
+    uint8_t next = tr.shadow[kShdwSTEP];
+    uint8_t last = (next + len - 1) % len;
+    leds.set_pixel(LED_1 + last, 0xf0);
   }
 }
 
