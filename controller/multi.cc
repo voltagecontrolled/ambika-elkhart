@@ -1,7 +1,5 @@
 // Copyright 2011 Emilie Gillet.
 //
-// Author: Emilie Gillet (emilie.o.gillet@gmail.com)
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -15,8 +13,7 @@
 
 #include "controller/midi_dispatcher.h"
 #include "controller/multi.h"
-
-#include "controller/resources.h"
+#include "controller/storage.h"
 
 namespace ambika {
 
@@ -27,50 +24,26 @@ Multi multi;
 MultiData Multi::data_;
 Part Multi::parts_[kNumParts];
 uint16_t Multi::clock_counter_ = 0;
-uint16_t Multi::lfo_refresh_counter_ = 0;
-uint8_t Multi::lfo_refresh_cycle_ = 0;
 volatile uint8_t Multi::num_clock_events_;
 uint16_t Multi::tick_duration_;
 uint8_t Multi::tick_count_;
 uint8_t Multi::step_count_;
 uint8_t Multi::running_;
-uint8_t Multi::idle_ticks_;
-uint16_t Multi::tick_duration_table_[kNumStepsInGroovePattern];
 uint8_t Multi::flags_;
 /* </static> */
 
 static const prog_MultiData init_settings PROGMEM = {
-  // Parts mappings.
-  1, 0, 127, 0x15,
-  2, 0, 127, 0x2a,
-  3, 0, 127, 0,
-  4, 0, 127, 0,
-  5, 0, 127, 0,
-  6, 0, 127, 0,
-  
-  // Clock.
-  120, 0, 0, 4,
-  
-  // Performance page assignments.
-  0, 1, 0,
-  0, 16, 0,
-  1, 1, 0,
-  1, 16, 0,
-  0, 22, 0,
-  0, 42, 0,
-  1, 22, 0,
-  1, 42, 0,
-  
-  // Padding.
-  0, 0, 0, 0,
+  120,  // clock_bpm
+  0,    // clock_groove_template
+  0,    // clock_groove_amount
+  4,    // clock_latch
 };
 
 /* static */
 void Multi::Init(bool force_reset) {
   for (uint8_t i = 0; i < kNumParts; ++i) {
-    parts_[i].Init();
+    parts_[i].Init(i);
   }
-  // Force a reset to factory settings.
   if (force_reset) {
     InitSettings(INITIALIZATION_DEFAULT);
     Storage::WriteMultiToEeprom();
@@ -79,6 +52,11 @@ void Multi::Init(bool force_reset) {
       InitSettings(INITIALIZATION_DEFAULT);
       Storage::WriteMultiToEeprom();
     } else {
+      // Send loaded patch and part data to voicecards.
+      for (uint8_t i = 0; i < kNumParts; ++i) {
+        parts_[i].TouchPatch();
+        parts_[i].Touch();
+      }
       Touch();
     }
   }
@@ -95,88 +73,59 @@ void Multi::InitSettings(InitializationMode mode) {
 }
 
 /* static */
-uint8_t Multi::SolveAllocationConflicts(uint8_t constraint) {
-  uint8_t available_voices = 0xff;
-  for (uint8_t i = 0; i < kNumParts; ++i) {
-    if (i != constraint) {
-      data_.part_mapping_[i].voice_allocation &= available_voices;
-      available_voices &= ~data_.part_mapping_[i].voice_allocation;
-    }
-  }
-  return available_voices;
-}
-
-/* static */
-void Multi::AssignVoicesToParts() {
-  for (uint8_t i = 0; i < kNumParts; ++i) {
-    parts_[i].AssignVoices(data_.part_mapping_[i].voice_allocation);
-  }
-}
-
-/* static */
 void Multi::Touch() {
-  ComputeInternalClockOverflowsTable();
-  SolveAllocationConflicts(-1);
-  AssignVoicesToParts();
+  ComputeTickDuration();
   flags_ = FLAG_HAS_CHANGE;
 }
 
-const int32_t kTempoFactor = (4 * kSampleRateNum * 60L / 24L / kSampleRateDen);
+const int32_t kTempoFactor = 392156L;
 
 /* static */
-void Multi::ComputeInternalClockOverflowsTable() {
+void Multi::ComputeTickDuration() {
   STATIC_ASSERT(kTempoFactor == 392156L);
-
   int32_t rounding = 2 * static_cast<int32_t>(data_.clock_bpm);
   int32_t denominator = 4 * static_cast<int32_t>(data_.clock_bpm);
-  int16_t base_tick_duration = (kTempoFactor + rounding) / denominator;
-  for (uint8_t i = 0; i < kNumStepsInGroovePattern; ++i) {
-    int32_t swing_direction = ResourcesManager::Lookup<int16_t, uint8_t>(
-        LUT_RES_GROOVE_SWING + data_.clock_groove_template, i);
-    swing_direction *= base_tick_duration;
-    swing_direction *= data_.clock_groove_amount;
-    int16_t swing = swing_direction >> 16;
-    tick_duration_table_[i] = base_tick_duration + swing;
+  tick_duration_ = static_cast<uint16_t>((kTempoFactor + rounding) / denominator);
+}
+
+/* static */
+void Multi::NoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
+  if (!running_) {
+    Start();
   }
-  tick_duration_ = tick_duration_table_[0];
+  if (channel < kNumParts) {
+    parts_[channel].NoteOn(note, velocity);
+  } else if (channel == 9) {
+    // MIDI ch10 drum map: notes 36-41 trigger voices 0-5 at middle C.
+    if (note >= 36 && note < 36 + kNumParts) {
+      parts_[note - 36].NoteOn(60, velocity);
+    }
+  }
+}
+
+/* static */
+void Multi::NoteOff(uint8_t channel, uint8_t note, uint8_t velocity) {
+  if (channel < kNumParts) {
+    parts_[channel].NoteOff(note);
+  } else if (channel == 9) {
+    if (note >= 36 && note < 36 + kNumParts) {
+      parts_[note - 36].NoteOff(note);
+    }
+  }
 }
 
 /* static */
 void Multi::Clock() {
-  // This is used by the internal clock, and to get a global pulse for the 
-  // incoming clock.
   ++tick_count_;
   if (tick_count_ == kNumTicksPerStep) {
     tick_count_ = 0;
     ++step_count_;
-    if (step_count_ == kNumStepsInGroovePattern) {
+    if (step_count_ >= 8) {
       step_count_ = 0;
     }
-    tick_duration_ = tick_duration_table_[step_count_];
   }
-  
-  if (running_)  {
-    // Advance the clock of all parts, and check if some of them are idle.
+  if (running_) {
     midi_dispatcher.OnClock();
-    uint8_t idle = 1;
-    for (uint8_t i = 0; i < kNumParts; ++i) {
-      parts_[i].Clock();
-      if (parts_[i].num_pressed_keys() > 0) {
-        idle = 0;
-      }
-    }
-    // No key is being pressed on any part. It looks like we are counting beats
-    // for nothing...
-    if (internal_clock()) {
-      if (idle) {
-        ++idle_ticks_;
-      } else {
-        idle_ticks_ = 0;
-      }
-      if (idle_ticks_ > U8U8Mul(data_.clock_release, 24)) {
-        Stop();
-      }
-    }
   }
 }
 
@@ -185,11 +134,8 @@ void Multi::Start() {
   midi_dispatcher.OnStart();
   tick_count_ = 0;
   step_count_ = 0;
-  idle_ticks_ = 0;
-  for (uint8_t i = 0; i < kNumParts; ++i) {
-    parts_[i].Start();
-  }
-  tick_duration_ = tick_duration_table_[0];
+  tick_duration_ = 0;  // ensure ComputeTickDuration result is fresh
+  ComputeTickDuration();
   running_ = 1;
 }
 
@@ -197,22 +143,13 @@ void Multi::Start() {
 void Multi::Stop() {
   midi_dispatcher.OnStop();
   for (uint8_t i = 0; i < kNumParts; ++i) {
-    parts_[i].Stop();
+    parts_[i].AllNotesOff();
   }
   running_ = 0;
 }
 
 /* static */
 void Multi::UpdateClocks() {
-  while (lfo_refresh_counter_ >= kControlRate) {
-    ++lfo_refresh_cycle_;
-    lfo_refresh_counter_ -= kControlRate;
-    for (uint8_t i = 0; i < kNumParts; ++i) {
-      parts_[i].UpdateLfos(lfo_refresh_cycle_ & 1);
-    }
-  }
-  
-  // Process ticks generated by the ISR-based clock.
   if (internal_clock()) {
     while (num_clock_events_) {
       Clock();
@@ -229,12 +166,8 @@ void Multi::SetValue(uint8_t address, uint8_t value) {
   if (bytes[address] != value) {
     bytes[address] = value;
     flags_ |= FLAG_HAS_USER_CHANGE;
-    if (address < PRM_MULTI_CLOCK_BPM) {
-      if ((address & 3) == 3) {
-        Touch();
-      }
-    } else if (address <= PRM_MULTI_CLOCK_GROOVE_AMOUNT) {
-      ComputeInternalClockOverflowsTable();
+    if (address <= PRM_MULTI_CLOCK_GROOVE_AMOUNT) {
+      ComputeTickDuration();
     }
   }
 }

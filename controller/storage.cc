@@ -95,14 +95,8 @@ uint8_t Storage::Checksum(const void* data, uint8_t size) {
 void Storage::WriteMultiToEeprom() {
   uint16_t address = 0;
   for (uint8_t i = 0; i < kNumParts; ++i) {
-    EepromWrite(
-        multi.part(i).raw_data(),
-        sizeof(PartData),
-        &address);
-    EepromWrite(
-        multi.part(i).raw_patch_data(),
-        sizeof(Patch),
-        &address);
+    EepromWrite(multi.part(i).raw_patch_data(), sizeof(Patch), &address);
+    EepromWrite(multi.part(i).raw_data(), sizeof(PartData), &address);
   }
   EepromWrite(multi.raw_data(), sizeof(MultiData), &address);
 }
@@ -113,18 +107,12 @@ uint8_t Storage::LoadMultiFromEeprom() {
   uint8_t success = 1;
   for (uint8_t i = 0; i < kNumParts; ++i) {
     success = success && Storage::EepromRead(
-        multi.mutable_part(i)->mutable_raw_data(),
-        sizeof(PartData),
-        &address);
+        multi.mutable_part(i)->mutable_raw_patch_data(), sizeof(Patch), &address);
     success = success && Storage::EepromRead(
-        multi.mutable_part(i)->mutable_raw_patch_data(),
-        sizeof(Patch),
-        &address);
+        multi.mutable_part(i)->mutable_raw_data(), sizeof(PartData), &address);
   }
   success = success && Storage::EepromRead(
-      multi.mutable_raw_data(),
-      sizeof(MultiData),
-      &address);
+      multi.mutable_raw_data(), sizeof(MultiData), &address);
   return success;
 }
 
@@ -154,15 +142,14 @@ uint8_t Storage::object_size(const StorageLocation& location) {
   switch (location.object) {
     case STORAGE_OBJECT_PATCH:
       return sizeof(Patch);
-      
     case STORAGE_OBJECT_SEQUENCE:
-      return 72;
-      
+      return 0;
     case STORAGE_OBJECT_PART:
       return sizeof(PartData);
-      
     case STORAGE_OBJECT_MULTI:
       return sizeof(MultiData);
+    default:
+      break;
   }
   return 0;
 }
@@ -188,15 +175,14 @@ const uint8_t* Storage::object_data(const StorageLocation& location) {
   switch (location.object) {
     case STORAGE_OBJECT_PATCH:
       return multi.part(location.part).raw_patch_data();
-      
     case STORAGE_OBJECT_SEQUENCE:
-      return multi.part(location.part).raw_sequence_data();
-      
+      return NULL;
     case STORAGE_OBJECT_PART:
       return multi.part(location.part).raw_data();
-      
     case STORAGE_OBJECT_MULTI:
       return multi.raw_data();
+    default:
+      break;
   }
   return NULL;
 }
@@ -206,15 +192,14 @@ uint8_t* Storage::mutable_object_data(const StorageLocation& location) {
   switch (location.object) {
     case STORAGE_OBJECT_PATCH:
       return multi.mutable_part(location.part)->mutable_raw_patch_data();
-      
     case STORAGE_OBJECT_SEQUENCE:
-      return multi.mutable_part(location.part)->mutable_raw_sequence_data();
-      
+      return NULL;
     case STORAGE_OBJECT_PART:
       return multi.mutable_part(location.part)->mutable_raw_data();
-      
     case STORAGE_OBJECT_MULTI:
       return multi.mutable_raw_data();
+    default:
+      break;
   }
   return NULL;
 }
@@ -316,20 +301,19 @@ void Storage::ReadObject(const StorageLocation& location) {
 
 /* static */
 void Storage::TouchObject(const StorageLocation& location) {
-  // Recompute the dependent variables and update the voicecard. Mark that the
-  // object is freshly loaded and has received no user changes.
   switch (location.object) {
     case STORAGE_OBJECT_PATCH:
       multi.mutable_part(location.part)->TouchPatch();
       break;
-
     case STORAGE_OBJECT_PART:
-    case STORAGE_OBJECT_SEQUENCE:
       multi.mutable_part(location.part)->Touch();
       break;
-    
+    case STORAGE_OBJECT_SEQUENCE:
+      break;
     case STORAGE_OBJECT_MULTI:
       multi.Touch();
+      break;
+    default:
       break;
   }
 }
@@ -402,8 +386,9 @@ void Storage::RIFFWriteObject(const StorageLocation& location) {
   w.bytes[1] = location.alias;
   file_.Write(w.bytes, 4, &written);
   
-  // Write the data.
-  file_.Write(data, size, &written);
+  if (size > 0 && data) {
+    file_.Write(data, size, &written);
+  }
 }
 
 /* static */

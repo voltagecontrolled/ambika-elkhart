@@ -20,6 +20,7 @@
 #ifndef COMMON_PATCH_H_
 #define COMMON_PATCH_H_
 
+#include <avr/pgmspace.h>
 #include "avrlib/base.h"
 
 namespace ambika {

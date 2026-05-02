@@ -49,40 +49,26 @@ ParameterEditor::SnapMask ParameterEditor::snapped_;
 
 /* static */
 uint8_t ParameterEditor::parameter_index(uint8_t control_id) {
-  uint8_t parameter_id = info_->data[control_id];
-  if (parameter_id >= 0xf0 && parameter_id <= 0xf7) {
-    return multi.data().knob_assignment[parameter_id & 0x0f].parameter;
-  } else {
-    return parameter_id;
-  }
+  return info_->data[control_id];
 }
 
 /* static */
 uint8_t ParameterEditor::part_index(uint8_t control_id) {
-  uint8_t parameter_id = info_->data[control_id];
-  if (parameter_id >= 0xf0 && parameter_id <= 0xf7) {
-    return multi.data().knob_assignment[parameter_id & 0x0f].part;
-  } else {
-    return ui.state().active_part;
-  }
+  return ui.state().active_part;
 }
 
 /* static */
 uint8_t ParameterEditor::instance_index(uint8_t control_id) {
   uint8_t parameter_id = info_->data[control_id];
-  if (parameter_id >= 0xf0 && parameter_id <= 0xf7) {
-    return multi.data().knob_assignment[parameter_id & 0x0f].instance;
+  if (parameter_id == 0xff) {
+    return 0xff;
   } else {
-    if (parameter_id == 0xff) {
-      return 0xff;
+    const Parameter& parameter = parameter_manager.parameter(parameter_id);
+    if (parameter.indexed_by != 0xff) {
+      return static_cast<uint8_t*>(
+          static_cast<void*>(ui.mutable_state()))[parameter.indexed_by];
     } else {
-      const Parameter& parameter = parameter_manager.parameter(parameter_id);
-      if (parameter.indexed_by != 0xff) {
-        return static_cast<uint8_t*>(
-            static_cast<void*>(ui.mutable_state()))[parameter.indexed_by];
-      } else {
-        return 0;
-      }
+      return 0;
     }
   }
 }

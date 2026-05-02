@@ -21,6 +21,7 @@
 
 #include <avr/pgmspace.h>
 
+#include "avrlib/random.h"
 #include "avrlib/string.h"
 
 #include "common/patch.h"

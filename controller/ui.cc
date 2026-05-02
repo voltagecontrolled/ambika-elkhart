@@ -29,14 +29,8 @@
 
 #include "controller/ui_pages/card_info_page.h"
 #include "controller/ui_pages/dialog_box.h"
-#include "controller/ui_pages/knob_assigner.h"
-#include "controller/ui_pages/library.h"
 #include "controller/ui_pages/os_info_page.h"
 #include "controller/ui_pages/parameter_editor.h"
-#include "controller/ui_pages/performance_page.h"
-#include "controller/ui_pages/sequence_editor.h"
-#include "controller/ui_pages/version_manager.h"
-#include "controller/ui_pages/voice_assigner.h"
 #include "controller/voicecard_tx.h"
 
 namespace ambika {
@@ -87,49 +81,53 @@ const prog_PageInfo page_registry[] PROGMEM = {
   { PAGE_PART_ARPEGGIATOR,
     &ParameterEditor::event_handlers_,
     { 49, 50, 51, 52, 53, 54, 55, 56 },
-    PAGE_PART_SEQUENCER, 4, 0x0f,
+    PAGE_PART, 4, 0x0f,
   },
-  
+
+  // PAGE_PART_SEQUENCER: placeholder until elkhart sequencer is implemented.
   { PAGE_PART_SEQUENCER,
-    &SequenceEditor::event_handlers_,
-    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    &ParameterEditor::event_handlers_,
+    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
     PAGE_PART, 4, 0xff,
   },
-  
+
+  // PAGE_MULTI: placeholder — voice assignment removed; clock on PAGE_MULTI_CLOCK.
   { PAGE_MULTI,
-    &VoiceAssigner::event_handlers_,
-    { 58, 59, 60, 61, 0xff, 0xff, 0xff, 0xff },
+    &ParameterEditor::event_handlers_,
+    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
     PAGE_MULTI_CLOCK, 5, 0xf0,
   },
-  
+
   { PAGE_MULTI_CLOCK,
     &ParameterEditor::event_handlers_,
     { 62, 63, 64, 65, 0xff, 0xff, 0xff, 0xff, },
-    PAGE_MULTI, 5, 0x0f,
+    PAGE_MULTI_CLOCK, 5, 0x0f,
   },
-  
+
+  // PAGE_PERFORMANCE and PAGE_KNOB_ASSIGN: placeholder until Perf page is built.
   { PAGE_PERFORMANCE,
-    &PerformancePage::event_handlers_,
-    { 0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, },
-    PAGE_KNOB_ASSIGN, 6, 0xf0,
+    &ParameterEditor::event_handlers_,
+    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
+    PAGE_PERFORMANCE, 6, 0xf0,
   },
-  
+
   { PAGE_KNOB_ASSIGN,
-    &KnobAssigner::event_handlers_,
-    { 0, 0, 0, 0, 0, 0, 0, 0, },
+    &ParameterEditor::event_handlers_,
+    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
     PAGE_PERFORMANCE, 6, 0x0f,
   },
 
+  // PAGE_LIBRARY: replaced by OS Info page for firmware flashing.
   { PAGE_LIBRARY,
-    &Library::event_handlers_,
+    &OsInfoPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0, },
     PAGE_LIBRARY, 7, 0xf0,
   },
 
   { PAGE_VERSION_MANAGER,
-    &VersionManager::event_handlers_,
+    &OsInfoPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0, },
-    PAGE_LIBRARY, 8, 0xf0,
+    PAGE_OS_INFO, 8, 0xf0,
   },
 
   { PAGE_SYSTEM_SETTINGS,
@@ -151,9 +149,9 @@ static const prog_uint8_t default_most_recent_page_in_group[9] PROGMEM = {
   PAGE_ENV_LFO,
   PAGE_MODULATIONS,
   PAGE_PART,
-  PAGE_MULTI,
+  PAGE_MULTI_CLOCK,
   PAGE_PERFORMANCE,
-  PAGE_LIBRARY,
+  PAGE_OS_INFO,
   PAGE_SYSTEM_SETTINGS
 };
 
