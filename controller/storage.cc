@@ -94,26 +94,13 @@ uint8_t Storage::Checksum(const void* data, uint8_t size) {
 /* static */
 void Storage::WriteMultiToEeprom() {
   uint16_t address = 0;
-  for (uint8_t i = 0; i < kNumParts; ++i) {
-    EepromWrite(multi.part(i).raw_patch_data(), sizeof(Patch), &address);
-    EepromWrite(multi.part(i).raw_data(), sizeof(PartData), &address);
-  }
   EepromWrite(multi.raw_data(), sizeof(MultiData), &address);
 }
 
 /* static */
 uint8_t Storage::LoadMultiFromEeprom() {
   uint16_t address = 0;
-  uint8_t success = 1;
-  for (uint8_t i = 0; i < kNumParts; ++i) {
-    success = success && Storage::EepromRead(
-        multi.mutable_part(i)->mutable_raw_patch_data(), sizeof(Patch), &address);
-    success = success && Storage::EepromRead(
-        multi.mutable_part(i)->mutable_raw_data(), sizeof(PartData), &address);
-  }
-  success = success && Storage::EepromRead(
-      multi.mutable_raw_data(), sizeof(MultiData), &address);
-  return success;
+  return Storage::EepromRead(multi.mutable_raw_data(), sizeof(MultiData), &address);
 }
 
 

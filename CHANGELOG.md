@@ -8,6 +8,49 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 
 ## [Unreleased]
 
+### Phase 3 — Sequencer data structures and clock core (2026-05-01)
+
+**RAM result:** 3,436B used, 660B free (was 2,393B / 1,703B free).
+**Flash result:** 40,638B (63% of 64KB), down slightly from Phase 2 (41,136B).
+
+#### controller/sequencer.h + controller/sequencer.cc — new files
+
+- `SeqStep` (29B): three parameter pages (page1/page2/steppage, 8B each), 24-bit lock bitfield, step_flags, substep_bits.
+- `SeqTrack` (297B): 8 steps (232B) + pattern[8] + defaults[24] + config[20] + shadow[5] + mod[8].
+- `SeqGlobal` (32B): transport state, hold_mode, swing, active_track, lock_page, held_step, 4-slot global mod matrix (Phase 9), reserved padding.
+- `Sequencer` class: `Init()`, `Clock(ticks)`, `Play()`, `Pause()`, `Reset()`, `AdvanceStep()`, `FireStep()`.
+- `Sequencer::Clock(1)` is called on every master tick from `Multi::Clock()`. Tracks advance their per-track tick counters independently, enabling polymetric clock divisions (CDIV). All four direction modes (Fwd/Rev/Pend/Rnd) implemented in `AdvanceStep()`. Pattern rotation (ROTA) applied at fire time.
+- Phase 3 `FireStep()`: uses `defaults[kP1NOTE]` and `defaults[16+kSPVEL]` (no lock processing yet). Calls `voicecard_tx.Trigger()`. Lock processing and full snapshot send come in Phase 4.
+- `sequencer.Init()` called from `Multi::Init()`.
+
+#### controller/part.h / part.cc — stripped to MIDI routing stub
+
+- `Patch patch_` and `PartData data_` removed from `Part` class (saves 128B × 6 = 768B).
+- `Part` is now 2 bytes (`voice_id_` + `flags_`): pure MIDI→voicecard routing layer.
+- `NoteOn` calls `voicecard_tx.Trigger()` directly with raw note (no octave/tuning since data_ gone).
+- `GetValue()` returns 0; `SetValue()` is a no-op; `TouchPatch()`/`Touch()` are stubs. Parameter editor pages display 0 for voice params until Phase 7 rewires them.
+- `raw_patch_data()`/`raw_data()` return `NULL`; storage guards against null before writing.
+- `PartData` struct definition retained in `part.h` for `sizeof()` references in `storage.cc`.
+
+#### controller/multi.cc — sequencer wiring
+
+- `sequencer.Init()` called in `Multi::Init()` after parts init.
+- `sequencer.Clock(1)` called in `Multi::Clock()` on every master tick.
+- Removed `parts_[i].TouchPatch()` and `parts_[i].Touch()` on load — now stubs anyway.
+
+#### controller/storage.cc — stub EEPROM Part data
+
+- `WriteMultiToEeprom()` and `LoadMultiFromEeprom()` now only persist `MultiData` (BPM/clock settings). Previously wrote 6 × (Patch + PartData) blocks which would now dereference NULL. Old EEPROM content checksums as invalid → falls through to `InitSettings(DEFAULT)`, which is correct behavior after this layout change.
+
+#### Known issues introduced or exposed by this phase
+
+- **Parameter editor pages show 0 for voice parameters:** `Part::GetValue()` is a stub returning 0. Pages OSC, FILTER, ENV_LFO, MOD show 0s. Edits via knobs are no-ops. Intentional until Phase 7 rewires these pages to `SeqTrack.config[]` and `SeqTrack.defaults[]`.
+- **Voicecards receive no initial patch on boot:** `Part::TouchPatch()` is now a no-op. Voicecards boot with their own defaults. First sequencer trigger will fire but voice timbre is whatever the voicecard defaults to until `TRIGGER_WITH_SNAPSHOT` is implemented in Phase 4.
+- **MIDI note input ignores octave/tuning offsets:** `Part::NoteOn()` sends raw note without `PartData.octave` offset (data_ removed). MIDI ch 1–6 triggers are note-accurate but no longer shifted by per-part octave settings.
+- **660B RAM free:** Tight but sufficient for Phases 4–8. Mod matrix slots (Phase 9) are pre-allocated in SeqTrack.mod[8] and SeqGlobal.mod[16]. No further large data structures expected before Phase 9.
+
+---
+
 ### Phase 2 — RAM gutting and MIDI routing (2026-05-01)
 
 **Commit:** `e22c4c2`

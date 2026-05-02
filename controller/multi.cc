@@ -13,6 +13,7 @@
 
 #include "controller/midi_dispatcher.h"
 #include "controller/multi.h"
+#include "controller/sequencer.h"
 #include "controller/storage.h"
 
 namespace ambika {
@@ -44,6 +45,7 @@ void Multi::Init(bool force_reset) {
   for (uint8_t i = 0; i < kNumParts; ++i) {
     parts_[i].Init(i);
   }
+  sequencer.Init();
   if (force_reset) {
     InitSettings(INITIALIZATION_DEFAULT);
     Storage::WriteMultiToEeprom();
@@ -52,11 +54,6 @@ void Multi::Init(bool force_reset) {
       InitSettings(INITIALIZATION_DEFAULT);
       Storage::WriteMultiToEeprom();
     } else {
-      // Send loaded patch and part data to voicecards.
-      for (uint8_t i = 0; i < kNumParts; ++i) {
-        parts_[i].TouchPatch();
-        parts_[i].Touch();
-      }
       Touch();
     }
   }
@@ -124,6 +121,7 @@ void Multi::Clock() {
       step_count_ = 0;
     }
   }
+  sequencer.Clock(1);
   if (running_) {
     midi_dispatcher.OnClock();
   }

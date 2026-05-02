@@ -26,7 +26,7 @@ enum InitializationMode {
   INITIALIZATION_RANDOM
 };
 
-// Keep these for parameter.cc and resources compat.
+// Kept for parameter.cc / resources compat — not tied to live functionality.
 enum ArpeggiatorDirection {
   ARPEGGIO_DIRECTION_UP = 0,
   ARPEGGIO_DIRECTION_DOWN,
@@ -54,30 +54,27 @@ enum PolyphonyMode {
 };
 
 enum PartFlags {
-  FLAG_HAS_CHANGE = 1,
+  FLAG_HAS_CHANGE      = 1,
   FLAG_HAS_USER_CHANGE = 2,
 };
 
+// PartData struct retained for sizeof() references in storage.cc.
+// No longer stored as a Part member — voice data lives in SeqTrack.
 struct PartData {
-  // Offset: 0
   uint8_t volume;
-  // Offset: 1-4
-  int8_t octave;
-  int8_t tuning;
+  int8_t  octave;
+  int8_t  tuning;
   uint8_t spread;
   uint8_t raga;
-  // Offset: 5-7
   uint8_t legato;
   uint8_t portamento_time;
   uint8_t arp_sequencer_mode;
-  // Offset: 8-15 — kept for byte-offset compat with parameter definitions 49-57
   uint8_t arp_direction;
   uint8_t arp_octave;
   uint8_t arp_pattern;
   uint8_t arp_divider;
   uint8_t sequence_length[3];
   uint8_t polyphony_mode;
-  // sequence_data[64] and padding[4] removed — saves 408 bytes BSS across 6 parts
 };
 
 typedef PartData PROGMEM prog_PartData;
@@ -101,12 +98,14 @@ enum PartParameter {
   PRM_PART_POLYPHONY_MODE
 };
 
+// Phase 3: Part is a minimal MIDI routing stub (2 bytes).
+// Patch and PartData are no longer members — voice data lives in SeqTrack.
+// GetValue/SetValue are stubs; parameter editor pages show 0 until Phase 7 rewires them.
 class Part {
  public:
   Part() {}
-  void Init(uint8_t voice_id);
-  void InitPatch(InitializationMode mode);
-  void InitSettings(InitializationMode mode);
+  void Init(uint8_t voice_id) { voice_id_ = voice_id; flags_ = 0; }
+  void InitSettings(InitializationMode) {}
 
   void NoteOn(uint8_t note, uint8_t velocity);
   void NoteOff(uint8_t note);
@@ -118,38 +117,26 @@ class Part {
   void ResetAllControllers();
   void Reset();
 
-  void SetValue(uint8_t address, uint8_t value, uint8_t user_initiated);
-  inline uint8_t GetValue(uint8_t address) const {
-    const uint8_t* bytes = static_cast<const uint8_t*>(
-        static_cast<const void*>(&patch_));
-    return bytes[address];
-  }
+  void SetValue(uint8_t, uint8_t, uint8_t) {}
+  uint8_t GetValue(uint8_t) const { return 0; }
 
-  const uint8_t* raw_patch_data() const {
-    return static_cast<const uint8_t*>(static_cast<const void*>(&patch_));
-  }
-  uint8_t* mutable_raw_patch_data() {
-    return static_cast<uint8_t*>(static_cast<void*>(&patch_));
-  }
-  const uint8_t* raw_data() const {
-    return static_cast<const uint8_t*>(static_cast<const void*>(&data_));
-  }
-  uint8_t* mutable_raw_data() {
-    return static_cast<uint8_t*>(static_cast<void*>(&data_));
-  }
+  void TouchPatch() {}
+  void Touch() {}
+
+  // Stubs for storage.cc compatibility — return NULL; storage guards against null.
+  const uint8_t* raw_patch_data() const { return NULL; }
+  uint8_t* mutable_raw_patch_data() { return NULL; }
+  const uint8_t* raw_data() const { return NULL; }
+  uint8_t* mutable_raw_data() { return NULL; }
   const uint8_t* raw_sequence_data() const { return NULL; }
   uint8_t* mutable_raw_sequence_data() { return NULL; }
 
-  inline uint8_t lfo_value(uint8_t) const { return 0; }
+  uint8_t lfo_value(uint8_t) const { return 0; }
 
-  void Touch();
-  void TouchPatch();
-  inline uint8_t flags() const { return flags_; }
-  inline void ClearFlag(uint8_t flag) { flags_ &= ~flag; }
+  uint8_t flags() const { return flags_; }
+  void ClearFlag(uint8_t flag) { flags_ &= ~flag; }
 
  private:
-  Patch patch_;
-  PartData data_;
   uint8_t voice_id_;
   uint8_t flags_;
 
