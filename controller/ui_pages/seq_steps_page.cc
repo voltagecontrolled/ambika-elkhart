@@ -49,6 +49,12 @@ uint8_t SeqStepsPage::step_lock_dirty_ = 0;
 /* static */
 uint8_t SeqStepsPage::cursor_ = 0;
 
+/* static */
+bool SeqStepsPage::editing_substeps_ = false;
+
+/* static */
+uint8_t SeqStepsPage::substep_step_ = 0;
+
 // 2-char semitone names; index = semitone * 2.
 static const prog_char kNoteNames[] PROGMEM =
   "C C#D D#E F F#G G#A A#B ";
@@ -62,41 +68,44 @@ static const prog_char kNoteNames[] PROGMEM =
 // default cursor=0 lands on NOTE — the most foundational sequencer knob.
 // Voice 1 / Voice 2 follow.
 static const prog_char kAbbr[] PROGMEM =
-  "notevel glidratesubsprobmintmdir"  // page 1 = S5a (step behavior)
+  "notevel glidratesubsprobsmthvamt"  // page 1 = S5a (step behavior)
   "noisw1  pa1 tun2mix w2  pa2 fin2"  // page 2 = S5b (voice 1: osc / mix)
   "freqfdecfamtadecpdecpamtsub wave"; // page 3 = S5c (voice 2: filter/env/sub)
 
-// Per-cell target. 0..23 = lockable param index (writes to tr.defaults[N]
-// or step.{page1|page2|steppage}[N%8]; lock_flags bit N marks per-step lock).
-// 0xff = config-mapped cell — see kCellPatchAddr below.
+// Per-cell target. 0..27 = lockable param index (writes to tr.defaults[N]
+// or step.{page1|page2|steppage|page3}[N%8]; lock_flags bit N marks per-step lock).
 // 0xfe = merged SSUB+REPT cell (`subs` on S5a) — special-cased in OnPot
 //        and UpdateScreen; writes to both kSPSSUB and kSPREPT with mutex.
 //
-// Lockable indices: page1 0..7, page2 8..15, steppage 16..23 (storage-side;
-// the UI page order below is independent of the storage page order).
+// Lockable indices: page1 0..7, page2 8..15, steppage 16..23, page3 24..27.
 // tun2 / fin2 reclaim the dead E1REL / E2REL slots (lockable 9 / 11).
+// freq / famt / pamt / wave are now lockable (24..27) instead of config-mapped.
 static const prog_uint8_t kCellLockable[24] PROGMEM = {
-  // S5a: note, vel, glid, rate | subs(merged), prob, mint, mdir
+  // S5a: note, vel, glid, rate | subs(merged), prob, smth(cfg), vamt(cfg)
+  // smth/vamt are config-mapped (0xff); MINT/MDIR now live only in substep editor.
   0,    20,   21,   19,
-  0xfe, 16,   22,   23,
+  0xfe, 16,   0xff, 0xff,
   // S5b: nois, w1, pa1, tun2 | mix(blnd), w2, pa2, fin2
   14,   1,    2,    9,
   3,    5,    6,    11,
-  // S5c: freq*, fdec, famt*, adec | pdec, pamt*, sub, wave*  (* = config)
-  0xff, 10,   0xff, 8,
-  12,   0xff, 15,   0xff,
+  // S5c: freq, fdec, famt, adec | pdec, pamt, sub, wave  (all lockable now)
+  24,   10,   25,   8,
+  12,   26,   15,   27,
 };
 
-// Patch address for config-mapped cells (delivered to the voicecard via
-// Part::SetValue, which also mirrors into tr.config[]). 0xff for lockable.
-//   freq = filter cutoff     → patch addr 16 (kCfgFREQ)
-//   famt = filter env depth  → patch addr 22 (FILTER1_ENV)
-//   pamt = pitch env depth   → patch addr 58 (mod slot 2)
-//   wave = sub-osc waveform  → patch addr 11 (MIX_SUB_SHAPE)
+// Patch address for config-mapped cells (0xff for lockable cells).
+// smth = portamento      → patch addr 19
+// vamt = vel→VCA amount  → patch addr 85 (mod slot 11 amount)
+// Page3 cells use kPage3PatchAddrs for their live-feedback path.
 static const prog_uint8_t kCellPatchAddr[24] PROGMEM = {
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 19,   85,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-  16,   0xff, 22,   0xff, 0xff, 58,   0xff, 11,
+};
+
+// Voicecard patch addrs for the 4 page3 lockables (indexed by kP3*).
+static const prog_uint8_t kPage3PatchAddrs[4] PROGMEM = {
+  16, 22, 58, 11,   // FREQ, FAMT, PAMT, WAVE
 };
 
 // Sentinel for the merged SSUB+REPT `subs` cell on S5c (cursor 20).
@@ -113,6 +122,19 @@ static inline uint8_t IsWaveCell(uint8_t lockable) {
   return lockable == 1 || lockable == 5;
 }
 
+// Map a 0..127 pot value to a valid osc waveform index, skipping the
+// 9 stripped CZ resonant variants (indices 6..14). Valid set: 0..5, 15..42
+// = 34 entries. Pot maps 0..127 → 0..33, then +9 offset for indices ≥ 6.
+static uint8_t MapWaveform(uint8_t value) {
+  uint8_t idx = ScalePot(value, 33);
+  return (idx <= 5) ? idx : idx + 9;
+}
+
+// Sub-osc waveform cell — 4-char text name from STR_RES_SQU1.
+static inline uint8_t IsSubWaveCell(uint8_t lockable) {
+  return lockable == 27;   // kP3WAVE (24 + kP3WAVE=3)
+}
+
 /* static */
 const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
   OnInit,
@@ -127,6 +149,26 @@ const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
   UpdateLeds,
   OnDialogClosed,
 };
+
+// Encoder click: enter substep editor when on subs cell with step held;
+// exit substep editor on any second click.
+/* static */
+uint8_t SeqStepsPage::OnClick() {
+  if (editing_substeps_) {
+    editing_substeps_ = false;
+    return 1;
+  }
+  if (cursor_ == 4) {
+    for (uint8_t s = 0; s < 8; ++s) {
+      if (ui.switch_held(s)) {
+        substep_step_ = 7 - s;
+        editing_substeps_ = true;
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
 
 // Encoder turn walks cursor across 24 cells; spills to the previous/next
 // page (registry order) when stepping past the boundary.
@@ -162,6 +204,18 @@ uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
 uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   if (index >= 8) return 0;
   uint8_t track = ui.state().active_part;
+
+  // In substep editor, pots 6/7 write MINT/MDIR to the target step.
+  if (editing_substeps_ && index >= 6) {
+    SeqTrack* tr = sequencer.mutable_track(track);
+    SeqStep& step = tr->steps[substep_step_];
+    uint8_t param_idx = (index == 6) ? kSPMINT : kSPMDIR;
+    uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 1) : value;
+    step.steppage[param_idx] = mapped;
+    step.lock_flags[2] |= (1 << param_idx);
+    return 1;
+  }
+
   uint8_t page = sequencer.global().lock_page;
   uint8_t cell = page * 8 + index;
   // Touching a knob brings the cursor to it.
@@ -218,10 +272,10 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   // Per-cell pot scaling.
   uint8_t mapped = value;
   if (lockable == 1 || lockable == 5) {
-    // WAVE1 / WAVE2: full waveform enum range.
-    mapped = ScalePot(value, WAVEFORM_LAST - 1);
-  } else if (patch_addr == 11) {
-    // Sub-osc waveform.
+    // WAVE1 / WAVE2: skip CZ resonant variants (indices 6..14 = silence).
+    mapped = MapWaveform(value);
+  } else if (lockable == 27) {
+    // Sub-osc waveform (kP3WAVE).
     mapped = ScalePot(value, WAVEFORM_SUB_OSC_LAST - 1);
   } else if (lockable == 9) {
     // tun2 — Osc2 coarse pitch, UNIT_INT8 -24..+24.
@@ -238,9 +292,8 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   // freq / famt / pamt pass through 0..127 (matches PAGE_FILTER pot semantics
   // and the round-5 unipolar env-depth range).
 
+  // Config-mapped cells (smth, vamt) push directly to the voicecard.
   if (lockable == 0xff) {
-    // Config cell — push through Part::SetValue (writes voicecard +
-    // mirrors into tr.config[]).
     multi.mutable_part(track)->SetValue(patch_addr, mapped, 0);
     return 1;
   }
@@ -252,26 +305,39 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     uint8_t buf_idx  = lockable & 7;
     uint8_t* slot = (buf_page == 0) ? &step.page1[buf_idx]
                   : (buf_page == 1) ? &step.page2[buf_idx]
-                                    : &step.steppage[buf_idx];
+                  : (buf_page == 2) ? &step.steppage[buf_idx]
+                                    : &step.page3[buf_idx];
     *slot = mapped;
     step.lock_flags[lockable >> 3] |= (1 << (lockable & 7));
     step_lock_dirty_ |= (1 << held_step);
     ui.inhibit_switch(1 << held_sr);
   } else {
     tr->defaults[lockable] = mapped;
+    // Page3 lockables also push live to the voicecard so filter/wave respond
+    // immediately when adjusting the default (same as config-mapped cells did).
+    if (lockable >= 24 && lockable <= 27) {
+      uint8_t p3_addr = pgm_read_byte(&kPage3PatchAddrs[lockable - 24]);
+      multi.mutable_part(track)->SetValue(p3_addr, mapped, 0);
+    }
   }
   return 1;
 }
 
 // Step toggle on release. Suppressed if a pot moved while this step was held.
+// In substep editor mode, toggles substep_bits instead of step_flags.
 /* static */
 uint8_t SeqStepsPage::OnKey(uint8_t key) {
   if (key > SWITCH_8) return 0;
+  uint8_t track = ui.state().active_part;
+  if (editing_substeps_) {
+    SeqStep& s = sequencer.mutable_track(track)->steps[substep_step_];
+    s.substep_bits ^= (1 << key);
+    return 1;
+  }
   if (step_lock_dirty_ & (1 << key)) {
     step_lock_dirty_ &= ~(1 << key);
     return 1;
   }
-  uint8_t track = ui.state().active_part;
   SeqStep& s = sequencer.mutable_track(track)->steps[key];
   s.step_flags ^= kStepFlagOn;
   return 1;
@@ -305,6 +371,33 @@ static void WriteI8Right(char* buf, uint8_t value) {
 void SeqStepsPage::UpdateScreen() {
   uint8_t track = ui.state().active_part;
   const SeqTrack& tr = sequencer.track(track);
+
+  if (editing_substeps_) {
+    const SeqStep& step = tr.steps[substep_step_];
+    char* line0 = display.line_buffer(0);
+    char* line1 = display.line_buffer(1);
+    for (uint8_t i = 0; i < kLcdWidth; ++i) { line0[i] = ' '; line1[i] = ' '; }
+    // MINT cell (offset 0..9)
+    memcpy_P(&line0[1], PSTR("MINT"), 4);
+    WriteU8Right(&line0[5], step.steppage[kSPMINT]);
+    line0[9] = ' ';
+    // MDIR cell (offset 10..19)
+    line0[10] = kDelimiter;
+    memcpy_P(&line0[11], PSTR("MDIR"), 4);
+    WriteU8Right(&line0[15], step.steppage[kSPMDIR]);
+    line0[19] = ' ';
+    // Substep bit pattern on line 1 (8 slots × 4 chars = 32 chars).
+    uint8_t bits = step.substep_bits;
+    for (uint8_t b = 0; b < 8; ++b) {
+      uint8_t pos = b * 4;
+      line1[pos]     = ' ';
+      line1[pos + 1] = ' ';
+      line1[pos + 2] = (bits & (1 << b)) ? '#' : '-';
+      line1[pos + 3] = ' ';
+    }
+    return;
+  }
+
   uint8_t page = sequencer.global().lock_page;
   uint8_t cursor_in_page = (cursor_ >> 3) == page ? (cursor_ & 7) : 0xff;
 
@@ -386,17 +479,15 @@ void SeqStepsPage::UpdateScreen() {
 
     // Resolve value for display.
     uint8_t v;
-    if (lockable == 0xff) {
-      v = multi.part(track).GetValue(patch_addr);
-    } else if (held_step != 0xff &&
-               (tr.steps[held_step].lock_flags[lockable >> 3] &
-                (1 << (lockable & 7)))) {
+    if (held_step != 0xff &&
+        (tr.steps[held_step].lock_flags[lockable >> 3] & (1 << (lockable & 7)))) {
       const SeqStep& step = tr.steps[held_step];
       uint8_t buf_page = lockable >> 3;
       uint8_t buf_idx  = lockable & 7;
       v = (buf_page == 0) ? step.page1[buf_idx]
         : (buf_page == 1) ? step.page2[buf_idx]
-                          : step.steppage[buf_idx];
+        : (buf_page == 2) ? step.steppage[buf_idx]
+                          : step.page3[buf_idx];
     } else {
       v = tr.defaults[lockable];
     }
@@ -410,7 +501,7 @@ void SeqStepsPage::UpdateScreen() {
       for (uint8_t k = 3; k <= 8; ++k) buffer[k] = ' ';
       ResourcesManager::LoadStringResource(STR_RES_NONE + v, &buffer[3], 6);
       AlignRight(&buffer[3], 6);
-    } else if (patch_addr == 11) {
+    } else if (IsSubWaveCell(lockable)) {
       // Sub-osc waveform — 4-char text name.
       for (uint8_t k = 5; k <= 8; ++k) buffer[k] = ' ';
       ResourcesManager::LoadStringResource(STR_RES_SQU1 + v, &buffer[5], 4);
@@ -445,6 +536,15 @@ void SeqStepsPage::UpdateLeds() {
   UiPage::UpdateLeds();
   uint8_t track = ui.state().active_part;
   const SeqTrack& tr = sequencer.track(track);
+  if (editing_substeps_) {
+    uint8_t bits = tr.steps[substep_step_].substep_bits;
+    for (uint8_t i = 0; i < kNumStepsPerTrack; ++i) {
+      if (bits & (1 << i)) {
+        leds.set_pixel(LED_1 + i, 0x0f);
+      }
+    }
+    return;
+  }
   uint8_t transport = sequencer.global().transport;
   if (transport == kSeqPlaying) {
     leds.set_pixel(LED_STATUS, 0xf0);

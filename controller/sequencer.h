@@ -1,7 +1,7 @@
 // Copyright 2011 Emilie Gillet.
 //
-// Phase 3: Sequencer data structures.
-// SeqStep (29B), SeqTrack (297B × 6 = 1,782B), SeqGlobal (32B).
+// Round 5b: Sequencer data structures.
+// SeqStep (34B), SeqTrack (343B × 6 = 2,058B), SeqGlobal (32B).
 
 #ifndef CONTROLLER_SEQUENCER_H_
 #define CONTROLLER_SEQUENCER_H_
@@ -43,21 +43,30 @@ static const uint8_t kSPGLID  = 5;
 static const uint8_t kSPMINT  = 6;
 static const uint8_t kSPMDIR  = 7;
 
-static const uint8_t kNumLockableParams = 24;
+// ---- page3[] indices (Voice Page 3 — Filter / Pitch / Sub) ----
+// lock indices 24..27, snapshot bytes 16..19.
+static const uint8_t kP3FREQ  = 0;  // filter cutoff     (patch addr 16)
+static const uint8_t kP3FAMT  = 1;  // ENV2→VCF depth    (patch addr 22)
+static const uint8_t kP3PAMT  = 2;  // ENV3→pitch depth  (patch addr 58)
+static const uint8_t kP3WAVE  = 3;  // sub-osc waveform  (patch addr 11)
+
+static const uint8_t kNumLockableParams = 28;
 static const uint8_t kNumStepsPerTrack  = 8;
 
 // bit 0 of step_flags: trigger enabled
 static const uint8_t kStepFlagOn = 0x01;
 
-// SeqStep — 29 bytes.
+// SeqStep — 34 bytes.
 // lock_flags bit N: lockable param N is overridden for this step.
-//   N = page_index*8 + param_index, where page_index: 0=page1, 1=page2, 2=steppage.
+//   N = page_index*8 + param_index:
+//     page_index 0=page1 (N 0..7), 1=page2 (N 8..15), 2=steppage (N 16..23), 3=page3 (N 24..27).
 // SSUB: uint8_t, interpreted as int8_t. -2=Edit, -1=Custom, 0=normal, +1..+8=ratchets.
 struct SeqStep {
   uint8_t page1[8];       // NOTE, WAVE1, PARA1, BLND, RTIO, WAVE2, PARA2, FINE
-  uint8_t page2[8];       // LPGD, LPGA, LPGO, NOIS, PITD, PITA, WAVE_sub, SUB
+  uint8_t page2[8];       // E1DEC, TUN2, E2DEC, FIN2, E3DEC, E3REL(dead), NOIS, SUB
   uint8_t steppage[8];    // PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR
-  uint8_t lock_flags[3];  // 24-bit lock bitfield (one bit per lockable param)
+  uint8_t page3[4];       // FREQ, FAMT, PAMT, WAVE (lock indices 24..27)
+  uint8_t lock_flags[4];  // 32-bit lock bitfield (one bit per lockable param, bits 28..31 reserved)
   uint8_t step_flags;     // bit 0: on
   uint8_t substep_bits;   // 8-bit sub-step bitfield (SSUB = -1 or -2)
 };
@@ -97,8 +106,8 @@ static const uint8_t kCfgE1CRV = 14;  // Env1 decay curve (0=linear, 255=expo)
 static const uint8_t kCfgE2CRV = 15;  // Env2 decay curve
 static const uint8_t kCfgE3CRV = 16;  // Env3 decay curve
 static const uint8_t kCfgPHSE  = 17;  // oscillator phase reset on trigger
-static const uint8_t kCfgSMTH  = 18;  // portamento / smoothing
-// config[19]: reserved
+static const uint8_t kCfgSMTH   = 18;  // portamento / smoothing
+static const uint8_t kCfgVELAMT = 19;  // velocity → VCA amount (mod slot 11)
 static const uint8_t kCfgOSC1R = 20;  // osc1 range
 static const uint8_t kCfgOSC2R = 21;  // unused — OSC2 coarse moved to defaults[8 + kP2TUN2]
 static const uint8_t kCfgOSC2D = 22;  // unused — OSC2 detune moved to defaults[8 + kP2FIN2]
@@ -120,16 +129,19 @@ static const uint8_t kShdwDIR  = 4;  // pendulum direction: 0=fwd, 1=rev
 static const uint8_t kShdwLAST = 5;  // most-recently-fired step (for chaselight LED)
 static const uint8_t kShdwSIZE = 6;
 
-// SeqTrack — 232+8+24+kCfgSIZE+5 bytes per track.
+// SeqTrack — 272+8+28+kCfgSIZE+6 bytes = 343 bytes per track.
 // defaults[N]: default value for lockable param N.
-//   defaults[0..7] = page1, [8..15] = page2 (E1DEC/REL/E2DEC/REL/E3DEC/REL/NOIS/SUB), [16..23] = steppage.
-// config[kCfgSIZE]: voice config (filter, LFO4, env ATK/CRV/DEPT, osc, mixer).
-// shadow[5]: transient playhead; zeroed on Reset.
-// Mod matrix routing is fixed; only amounts (at Patch bytes 58/72/73/82) live in config[].
+//   defaults[0..7]   = page1 (NOTE..FINE)
+//   defaults[8..15]  = page2 (E1DEC, TUN2, E2DEC, FIN2, E3DEC, E3REL(dead), NOIS, SUB)
+//   defaults[16..23] = steppage (PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR)
+//   defaults[24..27] = page3 (FREQ, FAMT, PAMT, WAVE)
+// config[kCfgSIZE]: remaining voice config (filter, LFO4, env ATK/CRV, osc, mixer).
+//   Note: FREQ/FAMT/PAMT/WAVE moved out of config to defaults[24..27] in round 5b.
+// shadow[6]: transient playhead; zeroed on Reset.
 struct SeqTrack {
-  SeqStep steps[8];          // 232 bytes
-  uint8_t pattern[8];        // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, BPCH, OLEV
-  uint8_t defaults[24];      // default value per lockable param
+  SeqStep steps[8];          // 272 bytes (8 × 34)
+  uint8_t pattern[8];        // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, BPCH, VOL
+  uint8_t defaults[28];      // default value per lockable param (28 params)
   uint8_t config[kCfgSIZE];  // voice config
   uint8_t shadow[kShdwSIZE]; // transient playhead state
 };

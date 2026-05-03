@@ -63,14 +63,21 @@ static const prog_uint8_t kDefaultPage1[] PROGMEM = {
 };
 
 static const prog_uint8_t kDefaultPage2[] PROGMEM = {
-  40,   // E1DEC = env1 decay (matches init_patch)
-  60,   // E1REL = env1 release
+  40,   // E1DEC = env1 decay
+  0,    // TUN2  = OSC2 coarse pitch (int8, 0 = no offset)
   40,   // E2DEC
-  60,   // E2REL
+  0,    // FIN2  = OSC2 detune (int8, 0 = no detune)
   40,   // E3DEC
-  60,   // E3REL
-  0,    // NOIS = no noise
-  0,    // SUB = no sub-osc
+  0,    // E3REL = dead slot
+  0,    // NOIS  = no noise
+  0,    // SUB   = no sub-osc
+};
+
+static const prog_uint8_t kDefaultPage3[] PROGMEM = {
+  96,   // FREQ = cutoff at 3/4 open (matches kDefaultConfig[kCfgFREQ])
+  64,   // FAMT = ENV2→VCF depth mid (matches kDefaultConfig[kCfgE2DEPT])
+  0,    // PAMT = ENV3→pitch depth off
+  0,    // WAVE = WAVEFORM_SUB_OSC_SQUARE_1
 };
 
 static const prog_uint8_t kDefaultStepPage[] PROGMEM = {
@@ -104,7 +111,7 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   64,   // E3CRV
   0,    // PHSE = no phase reset
   0,    // SMTH = no portamento
-  0,    // reserved
+  127,  // VELAMT = full velocity→VCA (mod slot 11 amount)
   0,    // OSC1R = 0
   0,    // OSC2R = 0
   0,    // OSC2D = center
@@ -134,6 +141,16 @@ const prog_uint8_t kDefaultMod[42] PROGMEM = {
   0, 0, 0,    // slot 13: cleared
 };
 
+// Resolve a step-page (steppage[]) byte: lock if set, otherwise track default.
+// step_param is a kSP* index in [0..7].
+static inline uint8_t ResolveStepByte(
+    const SeqTrack& tr, uint8_t step_index, uint8_t step_param) {
+  const SeqStep& step = tr.steps[step_index];
+  return (step.lock_flags[2] & (1 << step_param))
+      ? step.steppage[step_param]
+      : tr.defaults[16 + step_param];
+}
+
 static const prog_uint8_t kDefaultPattern[] PROGMEM = {
   kDirnFwd,  // DIRN = forward
   0,          // CDIV index 0 → ÷1 (normal rate)
@@ -153,9 +170,11 @@ void Sequencer::Init() {
       memcpy_P(step.page1,    kDefaultPage1,    8);
       memcpy_P(step.page2,    kDefaultPage2,    8);
       memcpy_P(step.steppage, kDefaultStepPage, 8);
+      memcpy_P(step.page3,    kDefaultPage3,    4);
       step.lock_flags[0] = 0;
       step.lock_flags[1] = 0;
       step.lock_flags[2] = 0;
+      step.lock_flags[3] = 0;
       step.step_flags    = 0;
       step.substep_bits  = 0;
     }
@@ -163,6 +182,7 @@ void Sequencer::Init() {
     memcpy_P(&tr.defaults[0],  kDefaultPage1,    8);
     memcpy_P(&tr.defaults[8],  kDefaultPage2,    8);
     memcpy_P(&tr.defaults[16], kDefaultStepPage, 8);
+    memcpy_P(&tr.defaults[24], kDefaultPage3,    4);
     memcpy_P(tr.config,        kDefaultConfig,   kCfgSIZE);
     memset(tr.shadow, 0, kShdwSIZE);
   }
@@ -178,23 +198,82 @@ void Sequencer::Clock(uint8_t ticks) {
   if (global_.transport != kSeqPlaying) return;
 
   for (uint8_t t = 0; t < kNumVoices; ++t) {
-    SeqTrack& tr   = tracks_[t];
-    uint8_t cdiv   = pgm_read_byte(kCDivValues + tr.pattern[kPatCDIV]);
+    SeqTrack& tr = tracks_[t];
+
+    // RATE: per-step CDIV override for the currently-playing step.
+    // 0 = use track CDIV; 1..7 = use that index directly.
+    uint8_t rate = ResolveStepByte(tr, tr.shadow[kShdwLAST], kSPRATE);
+    uint8_t cdiv_idx = rate ? (rate & 7) : tr.pattern[kPatCDIV];
+    uint8_t cdiv   = pgm_read_byte(kCDivValues + cdiv_idx);
     uint8_t period = kNumTicksPerStep * cdiv;
 
     tr.shadow[kShdwTICK] += ticks;
+
+    // SSUB ratchet: fire sub-triggers between period boundaries.
+    // Only active when a step has been fired (kShdwLAST is valid post-reset).
+    uint8_t cur = tr.shadow[kShdwLAST];
+    int8_t ssub = static_cast<int8_t>(ResolveStepByte(tr, cur, kSPSSUB));
+    if (tr.shadow[kShdwTICK] < period) {
+      if (ssub > 0) {
+        // N+1 evenly-spaced fires per period. Slot 0 = main fire (already done).
+        uint8_t sub_period = period / (static_cast<uint8_t>(ssub) + 1);
+        if (sub_period > 0) {
+          uint8_t slot_now  = tr.shadow[kShdwTICK] / sub_period;
+          uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / sub_period;
+          if (slot_now != slot_prev && slot_now > 0) {
+            voicecard_tx.Release(t);
+            if (tr.steps[cur].step_flags & kStepFlagOn) {
+              FireStep(t, cur);
+            }
+          }
+        }
+      } else if (ssub == -1 || ssub == -2) {
+        // Custom/Edit: substep_bits drives 8 evenly-spaced slots.
+        uint8_t slot_period = period >> 3;
+        if (slot_period > 0) {
+          uint8_t slot_now  = tr.shadow[kShdwTICK] / slot_period;
+          uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / slot_period;
+          if (slot_now != slot_prev && slot_now > 0 && slot_now < 8) {
+            if (tr.steps[cur].substep_bits & (1 << slot_now)) {
+              voicecard_tx.Release(t);
+              if (tr.steps[cur].step_flags & kStepFlagOn) {
+                FireStep(t, cur);
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (tr.shadow[kShdwTICK] >= period) {
       tr.shadow[kShdwTICK] -= period;
-      uint8_t len   = tr.pattern[kPatLENG];
+      uint8_t len = tr.pattern[kPatLENG];
       if (len == 0) len = 1;
-      uint8_t step  = tr.shadow[kShdwSTEP];
-      uint8_t fired = (step + tr.pattern[kPatROTA]) % len;
-      voicecard_tx.Release(t);
-      tr.shadow[kShdwLAST] = fired;
-      if (tr.steps[fired].step_flags & kStepFlagOn) {
-        FireStep(t, fired);
+
+      if (tr.shadow[kShdwREPT] > 0) {
+        // REPT: re-fire the last-fired step, no advance.
+        tr.shadow[kShdwREPT]--;
+        voicecard_tx.Release(t);
+        if (tr.steps[tr.shadow[kShdwLAST]].step_flags & kStepFlagOn) {
+          FireStep(t, tr.shadow[kShdwLAST]);
+        }
+        if (tr.shadow[kShdwREPT] == 0) {
+          AdvanceStep(t);
+        }
+      } else {
+        uint8_t step  = tr.shadow[kShdwSTEP];
+        uint8_t fired = (step + tr.pattern[kPatROTA]) % len;
+        voicecard_tx.Release(t);
+        tr.shadow[kShdwLAST] = fired;
+        if (tr.steps[fired].step_flags & kStepFlagOn) {
+          FireStep(t, fired);
+        }
+        uint8_t rept = ResolveStepByte(tr, fired, kSPREPT);
+        tr.shadow[kShdwREPT] = rept;
+        if (rept == 0) {
+          AdvanceStep(t);
+        }
       }
-      AdvanceStep(t);
     }
   }
 }
@@ -237,16 +316,6 @@ void Sequencer::AdvanceStep(uint8_t t) {
   tr.shadow[kShdwSTEP] = step;
 }
 
-// Resolve a step-page (steppage[]) byte: lock if set, otherwise track default.
-// step_param is a kSP* index in [0..7].
-static inline uint8_t ResolveStepByte(
-    const SeqTrack& tr, uint8_t step_index, uint8_t step_param) {
-  const SeqStep& step = tr.steps[step_index];
-  return (step.lock_flags[2] & (1 << step_param))
-      ? step.steppage[step_param]
-      : tr.defaults[16 + step_param];
-}
-
 void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
   SeqTrack& tr = tracks_[t];
   const SeqStep& step = tr.steps[step_index];
@@ -256,14 +325,19 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
   uint8_t prob = ResolveStepByte(tr, step_index, kSPPROB);
   if ((Random::GetByte() & 0x7F) > prob) return;
 
-  // Resolve 16-byte snapshot: page1[8] || page2[8].
-  uint8_t snapshot[16];
+  // Resolve 20-byte snapshot: page1[8] || page2[8] || page3[4].
+  uint8_t snapshot[20];
   for (uint8_t i = 0; i < 16; ++i) {
     uint8_t locked = step.lock_flags[i >> 3] & (1 << (i & 7));
     const uint8_t* src = locked
         ? (i < 8 ? &step.page1[i] : &step.page2[i - 8])
         : &tr.defaults[i];
     snapshot[i] = *src;
+  }
+  for (uint8_t i = 0; i < 4; ++i) {
+    snapshot[16 + i] = (step.lock_flags[3] & (1 << i))
+        ? step.page3[i]
+        : tr.defaults[24 + i];
   }
 
   // Note: lock-or-default at kP1NOTE, then quantize by track scale + root.

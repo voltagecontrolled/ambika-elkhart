@@ -44,16 +44,16 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 8:  return &tr.defaults[kP1BLND];
     case 9:  return &tr.config[kCfgFMOP];
     case 10: return &tr.defaults[kP1RTIO];
-    case 11: return &tr.config[kCfgWSUB];          // sub-osc shape (non-lockable)
+    case 11: return &tr.defaults[24 + kP3WAVE];    // sub-osc shape (now lockable)
     case 12: return &tr.defaults[8 + kP2SUB];
     case 13: return &tr.defaults[8 + kP2NOIS];
     case 14: return &tr.config[kCfgFUZZ];
     case 15: return &tr.config[kCfgBITS];
     // Filter
-    case 16: return &tr.config[kCfgFREQ];
+    case 16: return &tr.defaults[24 + kP3FREQ];    // filter cutoff (now lockable)
     case 17: return &tr.config[kCfgRES];
     case 18: return &tr.config[kCfgTYPE];
-    case 22: return &tr.config[kCfgE2DEPT];        // filter_env = ENV2→VCF depth
+    case 22: return &tr.defaults[24 + kP3FAMT];    // ENV2→VCF depth (now lockable)
     // Envelope attacks (voice-wide config)
     case 24: return &tr.config[kCfgE1ATK];
     case 32: return &tr.config[kCfgE2ATK];
@@ -75,10 +75,12 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 48: return &tr.config[kCfgLSHP];          // voice_lfo_shape
     case 49: return &tr.config[kCfgLFOS];          // voice_lfo_rate
     // Configurable mod amounts (fixed routing slots)
-    case 58: return &tr.config[kCfgE3DEPT];        // slot 2 amount: ENV3→pitch depth
+    case 19: return &tr.config[kCfgSMTH];           // portamento
+    case 58: return &tr.defaults[24 + kP3PAMT];    // ENV3→pitch depth (now lockable)
     case 72: return &tr.config[kCfgLFO4D];         // slot 7 dest: LFO4 destination
     case 73: return &tr.config[kCfgLFO4A];         // slot 7 amount: LFO4 amount
     case 82: return &tr.config[kCfgE1DEPT];        // slot 10 amount: ENV1→VCA depth
+    case 85: return &tr.config[kCfgVELAMT];        // slot 11 amount: vel→VCA depth
     // Filter KB tracking
     case 105: return &tr.config[kCfgTRAK];
     // EG depth (virtual; indexed by active_env_lfo; 200=Amp/E1, 201=Filt/E2, 202=Pitch/E3)
@@ -117,12 +119,12 @@ void Part::Touch() {
   static const uint8_t kSyncAddresses[] = {
     0, 1, 2, 3, 4, 5, 6, 7,
     8, 9, 10, 11, 12, 13, 14, 15,
-    16, 17, 18, 22,
+    16, 17, 18, 19, 22,
     24, 25, 26,
     32, 33, 34,
     40, 41, 42,
     48, 49,
-    58, 72, 73, 82,
+    58, 72, 73, 82, 85,
     105,
     200, 201, 202,
   };

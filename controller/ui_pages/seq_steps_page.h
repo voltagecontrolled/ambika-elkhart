@@ -15,6 +15,7 @@ class SeqStepsPage : public UiPage {
   SeqStepsPage() { }
 
   static uint8_t OnIncrement(int8_t increment);
+  static uint8_t OnClick();
   static uint8_t OnPot(uint8_t index, uint8_t value);
   static uint8_t OnKey(uint8_t key);
   static void UpdateScreen();
@@ -30,6 +31,12 @@ class SeqStepsPage : public UiPage {
   // Cursor across all 24 lockable params (0..23). Encoder turns advance this
   // by 1; the active page is derived as cursor_ / 8.
   static uint8_t cursor_;
+
+  // Substep editor state: entered via encoder click while on `subs` cell
+  // with a step button held. While active, step buttons toggle substep_bits
+  // and pots 6/7 control MINT/MDIR for the target step.
+  static bool editing_substeps_;
+  static uint8_t substep_step_;
 
   DISALLOW_COPY_AND_ASSIGN(SeqStepsPage);
 };
