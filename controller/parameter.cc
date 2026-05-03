@@ -549,7 +549,7 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
   // 27 — E1 depth (was indexed env sustain). Virtual addr 200 → mod slot 10 amount.
   { PARAMETER_LEVEL_PATCH,
     200,
-    UNIT_UINT8, 0, 63,
+    UNIT_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_AMP, STR_RES_DEPTH, STR_RES_ENVELOPE },
 
@@ -900,7 +900,7 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
   // 77 — E2 depth (virtual addr 201 → filter_env / E2DEPT)
   { PARAMETER_LEVEL_PATCH,
     201,
-    UNIT_UINT8, 0, 63,
+    UNIT_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_FLT, STR_RES_DEPTH, STR_RES_ENVELOPE },
 
@@ -928,7 +928,7 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
   // 81 — E3 depth (virtual addr 202 → mod slot 2 amount)
   { PARAMETER_LEVEL_PATCH,
     202,
-    UNIT_UINT8, 0, 63,
+    UNIT_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_PCH, STR_RES_DEPTH, STR_RES_ENVELOPE },
 
