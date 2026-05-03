@@ -138,6 +138,30 @@ static inline uint8_t IsSubWaveCell(uint8_t lockable) {
   return lockable == 27;   // kP3WAVE (24 + kP3WAVE=3)
 }
 
+// MINT interval names for 0..12 semitones (4 chars each).
+// Values 13..127 fall back to right-aligned integer.
+static const prog_char kMintNames[] PROGMEM =
+  " off"  // 0
+  " m2 "  // 1  minor 2nd
+  " M2 "  // 2  major 2nd
+  " m3 "  // 3  minor 3rd
+  " M3 "  // 4  major 3rd
+  " P4 "  // 5  perfect 4th
+  " TT "  // 6  tritone
+  " P5 "  // 7  perfect 5th
+  " m6 "  // 8  minor 6th
+  " M6 "  // 9  major 6th
+  " m7 "  // 10 minor 7th
+  " M7 "  // 11 major 7th
+  " 8va";  // 12 octave
+
+// MDIR direction labels (4 chars each). Values 0..3.
+static const prog_char kMdirNames[] PROGMEM =
+  " up "   // 0 ascending
+  " dn "   // 1 descending
+  " ud "   // 2 up then down (ping-pong)
+  " rnd";  // 3 random
+
 /* static */
 const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
   OnInit,
@@ -275,7 +299,7 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     }
     if (index == 1 || index == 2) {
       uint8_t param_idx = (index == 1) ? kSPMINT : kSPMDIR;
-      uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 1) : value;
+      uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 3) : value;
       step.steppage[param_idx] = mapped;
       step.lock_flags[2] |= (1 << param_idx);
       return 1;
@@ -448,12 +472,22 @@ void SeqStepsPage::UpdateScreen() {
     // MINT cell (offset 10..19)
     line0[10] = kDelimiter;
     memcpy_P(&line0[11], PSTR("MINT"), 4);
-    WriteU8Right(&line0[15], step.steppage[kSPMINT]);
+    {
+      uint8_t mint = step.steppage[kSPMINT];
+      if (mint <= 12) {
+        memcpy_P(&line0[15], kMintNames + mint * 4, 4);
+      } else {
+        WriteU8Right(&line0[15], mint);
+      }
+    }
     line0[19] = ' ';
     // MDIR cell (offset 20..29)
     line0[20] = kDelimiter;
     memcpy_P(&line0[21], PSTR("MDIR"), 4);
-    WriteU8Right(&line0[25], step.steppage[kSPMDIR]);
+    {
+      uint8_t mdir = step.steppage[kSPMDIR] & 3;
+      memcpy_P(&line0[25], kMdirNames + mdir * 4, 4);
+    }
     line0[29] = ' ';
     // Substep bit pattern on line 1 (8 slots × 4 chars = 32 chars).
     // Slots >= substep_count_ are shown blank (not interactive).

@@ -349,13 +349,32 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   uint8_t note = snapshot[kP1NOTE];
   note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
 
-  // MINT/MDIR: walk note per sub-trigger index (repeats and ratchets).
+  // MINT/MDIR: walk note per sub-trigger index.
+  // MDIR 0=up, 1=dn, 2=ud (ping-pong ±mint), 3=rnd (random ±mint).
   if (sub_idx > 0) {
     uint8_t mint = ResolveStepByte(tr, step_index, kSPMINT);
     if (mint > 0) {
-      uint8_t mdir = ResolveStepByte(tr, step_index, kSPMDIR);
-      int16_t delta = static_cast<int16_t>(sub_idx) * static_cast<int16_t>(mint);
-      if (mdir) delta = -delta;
+      uint8_t mdir = ResolveStepByte(tr, step_index, kSPMDIR) & 3;
+      int16_t delta;
+      switch (mdir) {
+        default:
+        case 0:
+          delta =  static_cast<int16_t>(sub_idx) * static_cast<int16_t>(mint);
+          break;
+        case 1:
+          delta = -static_cast<int16_t>(sub_idx) * static_cast<int16_t>(mint);
+          break;
+        case 2:
+          // Ping-pong: alternate +mint / -mint from base note each fire.
+          delta = (sub_idx & 1) ? static_cast<int16_t>(mint)
+                                : -static_cast<int16_t>(mint);
+          break;
+        case 3:
+          // Random offset ±mint from base note.
+          delta = static_cast<int16_t>(Random::GetByte() % (2 * mint + 1))
+                  - static_cast<int16_t>(mint);
+          break;
+      }
       int16_t new_note = static_cast<int16_t>(note) + delta;
       if (new_note < 0) new_note = 0;
       if (new_note > 127) new_note = 127;
