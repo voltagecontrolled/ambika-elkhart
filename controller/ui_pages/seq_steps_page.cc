@@ -231,11 +231,16 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     if (index == 4) {
       // Substep count 1..8 stored in REPT (0 = unconstrained = 8).
       uint8_t cnt = ScalePot(value, 7) + 1;  // 1..8
+      if (cnt > substep_count_) {
+        // Auto-enable newly exposed slots.
+        for (uint8_t b = substep_count_; b < cnt; ++b) step.substep_bits |= (1 << b);
+      } else if (cnt < substep_count_) {
+        // Mask out slots beyond new count.
+        if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
+      }
       substep_count_ = cnt;
       step.steppage[kSPREPT] = cnt;
       step.lock_flags[2] |= (1 << kSPREPT);
-      // Mask out bits beyond new count.
-      if (cnt < 8) step.substep_bits &= (1 << cnt) - 1;
       return 1;
     }
     if (index < 6) return 0;
@@ -263,16 +268,18 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     if (ui.switch_held(s)) { held_sr = s; break; }
   }
 
-  // Merged subs cell — writes SSUB and REPT with mutex.
-  // ScalePot(value,16): 0=normal, 1..8=repeats, 9..16=ratchets 1x..8x.
+  // Merged subs cell — deadzone at 12 o'clock, CCW=repeats 8r..1r, CW=ratchets 1x..8x.
+  // 0..55: 8 bands of 7 → 8r..1r. 56..71: deadzone (normal). 72..127: 1x..8x.
   if (lockable == kSubsMergedSentinel) {
     int8_t  ssub_v = 0;
     uint8_t rept_v = 0;
-    uint8_t idx = ScalePot(value, 16);
-    if (idx >= 9) {
-      ssub_v = static_cast<int8_t>(idx - 8);   // 1..8 ratchets
-    } else if (idx >= 1) {
-      rept_v = idx;                              // 1..8 repeats
+    if (value < 56) {
+      rept_v = 8 - (value / 7);
+      if (rept_v < 1) rept_v = 1;
+    } else if (value > 71) {
+      uint8_t r = (value - 72) / 7 + 1;
+      if (r > 8) r = 8;
+      ssub_v = static_cast<int8_t>(r);
     }
     uint8_t ssub_byte = static_cast<uint8_t>(ssub_v);
     if (held_sr != 0xff) {
