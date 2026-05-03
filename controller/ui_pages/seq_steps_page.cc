@@ -68,7 +68,7 @@ static const prog_char kNoteNames[] PROGMEM =
 // default cursor=0 lands on NOTE — the most foundational sequencer knob.
 // Voice 1 / Voice 2 follow.
 static const prog_char kAbbr[] PROGMEM =
-  "notevel glidratesubsprobsmthvamt"  // page 1 = S5a (step behavior)
+  "notevel vamtratesubsprobglidgtim"  // page 1 = S5a (step behavior)
   "noisw1  pa1 tun2mix w2  pa2 fin2"  // page 2 = S5b (voice 1: osc / mix)
   "freqfdecfamtadecpdecpamtsub wave"; // page 3 = S5c (voice 2: filter/env/sub)
 
@@ -81,10 +81,10 @@ static const prog_char kAbbr[] PROGMEM =
 // tun2 / fin2 reclaim the dead E1REL / E2REL slots (lockable 9 / 11).
 // freq / famt / pamt / wave are now lockable (24..27) instead of config-mapped.
 static const prog_uint8_t kCellLockable[24] PROGMEM = {
-  // S5a: note, vel, glid, rate | subs(merged), prob, smth(cfg), vamt(cfg)
-  // smth/vamt are config-mapped (0xff); MINT/MDIR now live only in substep editor.
-  0,    20,   21,   19,
-  0xfe, 16,   0xff, 0xff,
+  // S5a: note, vel, vamt(cfg), rate | subs(merged), prob, glid, gtim(cfg)
+  // vamt/gtim are config-mapped (0xff); MINT/MDIR now live only in substep editor.
+  0,    20,   0xff, 19,
+  0xfe, 16,   21,   0xff,
   // S5b: nois, w1, pa1, tun2 | mix(blnd), w2, pa2, fin2
   14,   1,    2,    9,
   3,    5,    6,    11,
@@ -94,11 +94,11 @@ static const prog_uint8_t kCellLockable[24] PROGMEM = {
 };
 
 // Patch address for config-mapped cells (0xff for lockable cells).
-// smth = portamento      → patch addr 19
 // vamt = vel→VCA amount  → patch addr 85 (mod slot 11 amount)
+// gtim = portamento time → virtual addr 203 (→ VOICECARD_DATA_PART offset 6)
 // Page3 cells use kPage3PatchAddrs for their live-feedback path.
 static const prog_uint8_t kCellPatchAddr[24] PROGMEM = {
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 19,   85,
+  0xff, 0xff, 85,   0xff, 0xff, 0xff, 0xff, 203,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 };
@@ -163,6 +163,11 @@ uint8_t SeqStepsPage::OnClick() {
       if (ui.switch_held(s)) {
         substep_step_ = 7 - s;
         editing_substeps_ = true;
+        // Auto-set SSUB=-2 (Edit) so the bits drive playback.
+        SeqTrack* tr = sequencer.mutable_track(ui.state().active_part);
+        SeqStep& step = tr->steps[substep_step_];
+        step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
+        step.lock_flags[2] |= (1 << kSPSSUB);
         return 1;
       }
     }
@@ -205,8 +210,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   if (index >= 8) return 0;
   uint8_t track = ui.state().active_part;
 
-  // In substep editor, pots 6/7 write MINT/MDIR to the target step.
-  if (editing_substeps_ && index >= 6) {
+  // In substep editor: swallow pots 0-5; pots 6/7 write MINT/MDIR.
+  if (editing_substeps_) {
+    if (index < 6) return 0;
     SeqTrack* tr = sequencer.mutable_track(track);
     SeqStep& step = tr->steps[substep_step_];
     uint8_t param_idx = (index == 6) ? kSPMINT : kSPMDIR;
@@ -283,6 +289,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   } else if (lockable == 11) {
     // fin2 — Osc2 detune, UNIT_INT8 -64..+64.
     mapped = MapPotInt8(value, -64, 64);
+  } else if (lockable == 21) {
+    // GLID — binary on/off.
+    mapped = ScalePot(value, 1);
   } else if (lockable == 3) {
     // BLND (mix) — clamp to crossfade range. Upper half (≥ 64) was reserved
     // for future linear-FM and isn't implemented; the dead range produced
@@ -479,7 +488,10 @@ void SeqStepsPage::UpdateScreen() {
 
     // Resolve value for display.
     uint8_t v;
-    if (held_step != 0xff &&
+    if (lockable == 0xff) {
+      // Config-mapped cell: read live value from config via GetValue.
+      v = multi.part(track).GetValue(patch_addr);
+    } else if (held_step != 0xff &&
         (tr.steps[held_step].lock_flags[lockable >> 3] & (1 << (lockable & 7)))) {
       const SeqStep& step = tr.steps[held_step];
       uint8_t buf_page = lockable >> 3;

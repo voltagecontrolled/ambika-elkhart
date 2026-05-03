@@ -75,12 +75,12 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 48: return &tr.config[kCfgLSHP];          // voice_lfo_shape
     case 49: return &tr.config[kCfgLFOS];          // voice_lfo_rate
     // Configurable mod amounts (fixed routing slots)
-    case 19: return &tr.config[kCfgSMTH];           // portamento
     case 58: return &tr.defaults[24 + kP3PAMT];    // ENV3→pitch depth (now lockable)
     case 72: return &tr.config[kCfgLFO4D];         // slot 7 dest: LFO4 destination
     case 73: return &tr.config[kCfgLFO4A];         // slot 7 amount: LFO4 amount
     case 82: return &tr.config[kCfgE1DEPT];        // slot 10 amount: ENV1→VCA depth
-    case 85: return &tr.config[kCfgVELAMT];        // slot 11 amount: vel→VCA depth
+    case 85:  return &tr.config[kCfgVELAMT];        // slot 11 amount: vel→VCA depth
+    case 203: return &tr.config[kCfgSMTH];          // portamento (VOICECARD_DATA_PART)
     // Filter KB tracking
     case 105: return &tr.config[kCfgTRAK];
     // EG depth (virtual; indexed by active_env_lfo; 200=Amp/E1, 201=Filt/E2, 202=Pitch/E3)
@@ -99,6 +99,12 @@ uint8_t Part::GetValue(uint8_t address) const {
 }
 
 void Part::SetValue(uint8_t address, uint8_t value, uint8_t) {
+  if (address == 203) {
+    // Portamento lives in the voicecard Part struct, not the Patch.
+    voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PART, 6, value);
+    sequencer.mutable_track(voice_id_)->config[kCfgSMTH] = value;
+    return;
+  }
   uint8_t tx_addr = address;
   if (address == 200) tx_addr = 82;
   else if (address == 201) tx_addr = 22;
@@ -119,7 +125,7 @@ void Part::Touch() {
   static const uint8_t kSyncAddresses[] = {
     0, 1, 2, 3, 4, 5, 6, 7,
     8, 9, 10, 11, 12, 13, 14, 15,
-    16, 17, 18, 19, 22,
+    16, 17, 18, 22,
     24, 25, 26,
     32, 33, 34,
     40, 41, 42,
@@ -132,6 +138,9 @@ void Part::Touch() {
     uint8_t addr = kSyncAddresses[i];
     voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, addr, GetValue(addr));
   }
+  // Portamento lives in the voicecard Part struct (not Patch).
+  voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PART, 6,
+      sequencer.track(voice_id_).config[kCfgSMTH]);
 }
 
 
