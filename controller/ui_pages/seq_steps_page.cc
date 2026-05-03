@@ -58,6 +58,9 @@ uint8_t SeqStepsPage::substep_step_ = 0;
 /* static */
 uint8_t SeqStepsPage::substep_count_ = 8;
 
+/* static */
+uint8_t SeqStepsPage::substep_pot0_entry_ = 0xff;
+
 // 2-char semitone names; index = semitone * 2.
 static const prog_char kNoteNames[] PROGMEM =
   "C C#D D#E F F#G G#A A#B ";
@@ -138,8 +141,8 @@ static inline uint8_t IsSubWaveCell(uint8_t lockable) {
   return lockable == 27;   // kP3WAVE (24 + kP3WAVE=3)
 }
 
-// MINT interval names for 0..12 semitones (4 chars each).
-// Values 13..127 fall back to right-aligned integer.
+// MINT interval names for 0..24 semitones (4 chars each, pot clamped to 0..24).
+// 13..24 = octave + interval (prefix "8" = one octave up).
 static const prog_char kMintNames[] PROGMEM =
   " off"  // 0
   " m2 "  // 1  minor 2nd
@@ -153,7 +156,19 @@ static const prog_char kMintNames[] PROGMEM =
   " M6 "  // 9  major 6th
   " m7 "  // 10 minor 7th
   " M7 "  // 11 major 7th
-  " 8va";  // 12 octave
+  " 8va"  // 12 octave
+  "8m2 "  // 13 octave + minor 2nd
+  "8M2 "  // 14 octave + major 2nd
+  "8m3 "  // 15 octave + minor 3rd
+  "8M3 "  // 16 octave + major 3rd
+  "8P4 "  // 17 octave + perfect 4th
+  "8TT "  // 18 octave + tritone
+  "8P5 "  // 19 octave + perfect 5th
+  "8m6 "  // 20 octave + minor 6th
+  "8M6 "  // 21 octave + major 6th
+  "8m7 "  // 22 octave + minor 7th
+  "8M7 "  // 23 octave + major 7th
+  "8va2";  // 24 two octaves
 
 // MDIR direction labels (4 chars each). Values 0..3.
 static const prog_char kMdirNames[] PROGMEM =
@@ -210,12 +225,14 @@ uint8_t SeqStepsPage::OnClick() {
           substep_count_ = (rept_v > 0) ? rept_v + 1 : 8;
           step.step_flags &= ~kStepFlagGated;
         }
-        // Auto-enable all active slots when substep_bits is empty.
-        if (step.substep_bits == 0) {
-          step.substep_bits = (substep_count_ < 8)
-              ? static_cast<uint8_t>((1 << substep_count_) - 1)
-              : 0xff;
+        // Sanitize substep_bits: clear stale out-of-range bits; re-enable all if none survive.
+        {
+          uint8_t active_mask = (substep_count_ < 8)
+              ? static_cast<uint8_t>((1 << substep_count_) - 1) : 0xff;
+          step.substep_bits &= active_mask;
+          if (step.substep_bits == 0) step.substep_bits = active_mask;
         }
+        substep_pot0_entry_ = 0xff;  // arm pickup guard for count pot
         editing_substeps_ = true;
         return 1;
       }
@@ -265,6 +282,12 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     SeqTrack* tr = sequencer.mutable_track(track);
     SeqStep& step = tr->steps[substep_step_];
     if (index == 0) {
+      // Pickup guard: swallow the first event after editor entry to prevent
+      // the physical pot position from immediately overwriting the stored value.
+      if (substep_pot0_entry_ == 0xff) {
+        substep_pot0_entry_ = value;
+        return 1;
+      }
       // Mirrors S5a subs pot: 0..55=repeats 8r..1r, 56..71=deadzone, 72..127=ratchets 1x..8x.
       if (value < 56) {
         uint8_t rept_v = 8 - (value / 7);
@@ -299,7 +322,7 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     }
     if (index == 1 || index == 2) {
       uint8_t param_idx = (index == 1) ? kSPMINT : kSPMDIR;
-      uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 3) : value;
+      uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 3) : ScalePot(value, 24);
       step.steppage[param_idx] = mapped;
       step.lock_flags[2] |= (1 << param_idx);
       return 1;
@@ -465,20 +488,32 @@ void SeqStepsPage::UpdateScreen() {
     char* line0 = display.line_buffer(0);
     char* line1 = display.line_buffer(1);
     for (uint8_t i = 0; i < kLcdWidth; ++i) { line0[i] = ' '; line1[i] = ' '; }
-    // subs cell (offset 0..9): show substep count
+    // subs cell (offset 0..9): same glyph as S5a (Nr / Nx / cus).
     memcpy_P(&line0[1], PSTR("subs"), 4);
-    WriteU8Right(&line0[5], substep_count_);
+    {
+      int8_t ssub_s = static_cast<int8_t>(step.steppage[kSPSSUB]);
+      uint8_t rept_s = step.steppage[kSPREPT];
+      char* b = &line0[5];
+      b[0] = b[1] = b[2] = b[3] = ' ';
+      if (rept_s > 0) {
+        b[1] = '0' + (rept_s > 9 ? 9 : rept_s);
+        b[3] = 'r';
+      } else if (ssub_s > 0) {
+        b[1] = '0' + (ssub_s > 9 ? 9 : static_cast<uint8_t>(ssub_s));
+        b[3] = 'x';
+      } else if (ssub_s == -2) {
+        memcpy_P(b, PSTR(" cus"), 4);
+      } else {
+        b[3] = '0';
+      }
+    }
     line0[9] = ' ';
     // MINT cell (offset 10..19)
     line0[10] = kDelimiter;
     memcpy_P(&line0[11], PSTR("MINT"), 4);
     {
       uint8_t mint = step.steppage[kSPMINT];
-      if (mint <= 12) {
-        memcpy_P(&line0[15], kMintNames + mint * 4, 4);
-      } else {
-        WriteU8Right(&line0[15], mint);
-      }
+      memcpy_P(&line0[15], kMintNames + (mint <= 24 ? mint : 24) * 4, 4);
     }
     line0[19] = ' ';
     // MDIR cell (offset 20..29)
