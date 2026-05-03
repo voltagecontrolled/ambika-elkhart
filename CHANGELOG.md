@@ -12,6 +12,41 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### MANUAL.md interim refresh against current master (2026-05-03)
+
+Doc-only. Interim pass on `docs/wiki/MANUAL.md` realigning page-by-page
+descriptions with the actual `controller/` source and
+`docs/planning/control_map.md`. A final hardware-walked pass at v4.0
+tag-time (issue #17) will fold in the v4.0-pending surfaces listed in
+the new "Pending v4.0 release" section.
+
+- **S1a Oscillators rewritten** to actual `wave / para / rang / tune`
+  per oscillator. Dropped false `BLND / RTIO / FINE / NOTE` claims (they
+  live on S1b or S5b, or are sequencer-driven).
+- **S1b Mixer added as a real subsection** (`mix / nois / sub / wave`
+  top, `xmod / amnt / fuzz / crsh` bot). `fuzz` and `crsh` are
+  documented here, not on S2.
+- **S2 Filter rewritten** to `freq / reso / mode / env2` with six pots
+  inert. Filter mode corrected to four values (LP / BP / HP / Notch),
+  not three. `DRIV` / `BITS` removed (cross-referenced to S1b).
+- **S3b LFO label** corrected `shap` → `wave`.
+- **S4 mod-matrix section deleted**; S4 aliases S3 in v4.0.
+- **S6a** kept honest with current code: `----` placeholder still
+  inert, "reserved for transpose" line removed.
+- **S7 Transport** corrected: removed false `mrst` on `S8` claim
+  (`mrst` is not yet implemented); buttons now match `multi_page.cc`.
+- **S8** described as the OS Info / firmware page it currently is;
+  premature `S8a` patch-slot section removed.
+- **v5.0-deferred features stripped** from VERIFY markers: mod
+  matrix (#11), LFO sync (#12), iterative probability (#6),
+  double-tap-clear (#16), encoder-click focused-edit (#15),
+  master transpose / scale (#19/#20).
+- **New "Pending v4.0 release" section** consolidates #8, #9, #10,
+  #14, #18, #22, #23, #24, #25 with explicit pending status.
+- **Tagline** no longer claims a wavefolder ships (it's pending #18).
+
+No firmware changes. `kSystemVersion` unchanged.
+
 ### Bug-fix bundle: GH #1, #4, #5, #7 (2026-05-03)
 
 **Flash:** controller 54,460 B (83.1%, +174 B). **RAM:** 3,776 B (92.2%,
