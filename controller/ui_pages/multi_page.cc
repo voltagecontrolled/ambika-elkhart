@@ -1,17 +1,24 @@
 // Copyright 2011 Emilie Gillet.
 //
-// Phase 4: Transport control page — PLAY / PAUS / RST.
+// Transport control page — PLAY / PAUS / RST / STOP.
+// STOP (S4): single tap = Pause + Reset; double tap (<300ms) = panic
+// (Pause + Reset + Kill all voices). Groovebox-typical.
 
 #include "controller/ui_pages/multi_page.h"
 
 #include "avrlib/string.h"
+#include "avrlib/time.h"
 #include "controller/display.h"
 #include "controller/leds.h"
 #include "controller/multi.h"
 #include "controller/sequencer.h"
 #include "controller/ui.h"
+#include "controller/voicecard_tx.h"
 
 namespace ambika {
+
+static uint32_t last_stop_tap_ = 0;
+static const uint16_t kStopDoubleTapWindowMs = 300;
 
 /* static */
 const prog_EventHandlers MultiPage::event_handlers_ PROGMEM = {
@@ -61,6 +68,24 @@ uint8_t MultiPage::OnKey(uint8_t key) {
     case SWITCH_3:
       sequencer.Reset();
       return 1;
+    case SWITCH_4: {
+      uint32_t now = milliseconds();
+      // Pause() toggles paused↔playing; only call it when actually playing.
+      if (sequencer.global().transport == kSeqPlaying) {
+        sequencer.Pause();
+      }
+      sequencer.Reset();
+      if (last_stop_tap_ != 0 &&
+          (now - last_stop_tap_) < kStopDoubleTapWindowMs) {
+        for (uint8_t v = 0; v < kNumVoices; ++v) {
+          voicecard_tx.Kill(v);
+        }
+        last_stop_tap_ = 0;
+      } else {
+        last_stop_tap_ = now ? now : 1;
+      }
+      return 1;
+    }
     case SWITCH_8:
       ui.ShowPageRelative(-1);
       return 1;
@@ -84,8 +109,9 @@ void MultiPage::UpdateScreen() {
   buffer = display.line_buffer(1) + 1;
   memcpy_P(&buffer[0],  PSTR("play "), 5);
   memcpy_P(&buffer[5],  PSTR("paus "), 5);
-  memcpy_P(&buffer[10], PSTR("rst "), 4);
-  buffer[14] = kDelimiter;
+  memcpy_P(&buffer[10], PSTR("rst  "), 5);
+  memcpy_P(&buffer[15], PSTR("stop"), 4);
+  buffer[19] = kDelimiter;
   memcpy_P(&buffer[35], PSTR("exit"), 4);
 }
 
@@ -99,6 +125,10 @@ void MultiPage::UpdateLeds() {
   } else if (transport == kSeqPaused) {
     leds.set_pixel(LED_STATUS, 0x0f);
     leds.set_pixel(LED_2, 0x0f);
+  }
+  if (last_stop_tap_ != 0 &&
+      (milliseconds() - last_stop_tap_) < kStopDoubleTapWindowMs) {
+    leds.set_pixel(LED_4, 0x0f);
   }
   leds.set_pixel(LED_8, 0xf0);
 }

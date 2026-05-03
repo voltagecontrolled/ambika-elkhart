@@ -31,6 +31,7 @@
 #include "controller/ui_pages/dialog_box.h"
 #include "controller/ui_pages/multi_page.h"
 #include "controller/ui_pages/os_info_page.h"
+#include "controller/ui_pages/seq_mixer_page.h"
 #include "controller/ui_pages/seq_steps_page.h"
 #include "controller/ui_pages/seq_track_page.h"
 #include "controller/ui_pages/parameter_editor.h"
@@ -82,17 +83,17 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_PART_SEQUENCER, 4, 0xff,
   },
 
-  // S6 group 5: per-track sequencer settings (DIRN/CDIV/ROTA/LENG, SCAL/ROOT/BPCH/OLEV).
+  // S6a group 5: per-track sequencer settings.
   { PAGE_PART,
     &SeqTrackPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_PART, 5, 0xf0,
+    PAGE_SEQ_MIXER, 5, 0xf0,
   },
 
-  // PAGE_PART_ARPEGGIATOR: stub — unreachable from cycle, kept for registry completeness.
-  { PAGE_PART_ARPEGGIATOR,
-    &ParameterEditor::event_handlers_,
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
+  // S6b group 5: performance mixer (volumes + mute/solo).
+  { PAGE_SEQ_MIXER,
+    &SeqMixerPage::event_handlers_,
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
     PAGE_PART, 5, 0x0f,
   },
 

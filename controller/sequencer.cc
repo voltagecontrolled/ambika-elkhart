@@ -8,6 +8,7 @@
 #include "avrlib/string.h"
 #include "controller/multi.h"
 #include "controller/voicecard_tx.h"
+#include "controller/ui_pages/seq_mixer_page.h"
 
 namespace ambika {
 
@@ -322,6 +323,9 @@ void Sequencer::AdvanceStep(uint8_t t) {
 }
 
 void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
+  // Performance mixer gate: skip triggers for muted/non-solo'd voices.
+  if (SeqMixerPage::skip_mask() & (1 << t)) return;
+
   SeqTrack& tr = tracks_[t];
   const SeqStep& step = tr.steps[step_index];
 

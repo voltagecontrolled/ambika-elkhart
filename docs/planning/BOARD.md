@@ -40,12 +40,6 @@ is retired. New entries are topic-named and dated.
   `{3,4,6,8,9,12,18,24}`. Display labels in `seq_track_page.cc` and
   `seq_steps_page.cc`.
 
-- **New S6b page: portamento + vel-mod settings.** `gtim` and `vamt` are
-  reachable on S5a but a dedicated settings sub-page in group 5 would
-  surface them alongside any future per-voice config that doesn't belong
-  on the lockable pages. Design TBD pending hardware testing of current
-  placement.
-
 - **Encoder-click focused-edit display on sequencer pages.** Click is a
   no-op outside the substep editor. Needs full-row layout:
   `<page name> | <full param name> <value>`, mirroring the

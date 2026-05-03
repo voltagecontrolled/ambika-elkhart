@@ -12,6 +12,62 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Performance mixer (S6b) + transport STOP / panic (2026-05-03)
+
+**Flash:** controller 54,286 B (82.8%, +1,914 B). **RAM:** 3,770 B (92.0%,
++33 B). Controller only — no SPI protocol change. `kSystemVersion` bumped
+controller `0x32` → `0x33`; voicecards stay `0x31`. No voicecard reflash.
+
+#### Performance mixer page (S6b, `SeqMixerPage`)
+
+Resolves issue #3. New page on the S6b slot (was the unreachable
+`PAGE_PART_ARPEGGIATOR` stub). Surface:
+
+- Pots **top1–3 / bot1–3**: per-voice volume (writes `SeqTrack.pattern[kPatVOL]`).
+  Pickup/catch on entry — pot must cross stored value before writing.
+- **S1–S6**: toggle the active mode's bit for that voice.
+- **S7 tap**: cycle mode `MT-S → MT-A → SOLO → MT-S`.
+- **S7 hold + S1–S6 taps**: queue toggles; on S7 release, XOR them into
+  the active mode's bits as a single batch. Queued voices blink red during
+  the hold.
+- **S8**: clear all three bit sets (unmute-all). Tap-only — S8 is the
+  system-wide SHIFT prefix in `Ui::Poll`, so hold-gate had to move to S7.
+- Encoder walks 8-cell cursor; spills to neighboring page at boundary.
+
+Three modes, per-voice bit sets:
+
+| Mode  | Skip future fires | Action on toggle of currently-sounding voice |
+|-------|---|---|
+| MT-S  | yes | none — current note's envelope completes naturally |
+| MT-A  | yes | `voicecard_tx.Kill(v)` — instant cut |
+| SOLO  | non-solo'd voices | `Kill()` non-solo voices that just lost audibility |
+
+State is **transient** (file-static; cleared on power-cycle). No struct
+change, no snapshot bump, no patch save. `Sequencer::FireStep` early-returns
+on `SeqMixerPage::skip_mask() & (1 << track)`.
+
+LED scheme: MT-S/MT-A lit = audible (bit clear); SOLO lit = solo'd. S7 LED
+encodes mode (off / dim red / bright red = MT-S / MT-A / SOLO).
+
+See `docs/planning/mixer.md` for the topic spec.
+
+#### Transport STOP + panic (S6a `MultiPage`)
+
+New `S4 = stop` button on the transport page. Single tap = `Pause()` +
+`Reset()`. Double tap within 300 ms = `Pause()` + `Reset()` + `Kill()` all
+six voices (panic). LED_4 lights red while the second-tap window is open.
+
+`Sequencer::Pause()` is a toggle (paused → playing on second call), so
+the handler guards with `if (transport == kSeqPlaying)` before calling
+Pause to keep STOP an absorbing transition.
+
+#### Page registry rename
+
+`PAGE_PART_ARPEGGIATOR` → `PAGE_SEQ_MIXER` in `controller/ui.h`. Group 5
+cycle now: `PAGE_PART` (S6a) ↔ `PAGE_SEQ_MIXER` (S6b).
+
+---
+
 ### Sequencer substep editor overhaul: gated ratchets, MINT/MDIR, UX fixes (2026-05-03)
 
 **Flash:** controller 52,372 B (79.9%, +498 B). **RAM:** 3,737 B (91.2%,
