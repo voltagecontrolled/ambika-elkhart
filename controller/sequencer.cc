@@ -56,7 +56,7 @@ static const prog_uint8_t kDefaultPage1[] PROGMEM = {
   1,    // WAVE1 = polyblep_saw (index 1 in waveform enum)
   0,    // PARA1
   0,    // BLND = 0 (Osc 1 only, no FM)
-  7,    // RTIO = osc2:osc1 ratio (index 7 ≈ 1.0; reserved for future linear-FM)
+  0,    // RTIO = crossmod/FM amount (reserved for future linear-FM)
   0,    // WAVE2 = none
   0,    // PARA2
   0,    // FINE = OSC1 detune (0 = centered, int8_t)
