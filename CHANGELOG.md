@@ -12,6 +12,203 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Sequencer substep editor overhaul: gated ratchets, MINT/MDIR, UX fixes (2026-05-03)
+
+**Flash:** controller 52,372 B (79.9%, +498 B). **RAM:** 3,737 B (91.2%,
+unchanged). Controller only — no SPI protocol change. `kSystemVersion` stays
+`0x32` / voicecards `0x31`. No voicecard reflash required.
+
+#### SSUB=-2 rearchitected: gates REPT period fires, not within-period triggers
+
+The original substep editor ran within-period sub-triggers for SSUB=-2 (the
+same mechanism as SSUB>0 ratchets), which caused repeats to behave as ratchets
+on editor entry. Rearchitected so SSUB=-2 gates **period-boundary REPT fires**:
+
+- Bit 0 of `substep_bits` = does the initial step fire happen?
+- Bits 1..REPT = does each of the REPT subsequent period re-fires happen?
+
+`Clock()` REPT path: when `ssub_l == -2`, checks
+`substep_bits & (1 << repeat_idx)` before calling `FireStep`. Initial fire
+path checks `substep_bits & 0x01`. No within-period sub-triggers occur for
+SSUB=-2.
+
+#### Gated ratchets (`kStepFlagGated`)
+
+New `kStepFlagGated = 0x02` bit in `step_flags`. When set alongside SSUB > 0,
+the `Clock()` ratchet sub-trigger path checks
+`substep_bits & (1 << slot_now)` before firing — extending substep pattern
+editing to within-period ratchets.
+
+The substep editor's count pot (CW zone) sets SSUB=N, REPT=0, and
+`kStepFlagGated`. The CCW zone sets SSUB=-2, REPT=N, and clears the flag.
+Editor entry from a ratchet step (SSUB > 0) sets `kStepFlagGated` directly
+without migrating to REPT.
+
+#### Substep editor: revised entry, pot layout, and UX
+
+**Entry guard**: encoder click on `subs` with a step held is a no-op when
+that step has SSUB=0 and REPT=0 (no sub-activity configured). Entry no longer
+force-migrates ratchets to REPT.
+
+**Pot layout** moved from physical positions (4/6/7) to the top-row positions
+matching the editor's screen labels (0/1/2):
+- Pot 0 (`subs` knob): count + mode. Mirrors S5a subs knob —
+  CCW 0..55 = repeats 8r..1r, 56..71 = deadzone, CW 72..127 = ratchets 1x..8x.
+- Pot 1 (`mint` position): MINT, 0..24 semitones.
+- Pot 2 (`mdir` position): MDIR, 0..3 direction.
+- All other pots swallowed while editor is active.
+
+**Pot pickup guard**: `substep_pot0_entry_` (0xff sentinel) set on editor
+entry. The first pot-0 event records the physical position and returns without
+writing, preventing the resting pot position from overwriting the stored value.
+
+**Substep bits sanitization**: on entry, `substep_bits` is masked to the
+active range (`(1 << substep_count_) - 1`). Bits above the range are cleared.
+If no bits survive the mask, all active slots are re-enabled. Previously
+auto-enable only fired when `substep_bits == 0` entire, leaving stale
+out-of-range bits able to silently mute slots from a prior session.
+
+**Display**: editor `subs` cell now renders the same `Nr` / `Nx` / `cus`
+glyph as S5a (REPT with 'r' suffix, or SSUB with 'x') instead of the raw
+fire count (`substep_count_`).
+
+#### MINT/MDIR execution in `FireStep`
+
+`FireStep` gains a `sub_idx` parameter (0 = initial fire, 1..N = repeat or
+ratchet fires). When `sub_idx > 0` and `MINT > 0`, the resolved base note
+is offset by `sub_idx × MINT` semitones, direction controlled by MDIR:
+
+| MDIR | label | effect |
+|------|-------|--------|
+| 0 | `up`  | `+sub_idx × MINT` |
+| 1 | `dn`  | `−sub_idx × MINT` |
+| 2 | `ud`  | odd sub_idx: `+MINT`; even: `−MINT` (ping-pong ±mint from base) |
+| 3 | `rnd` | random `±MINT` offset from base per fire |
+
+Note is clamped to 0..127 after offset. All three `FireStep` call sites pass
+`sub_idx`: initial fire = 0, REPT re-fires = `repeat_idx` (1-based), ratchet
+sub-triggers = `slot_now`.
+
+#### MINT/MDIR display
+
+- **MINT**: `kMintNames[]` (PROGMEM, 25 × 4 chars) covers 0..24. Entries 0..12
+  use standard interval abbreviations (`off`, `m2`..`M7`, `8va`); 13..24
+  prefix with `8` (`8m2`..`8M7`, `8va2`). Pot clamped to `ScalePot(value, 24)`.
+- **MDIR**: `kMdirNames[]` (PROGMEM, 4 × 4 chars): ` up `, ` dn `, ` ud `,
+  ` rnd`. Pot mapped `ScalePot(value, 3)` → 0..3 (was 0..1 binary).
+
+---
+
+### Sequencer round 5b: lockable page3, substep editor, execution wiring (2026-05-02)
+
+**Flash result:** controller 50,864 B (77.6%, +3,782 B over 0x31); voicecard
+26,216 B (79.9%, +20 B for extended snapshot handler). **RAM:** controller
+3,737 B (91.2%, +268 B for page3 lockable extension). `kSystemVersion` 0x31
+→ `0x32` on the controller; voicecard `0x30` → `0x31` (snapshot protocol
+changed — both sides must be reflashed).
+
+#### Lockable `freq` / `famt` / `pamt` / `wave` — data + protocol
+
+Added `page3[4]` to `SeqStep` and extended `lock_flags[3]` → `lock_flags[4]`.
+`SeqStep` is now 34 B (was 29 B); `SeqTrack.defaults[]` grows from 24 to 28
+entries. New lockable indices 24–27 map to `kP3FREQ`, `kP3FAMT`, `kP3PAMT`,
+`kP3WAVE`.
+
+`Part::PatchAddrToSeqField` cases 16 / 22 / 58 / 11 now map to
+`tr.defaults[24+kP3*]` instead of `tr.config[]`; the config slots remain but
+are no longer the canonical storage for these four params.
+
+`TriggerWithSnapshot` snapshot grows from 16 → 20 bytes:
+```
+snapshot[0..7]  = page1[8]
+snapshot[8..15] = page2[8]
+snapshot[16..19]= page3[4]  (FREQ=16, FAMT=22, PAMT=58, WAVE=11)
+```
+`voicecard_rx.cc` `kSnapshotAddrs[20]` extended with the four new patch addrs;
+`DoLongCommand` loop bound 16 → 20. Total SPI packet: 25 bytes.
+
+`Part::Touch` iterates the expanded `kSyncAddresses[]` which now includes all
+page3 addresses; voicecard is fully re-synced on voice init.
+
+#### S5a layout redesign
+
+```
+S5a  top  note  vel   vamt  rate
+     bot  subs  prob  glid  gtim
+```
+
+`mint` and `mdir` removed from the top-level cells — they live exclusively
+inside the substep editor now. Their two slots are taken by:
+- `vamt` (cell top3, config-mapped, patch addr 85): velocity→VCA mod slot 11
+  amount. Backed by `kCfgVELAMT = 19` in `tr.config[]`.
+- `gtim` (cell bot4, config-mapped, virtual addr 203): portamento/glide time.
+  Virtual addr 203 routes to `VOICECARD_DATA_PART` offset 6 in `Part::SetValue`
+  and `Part::Touch` — not to the Patch struct (which does not contain
+  portamento). The previous `case 19` mapping was wrong (`filter[1].cutoff`).
+
+Config-mapped cell display fix: `UpdateScreen` now reads config-mapped cells
+via `multi.part(track).GetValue(patch_addr)` rather than indexing
+`tr.defaults[0xff]` (out-of-bounds read).
+
+#### RATE / REPT / SSUB execution in `Sequencer::Clock`
+
+- **RATE**: `ResolveStepByte(tr, kShdwLAST, kSPRATE)` on each tick; 0 = use
+  track CDIV, 1..7 = override with that kCDivValues index.
+- **REPT**: `shadow[kShdwREPT]` counts down from the resolved REPT value. The
+  step re-fires once per period before advancing; `AdvanceStep` runs when the
+  counter reaches 0.
+- **SSUB ratchets** (SSUB > 0): N+1 evenly-spaced fires per period. Fixed
+  `sub_period = 0` guard: `if (sub_period == 0) sub_period = 1;` so counts
+  above the period length still fire.
+
+#### Substep editor (Custom/Edit mode — SSUB = −2)
+
+Entry: hold any step button + encoder click while cursor is on the `subs` cell
+(cursor 4). Exit: second encoder click.
+
+SSUB = −2 mode gates each REPT repeat fire by `substep_bits` rather than
+firing within-period sub-triggers:
+- Bit 0 of `substep_bits` = does the initial fire at the period boundary happen?
+- Bits 1..REPT = does each of the REPT subsequent period fires happen?
+
+On entry the editor:
+- Migrates a ratchet count (SSUB > 0) to REPT so playback semantics are
+  consistent and the subs cell displays "Nr" on exit rather than "edit".
+- Reads `substep_count_ = REPT + 1` (total fires including initial).
+- Auto-enables bits 0..substep_count_−1 if `substep_bits` is all-zero.
+
+While editing:
+- Pot 4 (the physical subs knob): adjusts `substep_count_` (2..8 total fires),
+  stored as `REPT = count − 1`. Expanding the count auto-enables new slots;
+  shrinking masks them off.
+- Pots 6/7: write MINT/MDIR for the held step.
+- Pots 0–3, 5: swallowed.
+- Step buttons toggle individual `substep_bits` slots; slots ≥ substep_count_
+  are gated (button press is a no-op, LED dark, screen shows blank not '−').
+- Screen line 0: `subs N | MINT XX | MDIR X`. Line 1: '#'/'-' per active
+  slot, blank for inactive.
+- LEDs mirror `substep_bits` masked to `substep_count_`.
+
+#### Subs pot redesign
+
+Old pot had Edit (−2) and Cust (−1) in the CCW bands; new design:
+- 0..55 (CCW half): 8 bands → repeats 8r..1r (REPT = 8 down to 1).
+- 56..71: deadzone — normal, both fields zero.
+- 72..127 (CW half): 1x..8x ratchets (SSUB = 1..8).
+
+Edit mode (SSUB = −2) is no longer reachable from the subs pot; it is set
+exclusively by entering the substep editor.
+
+#### Bug fixes
+
+- **Envelope depth range**: `parameter.cc` params 27 / 77 / 81 (E1/E2/E3
+  depth) had `max = 63`; bumped to 127 to match the round-5a unipolar rescale.
+- **RTIO default**: `kDefaultPage1[kP1RTIO]` 7 → 0. The value surfaces as
+  crossmod amount on S5b; 7 was audibly wrong.
+- **Substep slot_period = 0**: with `kNumTicksPerStep = 6`, `period >> 3 = 0`,
+  blocking all substep fires. Now uses `period / sub_count` where
+  `sub_count = REPT ? REPT : 8`, with `if (slot_period == 0) slot_period = 1`.
+
 ### Sequencer round 5a-1: hardware-test bugfix bump (2026-05-02)
 
 **Flash result:** controller 47,082 B (71.8%, +116 B over 0x30); voicecard

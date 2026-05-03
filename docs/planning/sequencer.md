@@ -17,7 +17,7 @@ non-lockable settings (`config[29]`), and a transient playhead
 the master tick to produce polymeter.
 
 Every trigger is **stateless**: the controller resolves locks against
-defaults into a 16-byte snapshot and ships it atomically alongside the
+defaults into a 20-byte snapshot and ships it atomically alongside the
 note/velocity. The voicecard applies the snapshot, then triggers the
 note. There is no state carryover between steps.
 
@@ -32,33 +32,34 @@ COMMAND_NOTE_ON_WITH_SNAPSHOT          = 0x12
 COMMAND_NOTE_ON_WITH_SNAPSHOT_LEGATO   = 0x13
 ```
 
-Packet layout (21 bytes total):
+Packet layout (25 bytes total):
 
 ```
 byte 0       command (0x12 normal, 0x13 legato)
-bytes 1..16  snapshot[16] = page1[0..7] || page2[0..7]
+bytes 1..20  snapshot[20] = page1[0..7] || page2[0..7] || page3[0..3]
                 page1: NOTE (skipped voicecard-side), WAVE1, PARA1, BLND,
                        RTIO, WAVE2, PARA2, FINE
                 page2: E1DEC, TUN2, E2DEC, FIN2, E3DEC, E3REL_dead, NOIS, SUB
-                       (TUN2 / FIN2 reclaimed the dead E1REL / E2REL bytes
-                        in round 4; only E3REL stays dead)
-bytes 17,18  note MSB, note LSB
-byte 19      velocity << 1
+                       (TUN2 / FIN2 reclaimed dead E1REL / E2REL in round 4)
+                page3: FREQ (patch 16), FAMT (patch 22), PAMT (patch 58),
+                       WAVE (patch 11)  — added round 5b
+bytes 21,22  note MSB, note LSB
+byte 23      velocity << 1
 ```
 
-The 16-byte snapshot omits `steppage[]` — those step-behavior params
+The 20-byte snapshot omits `steppage[]` — step-behavior params
 (PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR) are resolved on the
 controller and never reach the voicecard.
 
 ### Voicecard handler
 
 `voicecard/voicecard_rx.h` — when `command_ == 0x12 || 0x13`,
-`Process()` collects 19 args. `DoLongCommand()` then walks
-`kSnapshotAddrs[16]` (PROGMEM, in `voicecard_rx.cc`):
+`Process()` collects 23 args. `DoLongCommand()` then walks
+`kSnapshotAddrs[20]` (PROGMEM, in `voicecard_rx.cc`):
 
 | snapshot[i] | source field    | patch addr |
 |:-----------:|-----------------|:----------:|
-| 0           | NOTE            | 0xff (skip — note is in args[16..17]) |
+| 0           | NOTE            | 0xff (skip — note is in args[20..21]) |
 | 1           | WAVE1           | 0          |
 | 2           | PARA1           | 1          |
 | 3           | BLND            | 8          |
@@ -74,6 +75,10 @@ controller and never reach the voicecard.
 | 13          | E3REL (dead)    | 0xff       |
 | 14          | NOIS            | 13         |
 | 15          | SUB             | 12         |
+| 16          | FREQ            | 16         |
+| 17          | FAMT            | 22         |
+| 18          | PAMT            | 58         |
+| 19          | WAVE (sub-osc)  | 11         |
 
 `set_patch_data(addr, value)` is called for each non-`0xff` slot, then
 `voice.Trigger(note, velocity, legato)` runs.
@@ -86,27 +91,26 @@ sync — adding a new lockable param means updating both.
 `Sequencer::FireStep()` in `controller/sequencer.cc`:
 
 ```cpp
+// page1 + page2 (indices 0..15)
 for (i = 0..15) {
-  bool locked = step.lock_flags bit i is set;
-  snapshot[i] = locked ? step.pageX[i] : tr.defaults[i];
+  bool locked = step.lock_flags[i>>3] bit (i&7) is set;
+  snapshot[i] = locked ? step.page1or2[i] : tr.defaults[i];
 }
-note     = snapshot[kP1NOTE];   // resolved from page1 lock or default
-velocity = (lock bit 16+kSPVEL set) ? step.steppage[kSPVEL]
-                                    : tr.defaults[16+kSPVEL];
-voicecard_tx.TriggerWithSnapshot(t, note<<7, velocity, 0, snapshot);
+// page3 (indices 16..19)
+for (i = 0..3) {
+  bool locked = step.lock_flags[3] bit i is set;
+  snapshot[16+i] = locked ? step.page3[i] : tr.defaults[24+i];
+}
+note     = snapshot[kP1NOTE];
+velocity = ResolveStepByte(tr, step_index, kSPVEL) scaled by pattern[kPatVOL];
+glid     = ResolveStepByte(tr, step_index, kSPGLID);
+voicecard_tx.TriggerWithSnapshot(t, note<<7, velocity, glid?1:0, snapshot);
 ```
-
-GLID/legato is currently hardcoded to 0; it becomes the `command_ & 1`
-bit when the GLID step-behavior parameter ships.
-
-Mutate (MINT/MDIR), track transpose, and per-step rate (RATE) are all
-unimplemented — `note` is the raw lock-or-default value for now.
 
 ### SPI bandwidth
 
-21 bytes per voice per trigger ≈ 84 µs at 2 MHz SPI. Six-voice worst case
-≈ 500 µs. Fits comfortably in the trigger window even at 240 BPM/8×
-ratchet (~7.8 ms between triggers).
+25 bytes per voice per trigger ≈ 100 µs at 2 MHz SPI. Six-voice worst case
+≈ 600 µs. Fits within the trigger window at 240 BPM.
 
 ---
 
@@ -114,17 +118,19 @@ ratchet (~7.8 ms between triggers).
 
 See `controller/sequencer.h` for authoritative definitions.
 
-- **`SeqStep`** (29 B): `page1[8]` + `page2[8]` + `steppage[8]` + `lock_flags[3]`
-  (24-bit bitfield, bit `N = page_index*8 + param_index`) + `step_flags`
-  (bit 0 = trigger on/off) + `substep_bits` (8 ratchets).
-- **`SeqTrack`** (298 B): 8 × `SeqStep` (232 B) + `pattern[8]` (DIRN, CDIV,
-  ROTA, LENG, SCAL, ROOT, BPCH, OLEV) + `defaults[24]` + `config[29]` +
-  `shadow[6]` (the 6th byte added in round 2 = `kShdwLAST`, the
-  most-recently-fired step for chaselight).
+- **`SeqStep`** (34 B): `page1[8]` + `page2[8]` + `steppage[8]` + `page3[4]`
+  + `lock_flags[4]` (32-bit bitfield: bits 0..7 = page1, 8..15 = page2,
+  16..23 = steppage, 24..27 = page3, bits 28..31 reserved) + `step_flags`
+  (bit 0 = trigger on/off) + `substep_bits`.
+- **`SeqTrack`** (343 B): 8 × `SeqStep` (272 B) + `pattern[8]` (DIRN, CDIV,
+  ROTA, LENG, SCAL, ROOT, BPCH, VOL) + `defaults[28]` + `config[29]` +
+  `shadow[6]`.
+  - `defaults[0..7]` = page1 defaults; `[8..15]` = page2; `[16..23]` = steppage;
+    `[24..27]` = page3 (FREQ, FAMT, PAMT, WAVE).
 - **`SeqGlobal`** (≥6 B): transport, hold_mode, swing, active_track,
   lock_page, held_step.
 
-Index enums: `kP1*`, `kP2*`, `kSP*`, `kCfg*`, `kPat*`, `kShdw*`.
+Index enums: `kP1*`, `kP2*`, `kP3*`, `kSP*`, `kCfg*`, `kPat*`, `kShdw*`.
 
 ---
 
@@ -160,32 +166,72 @@ LCD layout:
   3-char note name; everything else is right-aligned uint8 (with named
   enums for DIRN/CDIV/ROOT on the track page).
 
-Knob layout (round 5a — `kSystemVersion 0x30`):
+Knob layout (round 5b — `kSystemVersion 0x32`):
 
 ```
-S5a / Step (cursor 0..7) — leftmost so default cursor=0 lands on NOTE:
-  top  note  vel   glid  rate
-  bot  subs  prob  mint  mdir
+S5a / Step (cursor 0..7):
+  top  note  vel   vamt  rate
+  bot  subs  prob  glid  gtim
 
 S5b / Voice 1 (cursor 8..15):
-  top  nois  w1    PA1   tun2
-  bot  mix   w2    PA2   fin2
+  top  nois  w1    pa1   tun2
+  bot  mix   w2    pa2   fin2
 
 S5c / Voice 2 (cursor 16..23):
   top  freq  fdec  famt  adec
   bot  pdec  pamt  sub   wave
 ```
 
-The UI page order (step → voice1 → voice2) is independent of the
-storage layout (`page1[8]` / `page2[8]` / `steppage[8]`) — `kCellLockable[]`
-maps each UI cell to its storage byte by lockable index 0..23.
+`vamt` (cursor 2, config-mapped, patch addr 85): velocity → VCA mod slot 11
+amount. Backed by `kCfgVELAMT = 19`.
 
-`subs` (cursor 4 — S5a bot1) is the merged SSUB+REPT bipolar cell. Pot bands:
-0..7 = Edit (-2), 8..15 = Cust (-1), 16..62 = repeats 7..1, 63..71 =
-normal deadzone, 72..127 = ratchets +1..+8. Display: `Edit` / `Cust` /
-`N r` / `0` / `N x`. Writes both `kSPSSUB` and `kSPREPT` with mutex
-zeroing. Round 5a stores values; ratchet/repeat execution + Custom/Edit
-substep editor are round 5b.
+`gtim` (cursor 7, config-mapped, virtual addr 203): portamento/glide time.
+Routes to `VOICECARD_DATA_PART` offset 6 in `Part::SetValue` and `Touch` —
+not to the Patch struct. (Patch addr 19 was wrong; portamento lives in the
+voicecard `Part` struct.)
+
+`subs` (cursor 4) is the merged SSUB+REPT bipolar cell. Center deadzone at
+12 o'clock; CCW = repeats 8r..1r; CW = 1x..8x ratchets. Display: `Nr` /
+`0` / `Nx` / `cus` (for unconstrained custom pattern). `mint`/`mdir`
+removed from top-level cells — they live exclusively inside the substep
+editor.
+
+**Substep editor** (round 5b): entered by holding any step button and
+clicking the encoder while cursor is on `subs`. Only enterable when that
+step has SSUB ≠ 0 or REPT ≠ 0 — no-op for plain steps. Exit: second encoder
+click.
+
+Two gated modes:
+- **Gated repeats** (SSUB=-2): `substep_bits` gates each of the REPT+1
+  period-boundary fires. Bit 0 = initial fire; bits 1..REPT = re-fires.
+  Entered from repeats (CCW zone) or plain REPT > 0 steps.
+- **Gated ratchets** (`kStepFlagGated` + SSUB > 0): `substep_bits` gates
+  each of the SSUB+1 within-period sub-triggers. Entered from ratchet steps
+  (CW zone).
+
+While editing:
+- **Pot 0** (top-row, under `subs` label): count + mode. CCW/deadzone/CW
+  mirrors S5a subs pot. Changing CCW↔CW switches between gated-repeat and
+  gated-ratchet modes. A pickup guard (`substep_pot0_entry_`) absorbs the
+  first ADC reading on entry so the stored value isn't overwritten.
+- **Pot 1** (top-row `mint`): MINT — semitone walk per sub-trigger, 0..24.
+  Labels: `off`, `m2`..`M7`, `8va`, `8m2`..`8va2`.
+- **Pot 2** (top-row `mdir`): MDIR — direction; `up`/`dn`/`ud`/`rnd`.
+- Step buttons toggle individual `substep_bits` slots; slots ≥ substep_count_
+  are inactive (button is a no-op, LED dark).
+- Screen line 0: `subs Nr` (or `Nx`/`cus`) | `MINT m3 ` | `MDIR up `.
+  Line 1: `#`/`-` per active slot, blank for inactive.
+- LEDs mirror `substep_bits` masked to `substep_count_`.
+
+On entry, `substep_bits` is trimmed to the active range; if nothing survives
+the trim (stale out-of-range bits from a prior session), all slots re-enable.
+
+`FireStep(t, step_index, sub_idx)`: initial fire passes `sub_idx=0`; REPT
+re-fires and ratchet sub-triggers pass the fire index (1-based). MINT × sub_idx
+semitones are added to the base note, direction set by MDIR.
+
+S5c `freq`/`famt`/`pamt`/`wave` are now fully per-step lockable (round 5b);
+previously they were config-mapped.
 
 Wave cells (`w1`, `w2`) use a 2-char abbr + 6-char value layout (offsets
 1..2 and 3..8) so longer waveform names render without truncation.
@@ -259,10 +305,11 @@ mute-solo / stutter is reserved for a future page in this group.
 
 ## Sub-project status
 
-`kSystemVersion 0x31` on the controller, `0x30` on the voicecards.
-Round 5a bumped both sides because the voicecard VCA-amount path was
-rescaled (`<< 2` → `<< 1`); round 5a-1 is a controller-only bugfix
-bump (no voicecard code change).
+`kSystemVersion 0x32` on the controller, `0x31` on the voicecards.
+Round 5b bumped both sides because the snapshot protocol extended from
+16 → 20 bytes (voicecard `kSnapshotAddrs[20]`, controller `TriggerWithSnapshot`
+loop). The substep overhaul and MINT/MDIR work that followed are controller-only
+(no further protocol change).
 
 ### Done
 
@@ -306,25 +353,32 @@ bump (no voicecard code change).
 | Round 5a-1: VEL→VCA default depth 0 → 127 (was inert; also unmasks VOL) |
 | Round 5a-1: BLND clamped 0..63 to skip the dead linear-FM range |
 | Round 5a-1: SCAL labels leading-space pattern (`SCAL pMi` not `SCALpMi`) |
+| Round 5b: lockable `freq` / `famt` / `pamt` / `wave` — `page3[4]` + `lock_flags[4]`, snapshot 16→20 bytes, both-sides reflash (0x32/0x31) |
+| Round 5b: `Part::PatchAddrToSeqField` cases 16/22/58/11 → `tr.defaults[24+kP3*]` (previously `tr.config[]`) |
+| Round 5b: RATE per-step CDIV override in `Clock()` |
+| Round 5b: REPT period re-fire with `shadow[kShdwREPT]` countdown |
+| Round 5b: SSUB ratchets — N+1 evenly-spaced sub-triggers per period, `sub_period=0` guard |
+| Round 5b: S5a layout — `note`/`vel`/`vamt`/`rate` top, `subs`/`prob`/`glid`/`gtim` bot |
+| Round 5b: `vamt` config-mapped (patch addr 85, `kCfgVELAMT=19`, mod slot 11 amount) |
+| Round 5b: `gtim` portamento via virtual addr 203 → `VOICECARD_DATA_PART` offset 6 (was wrong `filter[1].cutoff` at addr 19) |
+| Round 5b: substep editor — SSUB=-2 gates REPT period fires via `substep_bits`; pots 0/1/2; pot pickup guard; bits sanitization on entry |
+| Round 5b: gated ratchets — `kStepFlagGated` + `substep_bits` gate in `Clock()` SSUB>0 path |
+| Round 5b: `FireStep(sub_idx)` — MINT/MDIR note walk; up/dn/ud/rnd modes; MINT interval names 0..24; MDIR 4-mode pot |
 
 ### Open / next iteration
 
 | Surface                                              | Notes |
 |------------------------------------------------------|-------|
-| Hardware verification of round 5a-1                  | Pending; only `AMBIKA.BIN` needs reflashing (voicecards stay on `0x30`) |
-| Round 5b: lockable `freq` / `famt` / `pamt` / `wave` | User-required. Extends `lock_flags` 24→32 bits, adds `page3[8]` to `SeqStep`, ~264 B RAM (controller goes 84.7%→91%). Voicecard `kSnapshotAddrs[]` extends 16→20 (or repurposes `kP2E3REL` for one). Both-sides version bump |
-| Round 5b: RATE / REPT / SSUB ratchet execution       | Storage in place; `Sequencer::Clock` substep loop pending |
-| Round 5b: Custom/Edit substep editor                 | UI sentinel + storage in place; entry = held step + encoder click while cursor on `subs` cell |
-| Round 5b: Mutate (MINT/MDIR) inside the substep editor | Walk only makes sense across substeps — moves out of S5a top-level cells, frees `mint`/`mdir` slots |
-| Round 5b: S6b page (portamento + vel-mod settings)   | New sub-page in group 5: portamento (`kCfgSMTH`, patch addr 19) + `vdst` (vel destination) + `vamt` (vel amount). Pairs with the `vel` cell on S5a |
+| Hardware verification of round 5b                    | Pending; controller `0x32` + all voicecards `0x31` must be reflashed (snapshot protocol changed). Substep editor, gated ratchets, MINT/MDIR walk all untested on hardware |
+| Round 5b: S6b page (portamento + vel-mod settings)   | New sub-page in group 5: portamento (`kCfgSMTH`, virtual addr 203) + `vdst` (vel destination) + `vamt` (vel amount). `PAGE_PART_ARPEGGIATOR` stub is the natural slot |
+| RATE/CDIV ratio display                              | User wants ratios (`1/4`, `1/3`, `1/2` … `2/1`) not raw indices. Requires `kNumTicksPerStep=12`, new period table `{3,4,6,8,9,12,18,24}`, display labels in `seq_track_page.cc` and `seq_steps_page.cc` |
+| Encoder-click focused-edit display                   | Click outside substep editor is a no-op; needs full-row `page \| name value` layout + PROGMEM full-name table for 28 lockable params |
+| Hold-step semantics polish                           | Any held step + pot turn writes lock today. Long-press detection + double-tap-to-clear not yet implemented |
 | Round 5c: slot-based patch storage                   | Numbered slots + save button, no kits/patches abstraction. `tracks_[6]` + `global_` raw dump (~1.8 KB) per slot. `PAGE_LIBRARY` enum slot is the registry home. Voice copy/paste UX TBD |
-| Encoder-click focused-edit display                   | No-op today (pending substep-editor work); needs full-row `page \| name value` layout + full-name table |
 | WAVE strip-aware LUT                                 | Pot reaches CZ stripped indices (6..14) → silence; build contiguous valid-set lookup |
 | Shadow playhead + Voltage-Block / Elektron hold modes | 5 bytes/track reserved, not yet wired |
-| Hold-step semantics polish                           | Today: any held step + pot turn writes lock. No long-press / double-tap-clear yet |
 | Linear FM via BLND ≥ 64 + RTIO ratio LUT             | Voicecard side; queued for separate planning phase |
 | Track relationships / mod matrix                     | 4 active globally; not started |
-| Storage multi-slot                                   | Single state snapshot only |
 | Mutate-aware note resolver                           | `FireStep` passes raw `kP1NOTE` |
 
 ### Notes for next session

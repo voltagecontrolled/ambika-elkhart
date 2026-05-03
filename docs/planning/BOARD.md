@@ -10,86 +10,56 @@ is retired. New entries are topic-named and dated.
 
 ## Now
 
-- **Sequencer hardware verification, round 5a-1.** Controller
-  kSystemVersion `0x31` (voicecards stay on `0x30` — code unchanged).
-  Hardware-test bugfix bump on top of round 5a:
-  - PROB rescaled 0..127 native (was 0..255 with unreachable ceiling),
-    default 127 = always fires, displays as `0%`..`100%`.
-  - VEL→VCA default depth 0 → 127 in `kDefaultMod` slot 11 (velocity
-    was inert; this also unmasks VOL on S6).
-  - BLND clamped to 0..63 (skip the dead linear-FM range that produced
-    glitches).
-  - SCAL labels: leading-space pattern so cell renders `SCAL pMi` not
-    `SCALpMi`; `chro` shortened to `chr`.
-
-  Round 5a (under `0x30`, still on the voicecards): env-depth range
-  extended 0..63 → 0..127 unipolar (UI passthrough + voicecard VCA `<< 1`
-  rescale + defaults bumped); S5 rebuilt and reordered so step-behavior
-  is leftmost (default cursor=0 → NOTE): S5a `note vel glid rate / subs
-  prob mint mdir`, S5b `nois w1 pa1 tun2 / mix w2 pa2 fin2`, S5c `freq
-  fdec famt adec / pdec pamt sub wave`; wave abbrs `wav1`/`wav2` →
-  `w1`/`w2`; `subs` merged bipolar cell on S5a; S6 drops BPCH, renames
-  OLEV → VOL, adds 8-scale SCAL quantize; S7 `swng` realigned under top2;
-  resolver wires PROB / GLID / VEL+VOL / SCAL.
+- **Sequencer hardware verification, round 5b + substep editor overhaul.**
+  Controller `0x32`, voicecards `0x31` — both sides must be reflashed
+  (snapshot protocol extended from 16 → 20 bytes). Items to verify:
+  - `freq` / `famt` / `pamt` / `wave` per-step locks: hold step, turn
+    those knobs, confirm per-step snapshot variation on hardware.
+  - `gtim` (portamento): audible glide on held notes.
+  - `vamt` (velocity → VCA): velocity-sensitive amplitude.
+  - RATE per-step override: step fires faster or slower than track CDIV.
+  - Subs pot: CCW = repeats 8r..1r, deadzone at 12 o'clock, CW = 1x..8x.
+  - Substep editor — gated repeats: enter via hold-step + encoder click
+    on `subs` (step must have REPT > 0). Toggle bits on step buttons,
+    verify LED pattern, exit, verify REPT-gated playback.
+  - Substep editor — gated ratchets: enter from a step with SSUB > 0.
+    Count pot CW adds ratchet slots; toggling bits silences individual
+    within-period fires.
+  - Substep editor — MINT/MDIR: set MINT to a named interval (e.g. `P5`),
+    MDIR to `up`; verify audible pitch walk across repeat/ratchet fires.
 
 ---
 
-## Next — Round 5b (sequencer execution + lockable expansion)
+## Next
 
-- **Lockable `freq` / `famt` / `pamt` / `wave` on the seq surface.** User
-  needs these per-step lockable; today they're config-mapped (write to
-  `tr.config[]`, not lockable). Mechanism options: extend `lock_flags`
-  from 24 → 32 bits (one byte more), add a `page3[8]` to `SeqStep` for
-  the 4 new lockables (8 bytes/step × 8 steps × 6 tracks = **192 B
-  RAM**), extend `defaults[]` 24 → 28 (×6 = 24 B), extend `lock_flags`
-  (1 B × 8 × 6 = 48 B) — total **~264 B RAM**, controller goes from
-  84.7% to ~91% RAM. Voicecard side: extend `kSnapshotAddrs[]` from 16
-  to 20 entries (add patch addrs 16 / 22 / 58 / 11), or repurpose dead
-  `kP2E3REL` (lock idx 13) for one of them. Both-sides version bump.
-  User has approved the RAM cost: "if things get tight, I'll bust out
-  the chopping block then."
+- **RATE / CDIV ratio display.** User wants ratios not raw indices: `1/4`,
+  `1/3`, `1/2`, `2/3`, `3/4`, `1/1`, `3/2`, `2/1`. Current
+  `kCDivValues[] = {1,2,3,4,6,8,12,16}` with `kNumTicksPerStep = 6`
+  makes `1/4` and `3/4` non-integer (1.5 and 4.5 ticks). Fix: change
+  base unit to 12 (lcm of 3 and 4), store periods directly
+  `{3,4,6,8,9,12,18,24}`. Display labels in `seq_track_page.cc` and
+  `seq_steps_page.cc`.
 
-- **RATE / REPT / SSUB-ratchet execution in `Sequencer::Clock`.** Storage
-  is in place from round 5a. RATE = per-step CDIV override (0 = use
-  track CDIV, 1..7 = override). REPT = re-fire current step N times
-  before advancing (uses existing `shadow[kShdwREPT]`). Positive SSUB =
-  N evenly-spaced retriggers within the period; subdivides `period` by
-  ratchet count.
+- **New S6b page: portamento + vel-mod settings.** `gtim` and `vamt` are
+  reachable on S5a but a dedicated settings sub-page in group 5 would
+  surface them alongside any future per-voice config that doesn't belong
+  on the lockable pages. Design TBD pending hardware testing of current
+  placement.
 
-- **Custom/Edit substep editor.** Entry: hold a step button + press
-  encoder while cursor is on `subs` cell. While editing: step buttons
-  1..8 toggle `substep_bits` for the held step; LEDs mirror the
-  bitmap; encoder click again exits.
+- **Encoder-click focused-edit display on sequencer pages.** Click is a
+  no-op outside the substep editor. Needs full-row layout:
+  `<page name> | <full param name> <value>`, mirroring the
+  `ParameterEditor` convention. Requires a full-name table for the
+  28 lockable params and a focused-edit state machine in `SeqStepsPage`.
 
-- **Mutate (MINT/MDIR) lives exclusively inside the substep editor.**
-  Walking pitch only makes sense across substeps within a single primary
-  step, so MINT/MDIR don't need top-level cells on S5a. Frees two cells
-  on S5a (mint, mdir) for the vel-mod controls.
+- **Hold-step semantics polish.** First pass: any held step + pot turn
+  writes lock. Catalyst-style long-press detection and
+  double-tap-to-clear are not yet implemented.
 
-- **New S6b page: portamento + vel mod settings.** Adds a second sub-page
-  in group 5 for non-track-pattern voice-config knobs that don't fit
-  S5b/S5c. Top row would carry portamento (kCfgSMTH, patch addr 19)
-  alongside `vdst` (velocity destination) and `vamt` (velocity depth).
-  Frees the `vel` cell on S5a top2 to be paired with vdst/vamt
-  configurability — natural location for them is the row alongside vel
-  on S5a once mint/mdir migrate to the substep editor.
-
-- **Encoder-click focused-edit display on sequencer pages.** Today click
-  is a no-op (except as a substep-edit trigger once that lands). Needs
-  full-row layout: `<page name> | <full param name> <value>`,
-  mirroring the `ParameterEditor` convention. Requires a full-name
-  table for the lockable params and a focused-edit state machine in
-  `SeqStepsPage`.
-
-- **WAVE strip-aware LUT.** Pot currently scales 0..127 → 0..42, but
-  CZ filter-sim indices 6..14 are stripped per Phase 2 and produce
-  silence. Build a contiguous valid-set lookup so the pot only ever
-  selects audible waveforms.
-
-- **Hold-step semantics polish.** First pass uses "if any step button is
-  held when a pot moves, write a lock for that step; release suppresses
-  toggle." Catalyst-style long-press detection and double-tap-to-clear
-  are not yet implemented.
+- **Round 5c: slot-based patch storage.** Numbered slots + save button,
+  no kits/patches abstraction. `tracks_[6]` + `global_` raw dump per
+  slot. `PAGE_LIBRARY` enum slot is the registry home. Voice copy/paste
+  UX TBD.
 
 ---
 
