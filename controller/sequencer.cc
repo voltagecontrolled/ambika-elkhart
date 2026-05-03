@@ -215,7 +215,7 @@ void Sequencer::Clock(uint8_t ticks) {
     int8_t ssub = static_cast<int8_t>(ResolveStepByte(tr, cur, kSPSSUB));
     if (tr.shadow[kShdwTICK] < period) {
       if (ssub > 0) {
-        // N+1 evenly-spaced fires per period. Slot 0 = main fire (already done).
+        // Ratchets: N+1 evenly-spaced fires per period. Slot 0 = main fire.
         uint8_t sub_period = period / (static_cast<uint8_t>(ssub) + 1);
         if (sub_period == 0) sub_period = 1;
         uint8_t slot_now  = tr.shadow[kShdwTICK] / sub_period;
@@ -226,23 +226,9 @@ void Sequencer::Clock(uint8_t ticks) {
             FireStep(t, cur);
           }
         }
-      } else if (ssub == -1 || ssub == -2) {
-        // substep_bits drives N evenly-spaced slots; REPT stores N (0 = 8).
-        uint8_t rept_bits = ResolveStepByte(tr, cur, kSPREPT);
-        uint8_t sub_count = rept_bits ? rept_bits : 8;
-        uint8_t slot_period = period / sub_count;
-        if (slot_period == 0) slot_period = 1;
-        uint8_t slot_now  = tr.shadow[kShdwTICK] / slot_period;
-        uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / slot_period;
-        if (slot_now != slot_prev && slot_now > 0 && slot_now < sub_count) {
-          if (tr.steps[cur].substep_bits & (1 << slot_now)) {
-            voicecard_tx.Release(t);
-            if (tr.steps[cur].step_flags & kStepFlagOn) {
-              FireStep(t, cur);
-            }
-          }
-        }
       }
+      // SSUB=-2: custom repeat pattern — fires happen at period boundaries (REPT
+      // path below), each gated by substep_bits. No within-period sub-triggers.
     }
 
     if (tr.shadow[kShdwTICK] >= period) {
@@ -252,10 +238,22 @@ void Sequencer::Clock(uint8_t ticks) {
 
       if (tr.shadow[kShdwREPT] > 0) {
         // REPT: re-fire the last-fired step, no advance.
+        uint8_t last = tr.shadow[kShdwLAST];
         tr.shadow[kShdwREPT]--;
         voicecard_tx.Release(t);
-        if (tr.steps[tr.shadow[kShdwLAST]].step_flags & kStepFlagOn) {
-          FireStep(t, tr.shadow[kShdwLAST]);
+        if (tr.steps[last].step_flags & kStepFlagOn) {
+          int8_t ssub_l = static_cast<int8_t>(ResolveStepByte(tr, last, kSPSSUB));
+          if (ssub_l != -2) {
+            FireStep(t, last);
+          } else {
+            // Custom pattern: gate this repeat by substep_bits.
+            // repeat_idx counts up from 1 after each decrement.
+            uint8_t rept_total = ResolveStepByte(tr, last, kSPREPT);
+            uint8_t repeat_idx = rept_total - tr.shadow[kShdwREPT];
+            if (repeat_idx < 8 && (tr.steps[last].substep_bits & (1 << repeat_idx))) {
+              FireStep(t, last);
+            }
+          }
         }
         if (tr.shadow[kShdwREPT] == 0) {
           AdvanceStep(t);
@@ -266,12 +264,13 @@ void Sequencer::Clock(uint8_t ticks) {
         voicecard_tx.Release(t);
         tr.shadow[kShdwLAST] = fired;
         if (tr.steps[fired].step_flags & kStepFlagOn) {
-          FireStep(t, fired);
+          int8_t ssub_f = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
+          // SSUB=-2: gate initial fire on bit 0 of substep_bits.
+          if (ssub_f != -2 || (tr.steps[fired].substep_bits & 0x01)) {
+            FireStep(t, fired);
+          }
         }
         uint8_t rept = ResolveStepByte(tr, fired, kSPREPT);
-        // When substep Edit mode is active, REPT is the substep slot count.
-        int8_t ssub_fired = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
-        if (ssub_fired == -2 || ssub_fired == -1) rept = 0;
         tr.shadow[kShdwREPT] = rept;
         if (rept == 0) {
           AdvanceStep(t);

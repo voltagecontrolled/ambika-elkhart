@@ -168,15 +168,25 @@ uint8_t SeqStepsPage::OnClick() {
         editing_substeps_ = true;
         SeqTrack* tr = sequencer.mutable_track(ui.state().active_part);
         SeqStep& step = tr->steps[substep_step_];
-        // Set SSUB=-2 (Edit) so substep_bits drives playback.
-        step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
-        step.lock_flags[2] |= (1 << kSPSSUB);
-        // Read substep count from REPT lock or default.
+        // Read current SSUB and REPT to determine substep count.
         uint8_t rept_v = (step.lock_flags[2] & (1 << kSPREPT))
             ? step.steppage[kSPREPT]
             : tr->defaults[16 + kSPREPT];
-        substep_count_ = rept_v ? rept_v : 8;
-        // Auto-enable bits for all active slots when none are set yet.
+        int8_t ssub_v = static_cast<int8_t>((step.lock_flags[2] & (1 << kSPSSUB))
+            ? step.steppage[kSPSSUB]
+            : tr->defaults[16 + kSPSSUB]);
+        // Migrate ratchet count to REPT so the custom pattern has the same count.
+        if (ssub_v > 0 && rept_v == 0) {
+          rept_v = static_cast<uint8_t>(ssub_v);
+          step.steppage[kSPREPT] = rept_v;
+          step.lock_flags[2] |= (1 << kSPREPT);
+        }
+        // SSUB=-2: substep_bits gates each REPT repeat fire.
+        step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
+        step.lock_flags[2] |= (1 << kSPSSUB);
+        // substep_count_ = REPT+1 (initial fire + REPT repeats), or 8 if unconstrained.
+        substep_count_ = (rept_v > 0) ? rept_v + 1 : 8;
+        // Auto-enable all active slots when substep_bits is empty.
         if (step.substep_bits == 0) {
           step.substep_bits = (substep_count_ < 8)
               ? static_cast<uint8_t>((1 << substep_count_) - 1)
@@ -229,17 +239,15 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     SeqTrack* tr = sequencer.mutable_track(track);
     SeqStep& step = tr->steps[substep_step_];
     if (index == 4) {
-      // Substep count 1..8 stored in REPT (0 = unconstrained = 8).
-      uint8_t cnt = ScalePot(value, 7) + 1;  // 1..8
+      // Total fire count 2..8 (= REPT+1). REPT=0 means 1 fire; pot covers 2..8.
+      uint8_t cnt = ScalePot(value, 6) + 2;  // 2..8 total fires
       if (cnt > substep_count_) {
-        // Auto-enable newly exposed slots.
         for (uint8_t b = substep_count_; b < cnt; ++b) step.substep_bits |= (1 << b);
       } else if (cnt < substep_count_) {
-        // Mask out slots beyond new count.
         if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
       }
       substep_count_ = cnt;
-      step.steppage[kSPREPT] = cnt;
+      step.steppage[kSPREPT] = cnt - 1;  // store REPT = total - 1
       step.lock_flags[2] |= (1 << kSPREPT);
       return 1;
     }
@@ -505,7 +513,7 @@ void SeqStepsPage::UpdateScreen() {
         buffer[6] = '0' + (ssub_v > 9 ? 9 : ssub_v);
         buffer[8] = 'x';
       } else if (ssub_v == -2) {
-        memcpy_P(&buffer[5], PSTR("edit"), 4);
+        memcpy_P(&buffer[5], PSTR(" cus"), 4);
       } else {
         buffer[8] = '0';
       }
