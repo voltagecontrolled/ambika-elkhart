@@ -1,304 +1,634 @@
 # Elkhart — User Manual
 
-*Draft 0.2 — based on SPEC (YAM-based), pre-hardware*
+*Last updated for: ambika-elkhart-v4.0*
+
+Elkhart is a 6-voice polymetric step sequencer + synthesizer firmware for
+the Mutable Instruments Ambika hardware (Michigan Synth Works Xena
+motherboard with SVF voicecards). Each of the six tracks runs an
+independent synth voice with its own pattern, clock division, scale,
+direction, and length; tracks drift in and out of phase as their lengths
+and divisions interact. Per-step parameter locks let you reshape any
+voice on a step-by-step basis — pitch, oscillator algorithm, envelope
+decay, sub-osc shape, all 28 of them.
+
+It's at home on percussion (six independent voices, transient sub-osc
+shapes, tight envelope macros) but the YAM-derived voice engine — dual
+oscillators with FM, eight-mode wavetables, vowel synthesis, an SVF with
+drive and bit-reduction, a wavefolder — covers melodic and textural
+ground equally well.
+
+> **About this manual:** sections marked with `<!-- VERIFY: ... -->`
+> document v4.0 behavior that has been spec'd but not yet hardware-walked
+> at time of writing. The verification pass before tag-time will resolve
+> these markers against the shipping firmware.
 
 ---
 
-## Firmware Installation
+## Contents
 
-<!-- TODO: Document accurate controller and voicecard flash procedure once verified on hardware. Key points to cover: SD card prep, S8+Power for controller, voicecard flash menu navigation, S4 to trigger per-card flash, version confirmation. Note: controller and voicecards must run matching firmware versions. -->
+1. [Firmware installation](#firmware-installation)
+2. [Hardware](#hardware)
+3. [Navigation](#navigation)
+4. [Page reference](#page-reference)
+5. [Sequencer mode](#sequencer-mode)
+6. [Voice architecture](#voice-architecture)
+7. [Appendix — parameters by page](#appendix--parameters-by-page)
 
 ---
 
-## Overview
+## Firmware installation
 
-Elkhart is a 6-voice percussive synthesizer with a polymetric step sequencer. Each voice is independent — its own oscillator stack, filter, and envelopes — and each track has its own pattern that runs at its own length and clock division. The primary expressive dimensions are the tension between locked and unlocked steps and the rhythmic relationships that emerge when six independent step lengths and clock divisions interact.
+Elkhart ships as two binaries:
 
-Each voice runs the same signal chain: **two oscillators** drawn from a wide algorithm palette (sines, vowels, FM, wavetables, more), with an interaction control that crossfades or FMs them; a **sub-oscillator and transient layer** providing both traditional sub-bass reinforcement and transient hits (clicks, pops, blows, glitches, metallic); a **multimode SVF filter** with drive and bit-reduction; an **LPG-coupled amp+filter envelope** controlled by three macro knobs (decay, depth, personality offset); and an **independent pitch envelope** for transients and pitch sweeps.
+- `AMBIKA.BIN` — controller (motherboard, ATmega644p)
+- `VOICE.BIN` — voicecard (ATmega328p), one binary, flashed independently
+  to each of the six voice slots
 
-There are no dedicated drum voice types. The same voice that makes a plonky kick makes a metallic hi-hat via different oscillator algorithm, ratio, filter mode, envelope decay, and transient choice.
+**Controller and voicecards must run matching firmware versions.** v4.0
+ships with controller `kSystemVersion = 0x34` and voicecard
+`kSystemVersion = 0x31`. The OS Info page reports the running version on
+each side; both must match these values after flashing.
+
+### Prepare the SD card
+
+Format the SD card to FAT16 or FAT32 with 8.3 filenames. Copy the
+binaries into the card root, naming them as follows:
+
+| File on SD card | Source binary  | Flashed to                |
+|-----------------|----------------|---------------------------|
+| `AMBIKA.BIN`    | `AMBIKA.BIN`   | Controller (motherboard)  |
+| `VOICE1.BIN`    | `VOICE.BIN`    | Voicecard slot 1          |
+| `VOICE2.BIN`    | `VOICE.BIN`    | Voicecard slot 2          |
+| …               | …              | …                         |
+| `VOICE6.BIN`    | `VOICE.BIN`    | Voicecard slot 6          |
+
+You only need `VOICE#.BIN` files for the slots you intend to flash.
+
+### Flash the controller
+
+1. Power off the Ambika.
+2. Insert the SD card.
+3. Hold **Button 8 (S8)** while powering on. The bootloader will pick up
+   `AMBIKA.BIN` from the SD card root and flash the motherboard.
+4. After the boot completes, navigate to the OS Info page (`S8`) and
+   confirm the controller version reads `0x34`.
+
+### Flash the voicecards
+
+1. With the unit powered on, navigate to the OS Info / firmware-upgrade
+   page. <!-- VERIFY: per issue #10, firmware upgrade moves to S8b at v4.0; patch save lives on S8a. Confirm exact navigation gesture before publishing. -->
+2. The page lists the six voicecards and their reported versions. Use
+   the encoder to highlight a voicecard slot.
+3. Press **Button 4 (S4)** to flash the highlighted slot from
+   `VOICE#.BIN`.
+4. After flash, the version readout for that slot should update to
+   `0x31`. Repeat for each voicecard you want to update.
+
+> **Mismatched versions can corrupt the per-step snapshot protocol** —
+> step locks rely on a fixed 20-byte payload that both sides must agree
+> on. If you see triggering anomalies after a partial flash, finish
+> flashing all six voicecards.
 
 ---
 
 ## Hardware
 
-- **2×40 LCD**
-- **Push encoder** (turn + click)
-- **8 knobs:** Top row (4) + Bottom row (4)
-- **8 buttons with LEDs:** Labeled 1–8
-- **6 individual audio outputs** + **mix output** (plugging an individual out removes that voice from the mix)
-- **SD card** for state snapshot storage
+- **Display:** 2 × 40 character LCD
+- **Push encoder:** turn + click
+- **Pots:** 4 above the LCD (top row) + 4 below (bottom row)
+- **Buttons:** 8 buttons with LEDs, labeled `S1`..`S8`
+- **Audio outputs:** 6 individual voice outs + 1 mix out (808-style
+  normalling — plugging an individual out removes that voice from the
+  mix)
+- **Storage:** SD card (FAT16/FAT32, 8.3 filenames) for state snapshots,
+  patch slots, and firmware flashing
+
+This manual uses `S1`..`S8` for the eight buttons. Pots are referenced
+as `top1`..`top4` and `bot1`..`bot4` — left-to-right within each row.
 
 ---
 
 ## Navigation
 
-- **Encoder turn:** Scrolls through the full parameter list continuously — all pages flow into each other without stopping at boundaries.
-- **Encoder push:** Enters focused-edit mode on the highlighted parameter. The full parameter name is shown on the second LCD line and the encoder turn directly adjusts the value. Push again to exit.
-- **Knobs 1–8:** Always edit the 8 parameters currently displayed.
-- **Buttons 1–8:** Context-dependent based on the current page:
-  - **On most normal-mode pages:** quick-jump shortcut to that page (Button 1 → Oscillator, Button 2 → Filter, etc.).
-  - **On the Voice / Parts page (Button 6):** buttons 4–6 act as PLAY / PAUSE / RESET. Page-jump shortcuts are not available while on this page — use the encoder to scroll back to other pages.
-  - **In Sequencer Mode:** buttons are step triggers. Page shortcuts are not available — use the encoder to navigate.
-- **Button 5:** Toggles Sequencer Mode (symmetric — second press exits).
+### The eight pages
 
-The currently selected **voice** is set by `VSEL` — accessible on Page 6 (Voice / Parts). All edits apply to the selected voice.
+The eight buttons select the eight top-level page groups:
 
----
+| Button | Group           | Pages in group                                |
+|--------|-----------------|-----------------------------------------------|
+| `S1`   | Oscillators     | S1a Oscillators, S1b Mixer                    |
+| `S2`   | Filter          | S2 (single page)                              |
+| `S3`   | Envelopes + LFO | S3a Amp+Filter env, S3b Pitch env + LFO       |
+| `S4`   | Mod matrix      | <!-- VERIFY: S4 = mod matrix surface for issue #11. Confirm whether it lives on its own page or shares with S3. --> |
+| `S5`   | Sequencer mode  | S5a Step, S5b Voice 1, S5c Voice 2 (encoder)  |
+| `S6`   | Per-track       | S6a Track settings, S6b Performance mixer     |
+| `S7`   | Transport       | Single page (PLAY/PAUSE/STOP/RESET, BPM, swing)|
+| `S8`   | Patch + system  | S8a Patch slots, S8b Firmware / system <!-- VERIFY: per issue #10 --> |
 
-## Normal Mode
+Within a group, the **second tap of the same button** cycles to the
+group's next page. Pressing a different button jumps groups.
 
-### Page 1 — OSC / Mixer
+### Encoder
 
-Non-lockable oscillator voice configuration. The per-step lockable oscillator parameters (NOTE, WAVE, PARA, BLND, RTIO, FINE) are set in Sequencer Mode via Voice Page 1 — voice defaults for those are the current knob positions in Sequencer Mode when no step is held.
+- **Turn** — scrolls through the active page's parameters. On most
+  pages the cursor advances one parameter per detent; on sequencer
+  mode (S5) the encoder walks through all 24 cells across the three
+  lock pages and *spills* into the neighboring page group at the
+  boundaries (cursor 0 → S3, cursor 23 → S6).
+- **Click** — enters focused-edit mode on the highlighted parameter.
+  The full parameter name and value are shown on row 2; the encoder
+  turn directly adjusts the value. Click again to exit.
+  <!-- VERIFY: per issue #15, encoder click on sequencer pages also enters focused-edit. Substep editor entry on `subs` cell is the existing exception. -->
 
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `FTYP` FM Type | Linear vs. exponential FM response. Linear FM produces metallic/inharmonic sidebands; exponential FM stays pitch-stable across BLND sweeps. |
-| Top 2 | — | TBD — portamento mode, phase reset behavior, or voice-level tuning offset |
-| Top 3 | — | TBD |
-| Top 4 | — | TBD |
-| Bot 1 | — | TBD |
-| Bot 2 | — | TBD |
-| Bot 3 | — | TBD |
-| Bot 4 | — | TBD |
+### Page-jump chord
 
-Knob layout is placeholder pending Phase 7 (UI). The exact non-lockable oscillator settings on this page will be determined empirically once the sequencer is running.
+Holding `S2` or `S8` while turning the encoder applies an ×8
+multiplier — a fast page-jump shortcut to walk across page groups
+without leaving the encoder. Single-detent turns without the chord
+walk one cell at a time as usual.
 
-### Page 2 — VCF
+### Pots
 
-The state-variable filter and bit-reduction stage. The filter envelope (LPG macro) is controlled per step via Sequencer Voice Page 2; Page 2 sets the voice-level base values and range.
+Pots always edit the eight parameters currently displayed. The
+parameter abbreviations on row 1 of the LCD identify which pot drives
+which value. On pages with fewer than 8 active parameters, unused pots
+are inert.
 
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `FREQ` Cutoff Freq | Base filter frequency. The filter envelope (Env2) modulates around this point. |
-| Top 2 | `RES ` Resonance | SVF resonance. High resonance at moderate cutoff produces ringing tones. |
-| Top 3 | `TYPE` Filter Mode | LP / BP / HP output select. LP for body and warmth, HP for hats and cymbals, BP for nasal/metallic character. |
-| Top 4 | `DRIV` Filter Drive | Gain into the SVF. At high levels adds saturation and grit. Interacts with resonance — drive + high resonance gets aggressive. |
-| Bot 1 | `BITS` Bit Reduction | Reduces the digital signal's bit depth before the SVF and DAC. 0 = full resolution. Max = 1-bit (extreme digital grit). The filter then shapes the added harmonics. |
-| Bot 2 | — | TBD — LPG range floor/ceiling, filter envelope minimum, or additional voice config |
-| Bot 3 | — | TBD |
-| Bot 4 | — | TBD |
+### Sequencer mode toggle
 
-Knob mappings on this page are placeholder until empirical UI tuning. Filter bypass: `FREQ` to max and `RES` to min.
-
-### Page 3 — ENV / LFO
-
-Non-lockable envelope and LFO voice configuration. Attack times, envelope curves, and loop modes for the three function generators — the settings that stay fixed across all steps. Per-step decay times (LPGD), filter depths (LPGA), and personality (LPGO) live in Sequencer Voice Page 2.
-
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `ATK1` VCA Attack | Env1 (VCA) attack time. Voice-level. How quickly amplitude rises at trigger. |
-| Top 2 | `ATK2` Filter Attack | Env2 (Filter/LPG) attack time. Voice-level. How quickly the filter opens. |
-| Top 3 | `ATK3` Pitch Attack | Env3 (Pitch) attack time. Voice-level. |
-| Top 4 | — | TBD — envelope loop mode, curve shapes, or LFO speed |
-| Bot 1 | `LSHP` LFO Shape | Sine, triangle, square, ramp, or random/S&H. |
-| Bot 2 | `LFOR` LFO Reset | Free-running, per-step (resets each trigger), or per-pattern (resets on pattern start). |
-| Bot 3 | `LFOA` LFO Amount | Modulation depth. |
-| Bot 4 | `LFOD` LFO Destination | LFO target: pitch, cutoff, fold (when applicable), or FM depth. |
-
-Envelope looping (turning a function generator into a self-cycling LFO) and curve shapes (exponential, linear, s-curve) are voice-level settings with TBD knob placement. Exact layout settled empirically during Phase 7 (UI). The LFO is voice-level only in v1 — no per-step LFO control in the initial release.
-
-### Page 4 — Track Relationships
-
-Defines how the six tracks interact with each other. Up to 4 active relationships globally.
-
-The LCD shows a list of active relationships:
-```
-[Src] Track 1 ──▶ [Dst] Track 3   Type: TransOsc1   Amt: +7
-[Src] Track 2 ──▶ [Dst] Track 5   Type: Clock       Amt: ---
-```
-
-The encoder scrolls through relationship slots. Knobs set source, destination, type, and amount.
-
-| Relationship | Description |
-|--------------|-------------|
-| **Transpose Osc 1** | Source track's current pitch transposes destination's Osc 1 (the carrier). |
-| **Transpose Osc 2** | Same, but Osc 2 only — allows cross-track detuning and beating. |
-| **Clock** | Source track's triggers advance the destination's playhead. Destination only steps when source fires. |
-| **Reset** | Source track's step 1 resets destination to step 1. |
-| **Accent** | When source and destination fire simultaneously, destination's velocity is boosted. |
-
-### Page 5 — KeyBed/Arp/Seq
-
-Pressing Button 5 enters Sequencer Mode. Pressing Button 5 again returns to Normal Mode. See the Sequencer Mode section below.
-
-### Page 6 — Voice / Parts + Transport
-
-Voice selection, track pattern settings, and global timing. **This is the only page where buttons act as transport controls** — pressing any other page button exits transport mode and jumps to that page.
-
-#### Top Row — Voice + Global
-
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `VSEL` Voice Select | Which of the 6 voices is being edited. All knob edits on Pages 1–3 apply to this voice. |
-| Top 2 | `BPM ` Tempo | Master tempo in BPM. |
-| Top 3 | `SWNG` Swing | Groove amount — delays even-numbered steps to add push/pull feel. |
-| Top 4 | `LTCK` Hold Mode | Step-hold behavior: Voltage Block (pause + snap) or Elektron (keep running). See Step Hold Modes. |
-
-#### Bottom Row — Track Pattern
-
-| Knob | Name | Description |
-|------|------|-------------|
-| Bot 1 | `CDIV` Clock Div | Per-track clock division: 1, 2, 3, 4, 6, 8, 12, 16. **The polymeter engine.** Two tracks at different divisions drift in and out of phase as their patterns cycle. |
-| Bot 2 | `LENG` Pat Length | Pattern length 1–8 steps. Combined with `CDIV`, creates independent polymeters per track. |
-| Bot 3 | `DIRN` Direction | Forward / Reverse / Pendulum / Random. |
-| Bot 4 | `ROTA` Rotate | Shifts the pattern start point (0–7) without altering step data. |
-
-Additional track settings (`SCAL`, `ROOT`, `BPCH`, `OLEV`) are reachable via the encoder from this page — exact placement TBD during Phase 7.
-
-#### Transport Buttons
-
-The bottom row of the LCD shows pipe-separated labels while on Page 6. Buttons 4–6 act as transport:
-
-```
-                |PLAY|PAUS|RST |
-```
-
-- **PLAY (Button 4):** Starts playback from the current position. If already playing, no-op. From paused, resumes.
-- **PAUSE (Button 5):** Pauses playback, preserving position. From paused, resumes. When stopped, no-op.
-- **RESET (Button 6):** All track playheads jump to step 1. Transport state is preserved — playing stays playing, stopped stays stopped.
-
-#### LED Feedback
-
-- **PLAY LED:** Blinks during playback. Off when stopped or paused.
-- **PAUSE LED:** Blinks while paused. Off otherwise.
-- **RESET LED:** Brief flash on press.
-
-A dedicated **Stop** button (full halt, distinct from Pause) is reserved for a future revision. To fully stop with current controls: press Pause, then Reset.
-
-### Page 7 — Perf
-
-Performance and sequencer tricks. Placeholder — feature set TBD pending empirical use of the instrument.
-
-Candidate features:
-
-- **Beat repeat:** Loop a sub-section of the active pattern for fills or stutter effects — e.g., hold Button 7 + turn a knob to select a 1- or 2-step loop window.
-- **Mute / solo:** Toggle individual track output without stopping the sequencer.
-- **Stutter:** Real-time gate-length reduction for chop effects.
-
-Knob assignments and final feature set determined in Phase 10.
-
-### Page 8 — Load / Save
-
-**State snapshot model:** the entire instrument state — all 6 tracks of pattern data, locks, voice defaults, voice config, mod matrix, global settings — is saved as a single file. There are no separate "patches", "programs", "parts", or "multis" — that hierarchy is replaced by one all-inclusive snapshot.
-
-**v1:** one save slot. Press to save, press to load.
-
-**Future:** multiple slots with a picker UI.
+`S5` enters **Sequencer Mode** (per-step parameter editing on the
+active track). A second `S5` press exits back to normal mode. While
+in sequencer mode, `S1`..`S8` are step triggers, not page-jump
+shortcuts; encoder navigation is the way out (or `S5` again).
 
 ---
 
-## Sequencer Mode
+## Page reference
 
-Press **Button 5** to enter. Press **Button 5** again to exit back to Normal Mode.
+### S1 — Oscillators (S1a) / Mixer (S1b)
 
-### Controls
+The voice's two oscillators and their mix into the audio path. Voice
+defaults for the per-step lockable osc parameters live here as well —
+`NOTE`, `WAVE1`, `PARA1`, `BLND`, `RTIO`, `WAVE2`, `PARA2`, `FINE` are
+also lockable from S5b (Voice 1 sequencer page). Turning the
+corresponding knob on S1a while no step is held in S5 sets the **track
+default** for that parameter.
 
-- **Buttons 1–8:** Step toggles. Tap to turn a step on or off. Hold to enter lock edit for that step.
-- **Knobs 1–8:** Edit lockable parameters for the current sub-page.
-- **Encoder turn:** Scroll through parameters. The three sequencer sub-pages are continuous — the encoder flows through them without stopping at boundaries.
-- **Encoder push:** Focused edit on the highlighted parameter — full name and value displayed prominently; encoder turn directly adjusts; push again to exit.
+- **`WAVE1` / `WAVE2`:** algorithm select for each oscillator. Palette
+  spans modern PolyBLEP saw/PWM, sine, triangle, FM/FM-fb, dirty PWM,
+  filtered noise, vowel synthesis, 16 wavetable banks, wavequence,
+  the original pre-PolyBLEP saw, and a wavefolder.
+  <!-- VERIFY: wavefolder availability tied to issue #18 close + voicecard flash budget. If the build pulls the CZ filter-sim variants to make room, note that. -->
+- **`PARA1` / `PARA2`:** algorithm-specific parameter — PWM amount for
+  square, formant select for vowels, FM index for `fm`, fold depth for
+  the wavefolder, etc.
+- **`BLND`:** bipolar oscillator interaction.
+  - `0`–`63`: crossfade between Osc 1 and Osc 2 in the audio path
+    (`0` = Osc 1 only, `63` = Osc 2 only). No FM.
+  - `64`–`127`: Osc 2 is removed from the audio path and routed as an
+    FM modulator into Osc 1. FM depth scales from `0` at `64` to max
+    at `127`. The `63→64` transition is acoustically silent (both
+    endpoints are "Osc 1 only, no FM").
+- **`RTIO`:** Osc 2 frequency ratio relative to Osc 1, drawn from a
+  DX-style ratio LUT (0.125, 0.25, 0.5, … 1, √2, π/2, 2, 3, π, 4, 5,
+  8, …).
+- **`FINE`:** ±100-cent detune on Osc 2.
+- **`TUN2`:** semitone-coarse pitch offset on Osc 2 (lockable, signed).
+- **`NOTE`:** carrier base note; usually driven from the sequencer
+  rather than this page.
 
-### Sequencer Voice Page 1 — Oscillators
+The S1b Mixer sub-page exposes the sub-osc and noise mix levels that
+also appear on the sequencer S5c page — handy for setting voice-wide
+defaults.
 
-The primary timbre page — algorithm select, pitch relationship, interaction. Identical layout to Page 1 of normal mode but at sequencer scale (locks per step rather than voice defaults).
+<!-- VERIFY: exact knob layout on S1a/S1b to be re-walked against controller/ui.cc page_registry entries before publishing. -->
 
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `NOTE` Base Note | Carrier (Osc 1) pitch in semitones. |
-| Top 2 | `WAVE` Osc 1 Wave | Osc 1 algorithm. |
-| Top 3 | `PARA` Osc 1 Parameter | Algorithm-specific knob for Osc 1. |
-| Top 4 | `BLND` Oscillator Interaction | Bipolar mix-or-FM. |
-| Bot 1 | `RTIO` Osc 2 Ratio | Frequency ratio of Osc 2 relative to Osc 1. |
-| Bot 2 | `WAVE` Osc 2 Wave | Osc 2 algorithm. |
-| Bot 3 | `PARA` Osc 2 Parameter | Algorithm-specific knob for Osc 2. |
-| Bot 4 | `FINE` Osc 2 Fine Tune | ±100 cents detune on the modulator. |
+### S2 — Filter
 
-### Sequencer Voice Page 2 — Modulation
+The state-variable filter and bit-reduction stage.
 
-Envelope decays/amounts, noise, sub-osc.
+- **`FREQ`:** SVF cutoff. The filter envelope (Env 2) modulates around
+  this point.
+- **`RES`:** resonance. High resonance at moderate cutoff produces
+  ringing, near-self-oscillation tones.
+- **`TYPE`:** LP / BP / HP output select. LP for body and warmth, HP
+  for hats and cymbals, BP for nasal/metallic character.
+- **`DRIV`:** filter drive — gain into the SVF. At high levels adds
+  saturation and grit; interacts with resonance.
+- **`BITS`:** pre-DAC bit reduction. `0` = full resolution, max =
+  1-bit (extreme digital grit). The filter then shapes the added
+  harmonics.
 
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `LPGD` LPG Decay | Anchor decay time. Drives the VCA envelope (Env1) directly and the filter envelope (Env2) with `LPGO`-derived offset. The primary "decay" knob for percussion. |
-| Top 2 | `LPGA` LPG Amount | How strongly the LPG opens/closes the filter. At 0, filter is static at the voice-config `FREQ` value. At max, full LPG sweep. |
-| Top 3 | `LPGO` LPG Offset | Bipolar personality macro. Center = vactrol-like (filter slightly faster than amp). CCW = plucky (filter much faster). CW = looser/resonant tail (filter holds longer). |
-| Top 4 | `NOIS` Noise Amount | White noise mixed into the main signal path. |
-| Bot 1 | `PITD` Pitch Env Decay | Env3 fall time. |
-| Bot 2 | `PITA` Pitch Env Amount | Env3 → carrier pitch (bipolar — positive sweeps up to base, negative sweeps down to base). |
-| Bot 3 | `WAVE` Sub-Osc Wave | Sub-oscillator shape. 11 options: Square 1/2, Triangle 1/2, Pulse 1/2 (traditional sub) plus Click, Glitch, Blow, Metallic, Pop (transient hits). |
-| Bot 4 | `SUB ` Sub-Osc Level | Mix amount of the sub layer. |
+For pure passthrough (filter "off"): `FREQ` to max, `RES` to min.
 
-### Sequencer Step Page — Step Behavior
+`FREQ`, `FAMT` (Env 2 → cutoff depth), `PAMT` (Env 3 → pitch depth),
+and the sub-osc `WAVE` are also lockable per step from S5c.
 
-Controls *when*, *whether*, and *how* the step fires. Processed by the sequencer on the motherboard; only the resolved pitch and parameters reach the voice card.
+### S3 — Envelopes + LFO
 
-| Knob | Name | Description |
-|------|------|-------------|
-| Top 1 | `PROB` Probability | 0–100%. The step fires or is silently skipped. |
-| Top 2 | `SSUB` Sub-steps / Ratchets | Bipolar from center. Clockwise (+1 to +8) = ratchet count. Center (0) = normal. Counter-clockwise –1 = Custom sub-step playback. CCW –2 = Sub-step edit mode. See below. |
-| Top 3 | `REPT` Step Repeat | How many times the step replays before the playhead advances. |
-| Top 4 | `RATE` Step Rate | Per-step timing: half / normal / double / triplet. |
-| Bot 1 | `VEL ` Velocity | Step velocity / accent level. |
-| Bot 2 | `GLID` Glide | Ties this step to the next — suppresses envelope retrigger, producing a legato effect. |
-| Bot 3 | `MINT` Mutate Interval | Pitch interval to walk across repeats and sub-steps. Off, Scale, Min3, Min5, Min7, Min9, Maj3, Maj5, Maj7, Maj9, Oct. |
-| Bot 4 | `MDIR` Mutate Direction | Walk direction: Up / Down / UpDn (alternating) / Random. Only active when `MINT` is not Off. |
+Three independent ADR + Curve envelopes with fixed routing, plus one
+voice LFO. Each envelope has three control bytes (`rise`, `fall`,
+`curv`) plus a depth byte that lives in the modulation slot it drives.
+There is **no sustain stage** — `curv` controls the linear-to-exponential
+shape blend of decay/release (`0` = linear, `127` = exponential).
 
-### Locking Parameters
+| Envelope     | Routing                            | Depth          |
+|--------------|-----------------------------------|----------------|
+| Env 1 (VCA)  | Output amplitude                  | `amp`          |
+| Env 2 (VCF)  | SVF cutoff                        | `flt`          |
+| Env 3 (Pitch)| Osc 1 base pitch (coarse, ±)      | `pitc`         |
 
-**Hold a step button** to enter lock edit mode for that step. The LCD shows current lock values for the active sub-page. **Turn any knob** to write a lock for that parameter on that step. Locked parameters are shown on the LCD. Release the step button to exit lock edit.
+#### S3a — Amp + Filter envelopes
 
-**Clearing locks:** Double-tap while holding a step to clear all locks for that step back to voice defaults.
+```
+top  rise | fall | curv | amp     ← Env 1 (VCA)
+bot  rise | fall | curv | flt     ← Env 2 (VCF)
+```
 
-Locked parameters snap back to voice defaults after the step fires. Locking a step does not affect other steps. Every trigger sends a full parameter snapshot — either the step's locked values or the current knob positions, with no carryover between steps.
+The depth knob doubles as the row label: `amp` and `flt` identify the
+envelope.
 
-**Unlocked steps** always reflect the current physical knob position in real time. Turning a knob while a pattern plays immediately affects all unlocked steps. This tension between locked and unlocked steps is the main performance dimension.
+#### S3b — Pitch envelope + voice LFO
 
-### Sub-steps (SSUB)
+```
+top  rise | fall | curv | pitc    ← Env 3 (Pitch)
+bot  rate | shap | dest | dept    ← LFO 4 (voice LFO)
+```
 
-`SSUB` is a bipolar knob with three zones:
+LFO controls:
 
-- **CW (+1 to +8):** The step fires as N evenly-spaced ratchets within its time slot.
-- **Center (0):** Normal — step fires once.
-- **CCW –1 (Custom):** Plays back a stored sub-step pattern. 8 bits representing 8 sub-step positions on or off.
-- **CCW –2 (Edit):** Enters sub-step edit mode. Buttons 1–8 represent the 8 sub-steps. Tap any button to toggle that sub-step on or off. Release the parent step button — sub-steps remain editable. Turn `SSUB` back to –1 to exit edit mode and play back the pattern.
+- **`rate`:** modulation rate.
+- **`shap`:** waveform — sine, triangle, square, ramp, S&H/random.
+- **`dest`:** modulation destination (oscillator pitch, cutoff, FM
+  depth, etc.).
+- **`dept`:** modulation depth, signed (`-63..+63`) so the LFO can
+  modulate negatively.
 
-All sub-step hits share the same parameter snapshot. There are no per-sub-step locks.
+Per-step lockable: only the three `fall` bytes (Env 1 / Env 2 / Env 3)
+participate in the lock system as `adec` / `fdec` / `pdec` on the S5c
+sequencer page. The other envelope bytes are voice-wide.
+
+LFO 4 (voice LFO) gains tempo-synced rate division at v4.0 — when sync
+is engaged, `rate` selects a clock-relative division instead of a free
+running speed. <!-- VERIFY: per issue #12, exact UI surface for LFO sync (knob position, label, available divisions). -->
+
+### S4 — Mod matrix
+
+A small modulation matrix with up to four active assignments. Each
+slot picks a source, destination, and amount.
+
+<!-- VERIFY: per issue #11, the mod matrix is being scoped down from YAM's full matrix. Document the v4.0 surface (sources / destinations / slot count / UI) once the implementation lands. The PAGE_MODULATIONS registry entry exists but is currently `0xff` placeholder. -->
+
+### S5 — Sequencer mode
+
+See [Sequencer mode](#sequencer-mode) below — the largest section of
+this manual.
+
+### S6a — Per-track settings
+
+Per-track pattern configuration. Pots map directly into the active
+track's `pattern[]`:
+
+```
+top  DIRN | CDIV | ROTA | LENG
+bot  SCAL | ROOT | ---- | VOL
+```
+
+- **`DIRN`:** direction — fwd / rev / pend (pendulum) / rnd.
+- **`CDIV`:** clock division — the polymeter engine. Values are stored
+  as ratios: `1/4`, `1/3`, `1/2`, `2/3`, `3/4`, `1/1`, `3/2`, `2/1`.
+  Two tracks at different ratios drift in and out of phase as their
+  patterns cycle. <!-- VERIFY: ratio labels per issue #14. Until that ships, raw indices `1, 2, 3, 4, 6, 8, 12, 16` may still be displayed. -->
+- **`ROTA`:** rotate pattern start point (0–7) without altering step
+  data. Useful for shifting the downbeat of a fixed pattern.
+- **`LENG`:** pattern length in steps (1–8). Combined with `CDIV`,
+  creates per-track polymeters.
+- **`SCAL`:** scale quantizer — chro / maj / min / dor / mix / pMa
+  (penta major) / pMi (penta minor) / blu (blues). All resolved step
+  notes are quantized into the active scale.
+- **`ROOT`:** scale root, in semitones from C (0–11).
+- **`VOL`:** track volume — multiplicative scale on resolved step
+  velocity. `255` is identity, `0` mutes the track.
+
+The middle slot in the bottom row (`----`) is reserved for a future
+track-transpose control. The slot is inert today.
+
+The active track is selected by `VSEL` — see Voice selection below.
+
+### S6b — Performance mixer
+
+Live performance control for the six tracks: per-voice volume, mute,
+audio mute, and solo, all reachable from a single page. Designed for
+performance, not patch design — **state is transient** (cleared on
+power-cycle, not saved with the patch slot).
+
+```
+Pots:  top1 top2 top3 top4         Buttons:  S1 S2 S3 S4 S5 S6 S7   S8
+       bot1 bot2 bot3 bot4                   v1 v2 v3 v4 v5 v6 mode unmute
+```
+
+- **Pots `top1`..`top3` / `bot1`..`bot3`:** per-voice volume. **Pickup
+  catch:** when entering the page, each pot must physically cross the
+  stored volume value before it begins writing — prevents a
+  destination jump from the resting pot position.
+- **`S1`..`S6`:** toggle the active mode's bit for that voice.
+- **`S7` tap:** cycle mode `MT-S → MT-A → SOLO → MT-S`. The `S7` LED
+  encodes mode (off / dim red / bright red).
+- **`S7` hold + `S1`..`S6` taps:** queue toggles. On `S7` release, the
+  queued voices are XOR'd into the active mode's bits as a single
+  batch. Queued voices blink red during the hold.
+- **`S8` tap:** unmute-all — clear all three bit sets at once.
+
+Three modes:
+
+| Mode  | Skip future fires | Action on toggle of currently-sounding voice |
+|-------|-------------------|-----------------------------------------------|
+| MT-S  | yes               | none — current note's envelope completes      |
+| MT-A  | yes               | instant audio cut (kill voice)                |
+| SOLO  | non-solo'd voices | kill non-solo voices that just lost audibility|
+
+The encoder walks an 8-cell cursor; spills to the neighboring page at
+the boundary.
+
+### S7 — Transport
+
+Master clock, transport, and the panic / master-reset buttons.
+
+```
+top  bpm  | swng | ---- | ----
+bot  ---- | ---- | ---- | ----
+
+Buttons:  S1   S2    S3   S4    S5  S6  S7  S8
+          PLAY PAUS  RST  STOP  --  --  --  mrst
+```
+
+<!-- VERIFY: button slot assignments and S7b page (if any) per issue #2. -->
+
+- **`bpm` (top1):** master tempo in BPM.
+- **`swng` (top2):** swing — delays even-numbered steps to add
+  push/pull feel to the groove.
+- **`PLAY` / `PAUS` / `RST`:** standard transport.
+- **`STOP` (S4):** single tap = `Pause` + `Reset`. **Double-tap within
+  300 ms = panic** — `Pause` + `Reset` + kill all six voices
+  immediately. The S4 LED lights red while the second-tap window is
+  open.
+- **`mrst` Master Reset (S8):** all sequencer state back to defaults
+  (excluding patch slots). <!-- VERIFY: exact behavior + confirm prompt UX per issue #9. -->
+
+### S8a — Patch slots
+
+A simple slot-based patch storage system. The whole instrument state —
+all six tracks of pattern data, locks, voice defaults, voice config,
+mod matrix, global settings — saves as a single file per slot. There
+are no kits/parts/multis abstractions: one slot = one full state.
+
+```
+top  name | ---- | ---- | ----
+bot  ---- | ---- | ---- | ----
+
+Buttons:  S1    S2 S3 S4 S5  S6      S7 S8
+          save  -- -- -- --  update  -- exit
+```
+
+<!-- VERIFY: per issue #10. Layout, naming pot, slot-cycle gesture, and save/update/exit semantics confirmed against shipping firmware. -->
+
+- **Slot list:** the encoder cycles between numbered slots (1, 2, …).
+  An asterisk (`*`) after the slot name indicates a written slot.
+- **Pot `top1` `name`:** spell the slot name.
+- **`S1` `save`:** write current state into the highlighted slot. If
+  the slot is already written, prompts to confirm overwrite.
+- **`S6` `update`:** save the current state into the **already-loaded**
+  slot — overwrites without re-naming.
+- **`S8` `exit`:** leave the page.
+
+Action buttons render green; `exit` renders red, by Ambika
+convention.
+
+A future revision will add a copy/paste sub-menu for moving voices or
+sequence patterns between tracks.
+
+### S8b — Firmware / system
+
+The OS Info page — version readouts for the controller and each
+voicecard, and the gateway to per-card firmware flashing (see
+[Firmware installation](#firmware-installation) above). System
+settings (MIDI channel, MIDI thru, etc.) also live in this page
+group.
+
+---
+
+## Sequencer mode
+
+Press **`S5`** to enter. Press **`S5`** again to exit.
+
+In sequencer mode, the eight buttons (`S1`..`S8`) are step triggers
+for the active track. The eight pots edit the lockable parameters of
+the **active lock-page** (Step / Voice 1 / Voice 2). The encoder
+walks across all 24 cells; the active page is `cursor >> 3`.
+
+### Voice selection
+
+Hold `S8` and turn the encoder to cycle the active track / voice. All
+sequencer-mode editing — step toggles, knob writes, lock writes —
+applies to the active voice's pattern.
+
+### Step on/off
+
+**Tap a step button** (without holding it long enough for a hold
+gesture) to toggle that step's main `step_flags & on` bit. The
+`LED_1`..`LED_8` row lights dim for steps that are on; the trailing
+playhead step lights bright while transport is playing.
+
+### Lock-page cycling
+
+The encoder walks `cursor` from 0 to 23. The 4-character abbreviations
+on row 1 of the LCD show the active page's eight cells; the cursor `>`
+marker precedes the focused cell. The active page is mirrored as a tag
+in the top-right (`v1` / `v2` / `sp`):
+
+```
+cursor 0..7   →  S5a  Step       (sp)
+cursor 8..15  →  S5b  Voice 1    (v1)
+cursor 16..23 →  S5c  Voice 2    (v2)
+```
+
+Crossing a page boundary flips the page automatically; encoder past
+cursor 23 spills out to **S6** (track settings); past cursor 0 spills
+out to **S3** (envelopes + LFO).
+
+### Locking a parameter
+
+**Hold a step button + turn a pot:** writes a lock for that pot's
+parameter on that step. The dirty bit is set and the locked value
+participates in the per-step snapshot.
+
+**Held step + pot turn while focus is on `subs`:** standard lock write
+on `subs` (count + mode).
+
+**Encoder click while a step is held + cursor on `subs`** — and the
+step has SSUB ≠ 0 or REPT ≠ 0 — enters the **substep editor** (see
+below).
+
+**Double-tap a step button while holding it:** clears all locks for
+that step back to track defaults. <!-- VERIFY: per issue #16 hold-step polish. Today the gesture is "any held step + pot turn writes lock"; long-press detection + double-tap clear are part of the v4.0 polish. -->
+
+Locked parameters snap back to track defaults after the step fires —
+every trigger ships a full parameter snapshot, with no carryover
+between steps.
+
+**Unlocked step parameters** read the **track default**, which is
+itself live: turning a knob in sequencer mode while no step is held
+writes the track default and is heard immediately on every unlocked
+step. This tension between locked and unlocked steps is the main
+performance dimension.
+
+### S5a — Step page (cursor 0..7)
+
+```
+top  note | vel  | vamt | rate
+bot  subs | prob | glid | gtim
+```
+
+| Cell   | Name                | Range / behavior |
+|--------|---------------------|------------------|
+| `note` | Step note           | 0..127, displayed as note name. Quantized to track scale. |
+| `vel`  | Velocity            | 0..127. |
+| `vamt` | Velocity → VCA depth| Voice-wide config (mod slot 11 amount). Determines how strongly velocity scales VCA depth. |
+| `rate` | Step rate           | Per-step CDIV override — fires faster / slower than the track CDIV. <!-- VERIFY: ratio labels per issue #14. --> |
+| `subs` | Sub-steps / mode    | Bipolar combined SSUB+REPT cell. CCW = repeats `8r`..`1r`, deadzone at center, CW = ratchets `1x`..`8x`. Display: `Nr` / `0` / `Nx` / `cus` (custom from substep editor). |
+| `prob` | Probability         | 0..100% — step fires or is silently skipped. Affects only the main step; ratchets and REPT re-fires inherit the probability outcome. |
+| `glid` | Glide               | Tie this step to the next — suppresses envelope retrigger on the next step (legato). |
+| `gtim` | Glide time          | Voice-wide portamento time on glided notes. |
+
+**Iterative probability modes:** `prob` supports modes beyond raw
+percentage at v4.0 — e.g., "1-of-N", "first / last / not-first /
+not-last". <!-- VERIFY: per issue #6, full mode list + UI. -->
+
+### S5b — Voice 1 page (cursor 8..15)
+
+```
+top  nois | w1   | pa1  | tun2
+bot  mix  | w2   | pa2  | fin2
+```
+
+| Cell    | Name                 | Range / behavior |
+|---------|----------------------|------------------|
+| `nois`  | Noise mix            | White noise level into the audio path. |
+| `w1`    | Osc 1 wave           | Algorithm select; renders as 6-char waveform name. |
+| `pa1`   | Osc 1 PARA           | Algorithm-specific parameter (PWM, formant, FM index, fold depth, …). |
+| `tun2`  | Osc 2 coarse tune    | Signed semitone offset on Osc 2 (lockable; reclaimed dead E1 release slot). |
+| `mix`   | BLND (osc interaction)| Bipolar 0..63 mix / 64..127 FM (clamped to 0..63 in default builds; 64+ pending linear-FM work). |
+| `w2`    | Osc 2 wave           | Algorithm select. |
+| `pa2`   | Osc 2 PARA           | Algorithm-specific parameter. |
+| `fin2`  | Osc 2 fine tune      | Signed cents detune on Osc 2 (lockable). |
+
+### S5c — Voice 2 page (cursor 16..23)
+
+```
+top  freq | fdec | famt | adec
+bot  pdec | pamt | sub  | wave
+```
+
+| Cell   | Name                       | Range / behavior |
+|--------|----------------------------|------------------|
+| `freq` | Filter cutoff base         | SVF cutoff. The filter envelope modulates around this. |
+| `fdec` | Filter env (Env 2) decay   | Env 2 fall byte. |
+| `famt` | Filter env depth           | Env 2 → cutoff depth. Signed. |
+| `adec` | Amp env (Env 1) decay      | Env 1 fall byte. |
+| `pdec` | Pitch env (Env 3) decay    | Env 3 fall byte. |
+| `pamt` | Pitch env depth            | Env 3 → Osc 1 base pitch. Signed; positive sweeps up to base, negative sweeps down to base. |
+| `sub`  | Sub-osc level              | Sub-osc / transient layer mix into the audio path. |
+| `wave` | Sub-osc shape              | 11-shape palette: 6 traditional sub-bass shapes (Square 1/2, Triangle 1/2, Pulse 1/2) + 5 transient one-shots (Click, Glitch, Blow, Metallic, Pop). Switching between traditional and transient shapes per step is a primary percussion-expressive tool. |
+
+### Substep editor
+
+Hold a step button, scroll the cursor to `subs`, and click the
+encoder. Two requirements: the cursor must be on `subs`, and the held
+step must have either SSUB ≠ 0 or REPT ≠ 0 (otherwise the click is a
+no-op).
+
+The editor offers per-fire bit-level control over the gated fires of
+the step. The interpretation depends on which mode you entered from:
+
+#### Gated repeats (SSUB = -2 zone)
+
+When entered from a step in the CCW (repeats) zone of `subs`,
+`substep_bits` gates each of the `REPT + 1` period-boundary fires:
+
+- **Bit 0** = does the initial step fire?
+- **Bits 1..REPT** = does each of the subsequent period re-fires?
+
+#### Gated ratchets (CW zone, `kStepFlagGated`)
+
+When entered from a step in the CW (ratchets) zone, `substep_bits`
+gates each of the `SSUB + 1` within-period sub-triggers — letting you
+silence individual ratchet hits while preserving the ratchet timing
+grid.
+
+#### Editor controls
+
+While the editor is active:
+
+- **Pot 0 (`subs` slot):** count + mode. CCW → CW mirrors the S5a
+  `subs` knob; switching across the deadzone toggles between
+  gated-repeat and gated-ratchet modes. A pickup guard absorbs the
+  first ADC reading on entry so the resting pot position doesn't
+  overwrite the stored value.
+- **Pot 1 (`mint` slot):** **MINT** — semitone walk per sub-trigger,
+  0..24. Labels: `off`, `m2`..`M7`, `8va`, `8m2`..`8va2`.
+- **Pot 2 (`mdir` slot):** **MDIR** — direction: `up` / `dn` / `ud`
+  (ping-pong) / `rnd`.
+- **`S1`..`S8`:** toggle individual `substep_bits` slots. Slots above
+  the active count are inactive (button no-op, LED dark).
+- All other pots are inert while the editor is active.
+
+LCD layout while editing:
+
+```
+Line 0:  subs Nr | MINT m3 | MDIR up
+Line 1:  # # - # # # - -    (one slot per active position)
+```
+
+LEDs mirror `substep_bits`, masked to the active count.
+
+On entry, `substep_bits` is trimmed to the active range. Stale
+out-of-range bits from a prior session are cleared; if nothing
+survives the trim, all active slots re-enable.
+
+**Exit:** click the encoder again.
 
 ### Mutation (MINT + MDIR)
 
-Mutation applies a pitch interval walk across a step's repeats and/or sub-steps. `MINT` selects the interval; `MDIR` selects the direction.
+When MINT is non-zero, repeats and ratchet sub-triggers walk the step
+pitch by `MINT` semitones per fire. Direction is set by MDIR:
 
-When both `REPT` and `SSUB` are active, repeats mutate first, and sub-steps within each repeat continue the walk from the repeat's pitch:
+| MDIR | Label | Effect                                        |
+|------|-------|-----------------------------------------------|
+| 0    | `up`  | `+sub_idx × MINT`                             |
+| 1    | `dn`  | `−sub_idx × MINT`                             |
+| 2    | `ud`  | Odd `sub_idx`: `+MINT`; even: `−MINT`         |
+| 3    | `rnd` | Random `±MINT` offset per fire                |
 
-```
-step pitch = base + mutate(repeat_index) + mutate(substep_index)
-```
+The note is clamped to 0..127 and re-quantized to the track's scale
+after the offset is applied. Mutation is resolved on the controller —
+the voicecard receives the final computed pitch.
 
-When the walk reaches the top or bottom of the playable range, it resets to base pitch and restarts — sawtooth reset, not a hard clamp.
+### Stateless triggering
 
-Mutation is resolved entirely on the motherboard. The voice card only receives the final computed pitch.
-
----
-
-## Step Hold Modes
-
-Set on Page 6 (`LTCK`). Global — applies to all tracks.
-
-### Voltage Block Mode
-
-Hold a step → the playhead **pauses** on that step. The held step fires repeatedly so you hear your edits in real time. A shadow playhead continues in the background, maintaining timing relative to other tracks. Release the step → the playhead snaps to the shadow position. You may have silently missed some steps while holding, but pattern phase is preserved. Good for live performance.
-
-### Elektron Mode
-
-Hold a step → the playhead **keeps running**. Knob turns write lock values to the held step's storage. You hear the result the next time that step comes around. Good for studio programming.
+Every step trigger sends a full 20-byte parameter snapshot — either
+the step's locked values or the current track defaults — alongside
+the note and velocity. There is no state carryover between steps.
+What you see in the LCD on a step is exactly what fires on that
+step, and only that step.
 
 ---
 
-## Voice Architecture
+## Voice architecture
 
-### Signal Chain
+Each voicecard runs the same signal chain. All timbral variety comes
+from parameter differences plus algorithm selection per oscillator.
+
+### Signal chain
 
 ```
                        ┌────────────────┐
@@ -315,153 +645,199 @@ Hold a step → the playhead **keeps running**. Knob turns write lock values to 
 └────────┘                                 │ + NOIS  │    └────┬─────┘
                                            └─────────┘         ▲
                                                                │
-                                                          Env2 (Filter, LPGA-scaled)
-                                                          (LPGD × LPGO)
+                                                          Env2 (Filter, FAMT-scaled)
+                                                          (independent)
 
-Env3 (Pitch) ──▶ Osc 1 base pitch (PITA-scaled, PITD time) — independent
-LFO          ──▶ voice-config target
+Env3 (Pitch) ──▶ Osc 1 base pitch (PAMT-scaled, independent)
+LFO 4        ──▶ voice-config target (pitch / cutoff / FM depth / …)
 ```
 
-### Envelopes — LPG-Coupled Amp+Filter, Independent Pitch
+### Three independent envelopes
 
-Three envelopes, but **Env1 (VCA) and Env2 (Filter) are coupled through an LPG macro**. Env3 (Pitch) is fully independent.
+Each voicecard runs **three independent envelopes** with fixed
+routing. All three are parameterized identically: `rise` (attack),
+`fall` (decay/release rate — there is no sustain), and `curv`
+(linear-to-exponential blend). The depth knob lives in the modulation
+slot the envelope drives:
 
-- **Env1 (VCA):** Shapes the output amplitude. Always-on. Decay time is set by `LPGD`.
-- **Env2 (Filter):** Modulates the SVF cutoff. Decay time is `LPGD` modified by `LPGO`'s offset; depth is `LPGA`. Setting `LPGA` to 0 makes the filter static at the cutoff knob value. Setting `LPGA` high makes Env2 sweep the filter.
-- **Env3 (Pitch):** Modulates Osc 1's base pitch. Decay is `PITD`; depth is `PITA` (bipolar — positive sweeps up to base, negative sweeps down to base). Independent of the LPG macro. Used for kick thump, tom sweep, click attack.
+| Envelope     | Drives          | Decay knob | Depth knob |
+|--------------|-----------------|------------|------------|
+| Env 1 (VCA)  | Output amplitude| `adec`     | `amp`      |
+| Env 2 (VCF)  | SVF cutoff      | `fdec`     | `flt` (`famt`) |
+| Env 3 (Pitch)| Osc 1 base pitch| `pdec`     | `pitc` (`pamt`) |
 
-The three LPG macro knobs:
+The three `fall` bytes are the only envelope parameters that
+participate in the per-step lock system (as `adec` / `fdec` / `pdec`
+on S5c).
 
-- **`LPGD` (LPG Decay):** Anchor decay time. The most-tweaked per-step envelope knob.
-- **`LPGA` (LPG Amount):** Filter env depth. 0 = filter is static; max = full sweep.
-- **`LPGO` (LPG Offset):** Bipolar personality macro:
-  - **Center:** typical vactrol-like — filter decays slightly faster than amp.
-  - **CCW:** more plucky — filter closes much faster than amp; highs vanish well before body fades.
-  - **CW:** looser/resonant tail — filter holds longer than amp.
-  - At extremes, `LPGO` may also shift envelope curve and dial in a small filter Q to enhance the personality.
+### Dual oscillator (Osc 1 = carrier, Osc 2 = modulator)
 
-Envelope curves are baked-in per envelope and tuned for the LPG behavior at center `LPGO`. There is no separate VCA decay or filter decay knob — the macro structure is intentional: one decay (LPGD), one personality knob (LPGO), one amount (LPGA).
+Two oscillator slots, each independently selecting from YAM's wave
+shape palette plus elkhart's wavefolder. The carrier (Osc 1)
+determines perceived pitch; the modulator (Osc 2) is either mixed
+into the audio path or routed to FM-modulate Osc 1, controlled by the
+single bipolar `BLND` knob.
 
-### The BLND Knob
+#### `BLND` zones
 
-A single bipolar knob that subsumes oscillator routing:
+- **Below center (0–63):** crossfade between Osc 1 and Osc 2 in the
+  audio path.
+- **At center (63→64):** acoustically silent transition — both
+  endpoints are "Osc 1 only, no FM."
+- **Above center (64–127):** Osc 2 modulates Osc 1's pitch (FM). Osc
+  2 leaves the audio path. FM amount sweeps from 0 at 64 to maximum
+  at 127. <!-- VERIFY: linear-FM mode availability tied to BLND ≥ 64 work; current default builds clamp BLND to 0..63. Confirm before publishing. -->
 
-- **Below center (0–63):** Crossfade between the two oscillators in the audio path. At 0, only Osc 1 is heard; at 63, only Osc 2.
-- **At center (63→64):** Acoustically silent transition. Both endpoints are "Osc 1 only, no FM."
-- **Above center (64–127):** Osc 2 modulates Osc 1's pitch (FM). Osc 2 leaves the audio path. FM amount sweeps from 0 at 64 to maximum at 127.
+At any setting you hear *either* a mix of Osc 1 and Osc 2 *or* Osc 1
+being FM'd by Osc 2 — never both. This constraint matches the natural
+FM design pattern of operator-as-modulator-only.
 
-This means: at any setting, you hear *either* a mix of Osc 1 and Osc 2 OR Osc 1 being FM'd by Osc 2 — never both. The constraint simplifies operating mental model and matches the natural FM design pattern of operator-as-modulator-only.
+### Sub-oscillator and transient layer
 
-### Sub-Oscillator and Transients
+The sub-oscillator slot doubles as a transient generator. Eleven
+shapes total: six traditional sub-bass shapes (Square, Triangle, Pulse
+— each in two octave-related variants) and five transient one-shots
+(Click, Glitch, Blow, Metallic, Pop). Selecting a transient shape
+produces a one-shot attack on note-on, mixed at the `SUB` level into
+the main path. Independent of Osc 1 / Osc 2 — you can layer a Click
+transient under a vowel-and-FM voice without touching either
+oscillator's wave selection.
 
-The sub-oscillator slot doubles as a transient generator. Eleven shapes total: six traditional sub-bass shapes (square, triangle, pulse — each in two octave-related variants) and five transient one-shots (Click, Glitch, Blow, Metallic, Pop). Selecting a transient shape produces a one-shot attack on note-on, mixed at the `SUB` level into the main path. This is independent of Osc 1 / Osc 2 — you can layer a Click transient under a vowel-and-FM voice without touching either oscillator's wave selection.
+### Wavefolder
+
+Elkhart adds a wavefolder waveform alongside YAM's palette: a
+Carcosa-style iterative quadratic. Selecting wavefolder for `WAVE1`
+or `WAVE2` exposes fold depth on the `PARA` knob — at low depths it
+behaves like a soft saturator on the input wave; at high depths it
+reflects into harmonic-rich folded territory, useful for textural
+leads, metallic strikes, and noise-adjacent percussion.
+
+<!-- VERIFY: presence in the v4.0 build per issue #18. If voicecard flash budget required pulling the CZ filter-sim variants to make room, note the palette change here. -->
 
 ---
 
-## Appendix — Parameters by Page
+## Appendix — parameters by page
 
-`†` = also appears as a per-step lockable in Sequencer Mode
+`†` = also appears as a per-step lockable in sequencer mode.
 
-### Page 1 — OSC / Mixer (Non-lockable Osc Voice Config)
+### S1a Oscillators (voice config; `†` items also lockable on S5b)
 
-| Abbrev | Name | Notes |
-|--------|------|-------|
-| `FTYP` | FM Type | Linear vs. exponential FM response |
-| — | (TBD) | Portamento, phase reset, tuning offset, or other non-lockable osc config |
+| Abbrev | Name           | Notes |
+|--------|----------------|-------|
+| `WAVE1`†| Osc 1 wave    | Algorithm select |
+| `PARA1`†| Osc 1 PARA    | Algorithm parameter |
+| `BLND` †| Osc interaction| Bipolar mix / FM |
+| `RTIO` †| Osc 2 ratio   | DX-style ratio LUT |
+| `WAVE2`†| Osc 2 wave    | Algorithm select |
+| `PARA2`†| Osc 2 PARA    | Algorithm parameter |
+| `FINE` †| Osc 2 cents   | ±100-cent detune |
+| `TUN2` †| Osc 2 coarse  | Signed semitone offset |
 
-Exact parameter set TBD in Phase 7.
+### S2 Filter (voice config; some `†` lockable)
 
-### Page 2 — VCF (Non-lockable Filter Voice Config)
+| Abbrev | Name           | Notes |
+|--------|----------------|-------|
+| `FREQ` †| Cutoff        | SVF base frequency |
+| `RES`   | Resonance     | SVF resonance |
+| `TYPE`  | Filter mode   | LP / BP / HP |
+| `DRIV`  | Drive         | Saturation gain into SVF |
+| `BITS`  | Bit reduction | Pre-DAC bit depth reduction |
+| `FAMT` †| Env 2 → cutoff depth | Signed |
+| `PAMT` †| Env 3 → pitch depth  | Signed (lives on S5c — exposed here for cross-reference) |
 
-| Abbrev | Name | Notes |
-|--------|------|-------|
-| `FREQ` | Cutoff Freq | SVF base frequency |
-| `RES ` | Resonance | SVF resonance |
-| `TYPE` | Filter Mode | LP / BP / HP |
-| `DRIV` | Filter Drive | Saturation gain into SVF |
-| `BITS` | Bit Reduction | Pre-DAC bit depth reduction |
-| — | (TBD) | LPG range floor/ceiling or additional filter voice config |
+### S3a/S3b Envelopes + LFO (voice config; `fall`/decay bytes are `†` lockable)
 
-(Knob layout placeholder — final assignment in Phase 7.)
+| Abbrev | Name              | Notes |
+|--------|-------------------|-------|
+| `rise` (E1) | Env 1 attack | |
+| `fall` (E1)†| Env 1 decay/release rate (`adec` lockable) | |
+| `curv` (E1) | Env 1 curve blend | 0 lin .. 127 expo |
+| `amp`  | Env 1 → VCA depth | |
+| `rise` (E2) | Env 2 attack | |
+| `fall` (E2)†| Env 2 decay/release (`fdec`) | |
+| `curv` (E2) | Env 2 curve blend | |
+| `flt`  | Env 2 → cutoff depth | (= `famt` on S5c) |
+| `rise` (E3) | Env 3 attack | |
+| `fall` (E3)†| Env 3 decay/release (`pdec`) | |
+| `curv` (E3) | Env 3 curve blend | |
+| `pitc` | Env 3 → pitch depth | (= `pamt` on S5c) |
+| `rate` | LFO 4 rate (sync-aware) | |
+| `shap` | LFO 4 waveform | |
+| `dest` | LFO 4 destination | |
+| `dept` | LFO 4 depth | Signed -63..+63 |
 
-### Page 3 — ENV / LFO (Non-lockable Envelope + LFO Voice Config)
+### S4 Mod matrix
 
-Final knob layout TBD in Phase 7.
+<!-- VERIFY: parameter list pending issue #11 implementation. -->
 
-| Abbrev | Name | Notes |
-|--------|------|-------|
-| `ATK1` | VCA Attack | Env1 (VCA) attack time |
-| `ATK2` | Filter Attack | Env2 (Filter/LPG) attack time |
-| `ATK3` | Pitch Attack | Env3 (Pitch) attack time |
-| `LSHP` | LFO Shape | Sine / triangle / square / ramp / random |
-| `LFOR` | LFO Reset | Free / per-step / per-pattern |
-| `LFOA` | LFO Amount | Modulation depth |
-| `LFOD` | LFO Destination | Pitch / cutoff / fold / FM |
-| `LFOS` | LFO Speed | (TBD location) |
-| `TRAK` | LFO Tracking | Pitch tracking on/off (TBD location) |
-| — | Loop modes, curves | Envelope looping and curve shape per FG (TBD) |
+### S6a Per-track settings (track config)
 
-### Page 6 — Voice / Parts + Transport
+| Abbrev | Name           | Notes |
+|--------|----------------|-------|
+| `DIRN` | Direction      | fwd / rev / pend / rnd |
+| `CDIV` | Clock division | Ratio: 1/4..2/1 |
+| `ROTA` | Rotate         | Pattern start offset |
+| `LENG` | Length         | Steps per cycle (1–8) |
+| `SCAL` | Scale          | chro / maj / min / dor / mix / pMa / pMi / blu |
+| `ROOT` | Root           | Semitone offset (0–11) |
+| `VOL`  | Volume         | Velocity scale (0–255) |
 
-| Slot | Abbrev | Name | Notes |
-|------|--------|------|-------|
-| Top 1 | `VSEL` | Voice Select | 1–6 |
-| Top 2 | `BPM ` | Tempo | Master tempo |
-| Top 3 | `SWNG` | Swing | Groove amount |
-| Top 4 | `LTCK` | Hold Mode | Voltage Block / Elektron |
-| Bot 1 | `CDIV` | Clock Div | 1, 2, 3, 4, 6, 8, 12, 16 |
-| Bot 2 | `LENG` | Pat Length | Steps per cycle (1–8) |
-| Bot 3 | `DIRN` | Direction | Fwd / Rev / Pendulum / Random |
-| Bot 4 | `ROTA` | Rotate | Pattern start offset (0–7) |
-| Btn 4 | `PLAY` | Play | LED blinks while playing |
-| Btn 5 | `PAUS` | Pause | LED blinks while paused |
-| Btn 6 | `RST ` | Reset | All playheads → step 1 |
+### S6b Performance mixer (transient)
 
-Additional track context (`SCAL`, `ROOT`, `BPCH`, `OLEV`) reachable via encoder from this page — exact placement TBD in Phase 7.
+Per-voice volume + MT-S / MT-A / SOLO toggles. State not persisted.
 
-### Page 7 — Perf
+### S7 Transport
 
-Placeholder. Feature set TBD in Phase 10. Candidate: beat repeat, mute/solo, stutter.
+| Abbrev | Name      | Notes |
+|--------|-----------|-------|
+| `bpm`  | Tempo     | Master BPM |
+| `swng` | Swing     | Groove amount |
+| —      | PLAY/PAUS/RST/STOP/mrst | Buttons (S1/S2/S3/S4/S8) |
 
-### Sequencer Voice Page 1 — Oscillators (Lockable)
+### S5a Step page (per-step lockable)
 
-Voice defaults for these params are the current knob positions in Sequencer Mode when no step is held — unlocked steps always read live knobs.
+| Abbrev | Name              | Notes |
+|--------|-------------------|-------|
+| `note` | Step note         | Quantized to track scale |
+| `vel`  | Velocity          | 0..127 |
+| `vamt` | Vel → VCA amount  | Voice-wide config (mod slot 11) |
+| `rate` | Step rate         | Per-step CDIV override |
+| `subs` | Sub-steps / mode  | Bipolar SSUB + REPT cell |
+| `prob` | Probability       | 0..100% + iterative modes |
+| `glid` | Glide             | Tie to next step |
+| `gtim` | Glide time        | Voice-wide portamento |
 
-| Abbrev | Name | Notes |
-|--------|------|-------|
-| `NOTE` | Base Note | Carrier pitch in semitones |
-| `WAVE` | Osc 1 Wave | Algorithm select for Osc 1 |
-| `PARA` | Osc 1 Parameter | Algorithm-specific timbral knob (Osc 1) |
-| `BLND` | Oscillator Interaction | Bipolar 0–63 mix / 64+ FM |
-| `RTIO` | Osc 2 Ratio | Frequency ratio Osc 2 : Osc 1 |
-| `WAVE` | Osc 2 Wave | Algorithm select for Osc 2 |
-| `PARA` | Osc 2 Parameter | Algorithm-specific timbral knob (Osc 2) |
-| `FINE` | Osc 2 Fine Tune | ±100 cents detune on Osc 2 |
+### S5b Voice 1 page (per-step lockable)
 
-### Sequencer Voice Page 2 — Modulation (Lockable)
+| Abbrev | Name             | Notes |
+|--------|------------------|-------|
+| `nois` | Noise mix        | |
+| `w1`   | Osc 1 wave       | Wave name |
+| `pa1`  | Osc 1 PARA       | |
+| `tun2` | Osc 2 coarse     | Signed |
+| `mix`  | BLND             | Bipolar |
+| `w2`   | Osc 2 wave       | Wave name |
+| `pa2`  | Osc 2 PARA       | |
+| `fin2` | Osc 2 fine       | Signed |
 
-Voice defaults for these params are the current knob positions in Sequencer Mode when no step is held.
+### S5c Voice 2 page (per-step lockable)
 
-| Abbrev | Name | Notes |
-|--------|------|-------|
-| `LPGD` | LPG Decay | Anchor decay time (Env1 + Env2) |
-| `LPGA` | LPG Amount | Filter env depth |
-| `LPGO` | LPG Offset | Bipolar personality macro |
-| `NOIS` | Noise Amount | White noise mix into main path |
-| `PITD` | Pitch Env Decay | Env3 fall time |
-| `PITA` | Pitch Env Amount | Env3 → carrier pitch (bipolar) |
-| `WAVE` | Sub-Osc Wave | 11-shape palette (6 traditional + 5 transient) |
-| `SUB ` | Sub-Osc Level | Sub layer mix amount |
+| Abbrev | Name              | Notes |
+|--------|-------------------|-------|
+| `freq` | Filter cutoff     | |
+| `fdec` | Env 2 decay       | |
+| `famt` | Env 2 → cutoff depth | Signed |
+| `adec` | Env 1 decay       | |
+| `pdec` | Env 3 decay       | |
+| `pamt` | Env 3 → pitch depth | Signed |
+| `sub`  | Sub-osc level     | |
+| `wave` | Sub-osc shape     | 11-shape palette |
 
-### Sequencer Step Page — Step Behavior (Lockable)
+---
 
-| Abbrev | Name | Notes |
-|--------|------|-------|
-| `PROB` | Probability | 0–100% fire chance |
-| `SSUB` | Sub-steps / Ratchets | +8→+1 ratchets, 0 normal, –1 custom, –2 edit |
-| `REPT` | Step Repeat | Replay count before advance |
-| `RATE` | Step Rate | ½ / ×1 / ×2 / triplet |
-| `VEL ` | Velocity | Step velocity |
-| `GLID` | Glide | Tie to next step |
-| `MINT` | Mutate Interval | Pitch walk interval |
-| `MDIR` | Mutate Direction | Up / Down / UpDn / Random |
+## License
+
+GPLv3, inherited from upstream Mutable Instruments / YAM. Voice DSP
+adapted from `bjoeri/ambika` (YAM); original Ambika firmware by Émilie
+Gillet. Contains a variant of Peter Knight's Cantarino formant
+synthesis algorithm.
