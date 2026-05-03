@@ -37,7 +37,10 @@ const prog_EventHandlers MultiPage::event_handlers_ PROGMEM = {
 
 /* static */
 uint8_t MultiPage::OnIncrement(int8_t increment) {
-  ui.ShowPageRelative(increment);
+  // Clamp to ±1 — S2/S8 + encoder arrives as ±8, but ShowPageRelative
+  // walks pages one at a time (skipping all-0xff entries), so the raw
+  // multiplied value would jump 8 registry slots in one click.
+  ui.ShowPageRelative(increment > 0 ? 1 : -1);
   return 1;
 }
 

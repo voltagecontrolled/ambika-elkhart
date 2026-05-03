@@ -243,8 +243,16 @@ uint8_t SeqStepsPage::OnClick() {
 
 // Encoder turn walks cursor across 24 cells; spills to the previous/next
 // page (registry order) when stepping past the boundary.
+//
+// |increment| >= 8 indicates the S2/S8 page-jump modifier — short-circuit
+// the cursor walk and page out immediately so this page (with 24 cells)
+// doesn't absorb up to 3 modifier clicks before letting them through.
 /* static */
 uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
+  if (increment >= 8 || increment <= -8) {
+    ui.ShowPageRelative(increment > 0 ? 1 : -1);
+    return 1;
+  }
   int8_t next = static_cast<int8_t>(cursor_) + increment;
   if (next < 0) {
     cursor_ = 0;

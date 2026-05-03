@@ -212,10 +212,11 @@ void Sequencer::Clock(uint8_t ticks) {
 
     // SSUB ratchet: fire sub-triggers between period boundaries.
     // Only active when a step has been fired (kShdwLAST is valid post-reset).
+    // Gate on kShdwPROB so substeps follow the main-step probability decision.
     uint8_t cur = tr.shadow[kShdwLAST];
     int8_t ssub = static_cast<int8_t>(ResolveStepByte(tr, cur, kSPSSUB));
     if (tr.shadow[kShdwTICK] < period) {
-      if (ssub > 0) {
+      if (ssub > 0 && tr.shadow[kShdwPROB]) {
         // Ratchets: N+1 evenly-spaced fires per period. Slot 0 = main fire.
         uint8_t sub_period = period / (static_cast<uint8_t>(ssub) + 1);
         if (sub_period == 0) sub_period = 1;
@@ -243,12 +244,13 @@ void Sequencer::Clock(uint8_t ticks) {
 
       if (tr.shadow[kShdwREPT] > 0) {
         // REPT: re-fire the last-fired step, no advance.
+        // PROB decision is carried from the main fire (kShdwPROB).
         uint8_t last = tr.shadow[kShdwLAST];
         uint8_t rept_total = ResolveStepByte(tr, last, kSPREPT);
         tr.shadow[kShdwREPT]--;
         uint8_t repeat_idx = rept_total - tr.shadow[kShdwREPT];
         voicecard_tx.Release(t);
-        if (tr.steps[last].step_flags & kStepFlagOn) {
+        if (tr.shadow[kShdwPROB] && (tr.steps[last].step_flags & kStepFlagOn)) {
           int8_t ssub_l = static_cast<int8_t>(ResolveStepByte(tr, last, kSPSSUB));
           if (ssub_l != -2) {
             FireStep(t, last, repeat_idx);
@@ -267,7 +269,11 @@ void Sequencer::Clock(uint8_t ticks) {
         uint8_t fired = (step + tr.pattern[kPatROTA]) % len;
         voicecard_tx.Release(t);
         tr.shadow[kShdwLAST] = fired;
-        if (tr.steps[fired].step_flags & kStepFlagOn) {
+        // PROB roll once per main step; ratchets/repeats inherit this decision.
+        uint8_t prob = ResolveStepByte(tr, fired, kSPPROB);
+        tr.shadow[kShdwPROB] =
+            ((Random::GetByte() & 0x7F) <= prob) ? 1 : 0;
+        if (tr.shadow[kShdwPROB] && (tr.steps[fired].step_flags & kStepFlagOn)) {
           int8_t ssub_f = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
           // SSUB=-2: gate initial fire on bit 0 of substep_bits.
           if (ssub_f != -2 || (tr.steps[fired].substep_bits & 0x01)) {
@@ -329,10 +335,9 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   SeqTrack& tr = tracks_[t];
   const SeqStep& step = tr.steps[step_index];
 
-  // PROB — uint8_t 0..127 (matches pot range). 127 = always fire, 0 = never.
-  // Compare 7-bit random to prob: rand 0..127 > prob ↔ skip probability.
-  uint8_t prob = ResolveStepByte(tr, step_index, kSPPROB);
-  if ((Random::GetByte() & 0x7F) > prob) return;
+  // PROB rolled once per main step in Clock(); ratchets/repeats are gated
+  // there on tr.shadow[kShdwPROB], so by the time FireStep runs the decision
+  // has already been made and we always fire.
 
   // Resolve 20-byte snapshot: page1[8] || page2[8] || page3[4].
   uint8_t snapshot[20];
@@ -383,6 +388,8 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
       if (new_note < 0) new_note = 0;
       if (new_note > 127) new_note = 127;
       note = static_cast<uint8_t>(new_note);
+      // Snap mutated note to the track scale (matches base-note quantization).
+      note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
     }
   }
 
@@ -420,10 +427,18 @@ void Sequencer::Reset() {
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     voicecard_tx.Release(t);
     tracks_[t].shadow[kShdwSTEP] = 0;
-    tracks_[t].shadow[kShdwTICK] = 0;
     tracks_[t].shadow[kShdwREPT] = 0;
     tracks_[t].shadow[kShdwSSUB] = 0;
     tracks_[t].shadow[kShdwDIR]  = 0;
+    tracks_[t].shadow[kShdwLAST] = 0;
+    tracks_[t].shadow[kShdwPROB] = 0;
+    // Pre-charge TICK so the first Clock() call after Play() crosses period
+    // and fires step 0 immediately. Without this, tracks with CDIV>1 wait
+    // their full period before firing and start off-grid relative to CDIV=1.
+    uint8_t cdiv_idx = tracks_[t].pattern[kPatCDIV] & 7;
+    uint8_t period = kNumTicksPerStep *
+        pgm_read_byte(kCDivValues + cdiv_idx);
+    tracks_[t].shadow[kShdwTICK] = period;
   }
 }
 

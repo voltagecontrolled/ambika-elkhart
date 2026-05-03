@@ -12,6 +12,37 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Bug-fix bundle: GH #1, #4, #5, #7 (2026-05-03)
+
+**Flash:** controller 54,460 B (83.1%, +174 B). **RAM:** 3,776 B (92.2%,
++6 B — 1 byte × 6 tracks for the new `kShdwPROB` shadow slot).
+`kSystemVersion` bumped controller `0x33` → `0x34`. Controller only.
+
+- **#1 — CDIV>1 misalignment after `rst`+`play`:** `Sequencer::Reset()`
+  now resets `kShdwLAST` and pre-charges `kShdwTICK` to each track's own
+  `period = kNumTicksPerStep × cdiv`, so every track fires step 0 on the
+  very first clock pulse after Play (instead of waiting one period of its
+  own CDIV). All tracks line up on the same downbeat regardless of CDIV.
+- **#4 — substep mutations ignored track scale:** the MUT note is now
+  re-passed through `QuantizeToScale` after the MINT/MDIR offset is
+  applied, matching the base-note behavior.
+- **#5 — probability rolled per substep:** the PROB roll moved out of
+  `FireStep()` and up into `Sequencer::Clock()` at the main-step decision.
+  The outcome is cached in a new `kShdwPROB` shadow slot; ratchet substeps
+  and REPT repeats inherit it. PROB is now all-or-nothing per main step.
+- **#7 — page-jump gesture absorbed by sequencer page:** `S2/S8 + encoder`
+  (×8 multiplier in `Ui::Poll`) was being absorbed by `SeqStepsPage`'s 24-
+  cell cursor walk — up to three modifier clicks moved cursor through the
+  three lock pages before paging out, making the page feel "sticky" when
+  arriving from outside the sequencer. `SeqStepsPage::OnIncrement` now
+  short-circuits when `|increment| >= 8` and pages out immediately,
+  leaving unmodified encoder turns to walk the cells normally.
+  Additionally `MultiPage::OnIncrement` was passing the raw multiplied
+  increment to `ShowPageRelative`, so CCW from page 7a (transport) jumped
+  8 registry slots to 2b (osc mix) instead of stepping back to 6b
+  (mixer); now clamped to ±1 like other pages. S2 and S8 are both
+  retained.
+
 ### Performance mixer (S6b) + transport STOP / panic (2026-05-03)
 
 **Flash:** controller 54,286 B (82.8%, +1,914 B). **RAM:** 3,770 B (92.0%,

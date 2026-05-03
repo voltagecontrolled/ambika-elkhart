@@ -129,7 +129,8 @@ static const uint8_t kShdwREPT = 2;  // step repeats remaining (Phase 5)
 static const uint8_t kShdwSSUB = 3;  // sub-step position (Phase 5)
 static const uint8_t kShdwDIR  = 4;  // pendulum direction: 0=fwd, 1=rev
 static const uint8_t kShdwLAST = 5;  // most-recently-fired step (for chaselight LED)
-static const uint8_t kShdwSIZE = 6;
+static const uint8_t kShdwPROB = 6;  // PROB roll outcome for current main step (1=fire-allowed)
+static const uint8_t kShdwSIZE = 7;
 
 // SeqTrack — 272+8+28+kCfgSIZE+6 bytes = 343 bytes per track.
 // defaults[N]: default value for lockable param N.
