@@ -37,6 +37,7 @@ class SeqStepsPage : public UiPage {
   // and pots 6/7 control MINT/MDIR for the target step.
   static bool editing_substeps_;
   static uint8_t substep_step_;
+  static uint8_t substep_count_;  // active slot count for current edit session
 
   DISALLOW_COPY_AND_ASSIGN(SeqStepsPage);
 };

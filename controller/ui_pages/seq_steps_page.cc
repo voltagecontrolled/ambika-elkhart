@@ -55,6 +55,9 @@ bool SeqStepsPage::editing_substeps_ = false;
 /* static */
 uint8_t SeqStepsPage::substep_step_ = 0;
 
+/* static */
+uint8_t SeqStepsPage::substep_count_ = 8;
+
 // 2-char semitone names; index = semitone * 2.
 static const prog_char kNoteNames[] PROGMEM =
   "C C#D D#E F F#G G#A A#B ";
@@ -163,11 +166,22 @@ uint8_t SeqStepsPage::OnClick() {
       if (ui.switch_held(s)) {
         substep_step_ = 7 - s;
         editing_substeps_ = true;
-        // Auto-set SSUB=-2 (Edit) so the bits drive playback.
         SeqTrack* tr = sequencer.mutable_track(ui.state().active_part);
         SeqStep& step = tr->steps[substep_step_];
+        // Set SSUB=-2 (Edit) so substep_bits drives playback.
         step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
         step.lock_flags[2] |= (1 << kSPSSUB);
+        // Read substep count from REPT lock or default.
+        uint8_t rept_v = (step.lock_flags[2] & (1 << kSPREPT))
+            ? step.steppage[kSPREPT]
+            : tr->defaults[16 + kSPREPT];
+        substep_count_ = rept_v ? rept_v : 8;
+        // Auto-enable bits for all active slots when none are set yet.
+        if (step.substep_bits == 0) {
+          step.substep_bits = (substep_count_ < 8)
+              ? static_cast<uint8_t>((1 << substep_count_) - 1)
+              : 0xff;
+        }
         return 1;
       }
     }
@@ -210,11 +224,21 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   if (index >= 8) return 0;
   uint8_t track = ui.state().active_part;
 
-  // In substep editor: swallow pots 0-5; pots 6/7 write MINT/MDIR.
+  // Substep editor: pot 4 = substep count, pots 6/7 = MINT/MDIR, rest swallowed.
   if (editing_substeps_) {
-    if (index < 6) return 0;
     SeqTrack* tr = sequencer.mutable_track(track);
     SeqStep& step = tr->steps[substep_step_];
+    if (index == 4) {
+      // Substep count 1..8 stored in REPT (0 = unconstrained = 8).
+      uint8_t cnt = ScalePot(value, 7) + 1;  // 1..8
+      substep_count_ = cnt;
+      step.steppage[kSPREPT] = cnt;
+      step.lock_flags[2] |= (1 << kSPREPT);
+      // Mask out bits beyond new count.
+      if (cnt < 8) step.substep_bits &= (1 << cnt) - 1;
+      return 1;
+    }
+    if (index < 6) return 0;
     uint8_t param_idx = (index == 6) ? kSPMINT : kSPMDIR;
     uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 1) : value;
     step.steppage[param_idx] = mapped;
@@ -239,25 +263,16 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     if (ui.switch_held(s)) { held_sr = s; break; }
   }
 
-  // Merged subs cell (S5c bot1) — writes both kSPSSUB and kSPREPT with mutex.
-  // Pot bands: 0..7=Edit (-2), 8..15=Cust (-1), 16..62=reps 7..1, 63..71=norm,
-  // 72..127=ratchets +1..+8.
+  // Merged subs cell — writes SSUB and REPT with mutex.
+  // ScalePot(value,16): 0=normal, 1..8=repeats, 9..16=ratchets 1x..8x.
   if (lockable == kSubsMergedSentinel) {
     int8_t  ssub_v = 0;
     uint8_t rept_v = 0;
-    if (value < 8) {
-      ssub_v = -2;
-    } else if (value < 16) {
-      ssub_v = -1;
-    } else if (value <= 62) {
-      rept_v = ((62 - value) / 7) + 1;       // 1..7 reps
-      if (rept_v > 7) rept_v = 7;
-    } else if (value <= 71) {
-      // center deadzone — both 0
-    } else {
-      uint8_t r = ((value - 72) / 7) + 1;    // 1..8 ratchets
-      if (r > 8) r = 8;
-      ssub_v = static_cast<int8_t>(r);
+    uint8_t idx = ScalePot(value, 16);
+    if (idx >= 9) {
+      ssub_v = static_cast<int8_t>(idx - 8);   // 1..8 ratchets
+    } else if (idx >= 1) {
+      rept_v = idx;                              // 1..8 repeats
     }
     uint8_t ssub_byte = static_cast<uint8_t>(ssub_v);
     if (held_sr != 0xff) {
@@ -339,6 +354,7 @@ uint8_t SeqStepsPage::OnKey(uint8_t key) {
   if (key > SWITCH_8) return 0;
   uint8_t track = ui.state().active_part;
   if (editing_substeps_) {
+    if (key >= substep_count_) return 1;  // inactive slot — swallow but don't toggle
     SeqStep& s = sequencer.mutable_track(track)->steps[substep_step_];
     s.substep_bits ^= (1 << key);
     return 1;
@@ -386,22 +402,28 @@ void SeqStepsPage::UpdateScreen() {
     char* line0 = display.line_buffer(0);
     char* line1 = display.line_buffer(1);
     for (uint8_t i = 0; i < kLcdWidth; ++i) { line0[i] = ' '; line1[i] = ' '; }
-    // MINT cell (offset 0..9)
-    memcpy_P(&line0[1], PSTR("MINT"), 4);
-    WriteU8Right(&line0[5], step.steppage[kSPMINT]);
+    // subs cell (offset 0..9): show substep count
+    memcpy_P(&line0[1], PSTR("subs"), 4);
+    WriteU8Right(&line0[5], substep_count_);
     line0[9] = ' ';
-    // MDIR cell (offset 10..19)
+    // MINT cell (offset 10..19)
     line0[10] = kDelimiter;
-    memcpy_P(&line0[11], PSTR("MDIR"), 4);
-    WriteU8Right(&line0[15], step.steppage[kSPMDIR]);
+    memcpy_P(&line0[11], PSTR("MINT"), 4);
+    WriteU8Right(&line0[15], step.steppage[kSPMINT]);
     line0[19] = ' ';
+    // MDIR cell (offset 20..29)
+    line0[20] = kDelimiter;
+    memcpy_P(&line0[21], PSTR("MDIR"), 4);
+    WriteU8Right(&line0[25], step.steppage[kSPMDIR]);
+    line0[29] = ' ';
     // Substep bit pattern on line 1 (8 slots × 4 chars = 32 chars).
+    // Slots >= substep_count_ are shown blank (not interactive).
     uint8_t bits = step.substep_bits;
     for (uint8_t b = 0; b < 8; ++b) {
       uint8_t pos = b * 4;
       line1[pos]     = ' ';
       line1[pos + 1] = ' ';
-      line1[pos + 2] = (bits & (1 << b)) ? '#' : '-';
+      line1[pos + 2] = (b < substep_count_) ? ((bits & (1 << b)) ? '#' : '-') : ' ';
       line1[pos + 3] = ' ';
     }
     return;
@@ -469,16 +491,14 @@ void SeqStepsPage::UpdateScreen() {
       buffer[6] = ' ';
       buffer[7] = ' ';
       buffer[8] = ' ';
-      if (ssub_v == -2) {
-        memcpy_P(&buffer[5], PSTR("Edit"), 4);
-      } else if (ssub_v == -1) {
-        memcpy_P(&buffer[5], PSTR("Cust"), 4);
-      } else if (rept_v > 0) {
+      if (rept_v > 0) {
         buffer[6] = '0' + (rept_v > 9 ? 9 : rept_v);
         buffer[8] = 'r';
       } else if (ssub_v > 0) {
         buffer[6] = '0' + (ssub_v > 9 ? 9 : ssub_v);
         buffer[8] = 'x';
+      } else if (ssub_v == -2) {
+        memcpy_P(&buffer[5], PSTR("edit"), 4);
       } else {
         buffer[8] = '0';
       }
@@ -551,7 +571,7 @@ void SeqStepsPage::UpdateLeds() {
   if (editing_substeps_) {
     uint8_t bits = tr.steps[substep_step_].substep_bits;
     for (uint8_t i = 0; i < kNumStepsPerTrack; ++i) {
-      if (bits & (1 << i)) {
+      if (i < substep_count_ && (bits & (1 << i))) {
         leds.set_pixel(LED_1 + i, 0x0f);
       }
     }

@@ -217,28 +217,28 @@ void Sequencer::Clock(uint8_t ticks) {
       if (ssub > 0) {
         // N+1 evenly-spaced fires per period. Slot 0 = main fire (already done).
         uint8_t sub_period = period / (static_cast<uint8_t>(ssub) + 1);
-        if (sub_period > 0) {
-          uint8_t slot_now  = tr.shadow[kShdwTICK] / sub_period;
-          uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / sub_period;
-          if (slot_now != slot_prev && slot_now > 0) {
-            voicecard_tx.Release(t);
-            if (tr.steps[cur].step_flags & kStepFlagOn) {
-              FireStep(t, cur);
-            }
+        if (sub_period == 0) sub_period = 1;
+        uint8_t slot_now  = tr.shadow[kShdwTICK] / sub_period;
+        uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / sub_period;
+        if (slot_now != slot_prev && slot_now > 0) {
+          voicecard_tx.Release(t);
+          if (tr.steps[cur].step_flags & kStepFlagOn) {
+            FireStep(t, cur);
           }
         }
       } else if (ssub == -1 || ssub == -2) {
-        // Custom/Edit: substep_bits drives 8 evenly-spaced slots.
-        uint8_t slot_period = period >> 3;
-        if (slot_period > 0) {
-          uint8_t slot_now  = tr.shadow[kShdwTICK] / slot_period;
-          uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / slot_period;
-          if (slot_now != slot_prev && slot_now > 0 && slot_now < 8) {
-            if (tr.steps[cur].substep_bits & (1 << slot_now)) {
-              voicecard_tx.Release(t);
-              if (tr.steps[cur].step_flags & kStepFlagOn) {
-                FireStep(t, cur);
-              }
+        // substep_bits drives N evenly-spaced slots; REPT stores N (0 = 8).
+        uint8_t rept_bits = ResolveStepByte(tr, cur, kSPREPT);
+        uint8_t sub_count = rept_bits ? rept_bits : 8;
+        uint8_t slot_period = period / sub_count;
+        if (slot_period == 0) slot_period = 1;
+        uint8_t slot_now  = tr.shadow[kShdwTICK] / slot_period;
+        uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / slot_period;
+        if (slot_now != slot_prev && slot_now > 0 && slot_now < sub_count) {
+          if (tr.steps[cur].substep_bits & (1 << slot_now)) {
+            voicecard_tx.Release(t);
+            if (tr.steps[cur].step_flags & kStepFlagOn) {
+              FireStep(t, cur);
             }
           }
         }
@@ -269,6 +269,9 @@ void Sequencer::Clock(uint8_t ticks) {
           FireStep(t, fired);
         }
         uint8_t rept = ResolveStepByte(tr, fired, kSPREPT);
+        // When substep Edit mode is active, REPT is the substep slot count.
+        int8_t ssub_fired = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
+        if (ssub_fired == -2 || ssub_fired == -1) rept = 0;
         tr.shadow[kShdwREPT] = rept;
         if (rept == 0) {
           AdvanceStep(t);
