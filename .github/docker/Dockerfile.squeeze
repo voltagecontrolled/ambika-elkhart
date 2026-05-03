@@ -1,0 +1,25 @@
+# avr-gcc 4.3.5 build environment for Ambika voicecard/controller — CI variant.
+#
+# Mirrors toolchain/Dockerfile.squeeze (which is gitignored as private dev
+# tooling). Kept in-tree under .github/docker/ so the release / build
+# workflows can build the image without depending on local-only files.
+#
+# Sustainability caveat: pulls debian/eol:squeeze (digest-pinned) and
+# apt-installs from Debian's archive. Squeeze is EOL — image hosting and the
+# archive could disappear. If that happens, options include vendoring the
+# .deb files or migrating to a newer avr-gcc once we've confirmed it doesn't
+# miscompile YAM's oscillator DSP. Tracked as future tech debt; not blocking
+# v4.0.
+#
+# This image is *only* safe when run with --network none. Build it once with
+# network access, then disable network for every actual compilation.
+FROM debian/eol@sha256:80ed3d6f933f102b35efaa1a9a7513e5ed9937c5a93c289dd6e2e1db51d6f331
+
+RUN apt-get update -qq \
+ && apt-get install -y --no-install-recommends \
+      gcc-avr avr-libc binutils-avr \
+      make python \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work

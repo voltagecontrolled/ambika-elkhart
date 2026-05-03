@@ -26,6 +26,17 @@ phases. See `CHANGELOG.md` for the as-built record and known issues.
 - **`docs/planning/BOARD.md`** — Now / Next / Later work board
 - **`docs/wiki/MANUAL.md`** — user-facing manual draft
 
+## Releases
+
+Tagged releases are published on the [Releases](https://github.com/voltagecontrolled/ambika-elkhart/releases)
+tab — each ships an `AMBIKA.BIN` (controller), a `VOICE.BIN` (voicecard),
+and a `SHA256SUMS` file. The user manual lives on the
+[Wiki](https://github.com/voltagecontrolled/ambika-elkhart/wiki) and is
+synced from `docs/wiki/MANUAL.md` at every change to that file.
+
+Release notes are drafted under `docs/release-notes/` before tag-time;
+the release workflow uses the matching file as the GitHub Release body.
+
 ## Hardware platform
 
 - **Motherboard:** ATmega644p — 64 KB flash, 4 KB RAM, 20 MHz

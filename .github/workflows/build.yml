@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build Squeeze toolchain image
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -f .github/docker/Dockerfile.squeeze \
+            -t ambika-squeeze:ci \
+            .github/docker
+
+      - name: Compile controller (ATmega644p)
+        run: .github/workflows/scripts/squeeze-make.sh controller/makefile
+
+      - name: Compile voicecard (ATmega328p)
+        run: .github/workflows/scripts/squeeze-make.sh voicecard/makefile
+
+      - name: Report sizes
+        run: |
+          docker run --rm --platform linux/amd64 --network none \
+            -v "$PWD:/work" -w /work ambika-squeeze:ci \
+            sh -c 'avr-size build/ambika_controller/ambika_controller.elf && avr-size build/ambika_voicecard/ambika_voicecard.elf'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            build/ambika_controller/ambika_controller.bin
+            build/ambika_voicecard/ambika_voicecard.bin
+          if-no-files-found: error
+          retention-days: 14

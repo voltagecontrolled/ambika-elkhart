@@ -1,0 +1,44 @@
+name: wiki-sync
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/wiki/MANUAL.md'
+      - '.github/workflows/wiki-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Clone wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+
+      - name: Copy MANUAL.md to wiki Home
+        run: |
+          cp repo/docs/wiki/MANUAL.md wiki/Home.md
+
+      - name: Commit + push
+        working-directory: wiki
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "wiki Home.md already up to date"
+            exit 0
+          fi
+          git add Home.md
+          git commit -m "Sync MANUAL.md from ${GITHUB_SHA::7}"
+          git push

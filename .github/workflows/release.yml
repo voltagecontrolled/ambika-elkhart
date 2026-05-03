@@ -1,0 +1,79 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'ambika-elkhart-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. ambika-elkhart-v4.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve tag + version
+        id: vars
+        run: |
+          if [[ -n "${{ github.event.inputs.tag }}" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#ambika-elkhart-}"
+          NOTES="docs/release-notes/${TAG}.md"
+          if [[ ! -f "$NOTES" ]]; then
+            NOTES="docs/release-notes/${VERSION}.md"
+          fi
+          if [[ ! -f "$NOTES" ]]; then
+            echo "error: no release notes found for $TAG (looked for docs/release-notes/${TAG}.md and docs/release-notes/${VERSION}.md)" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "notes=$NOTES" >>"$GITHUB_OUTPUT"
+
+      - name: Build Squeeze toolchain image
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -f .github/docker/Dockerfile.squeeze \
+            -t ambika-squeeze:ci \
+            .github/docker
+
+      - name: Compile controller (ATmega644p)
+        run: .github/workflows/scripts/squeeze-make.sh controller/makefile
+
+      - name: Compile voicecard (ATmega328p)
+        run: .github/workflows/scripts/squeeze-make.sh voicecard/makefile
+
+      - name: Stage release artifacts
+        run: |
+          mkdir -p release
+          cp build/ambika_controller/ambika_controller.bin release/AMBIKA.BIN
+          cp build/ambika_voicecard/ambika_voicecard.bin release/VOICE.BIN
+          cd release
+          sha256sum AMBIKA.BIN VOICE.BIN > SHA256SUMS
+          ls -la
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: ${{ steps.vars.outputs.tag }}
+          body_path: ${{ steps.vars.outputs.notes }}
+          draft: true
+          files: |
+            release/AMBIKA.BIN
+            release/VOICE.BIN
+            release/SHA256SUMS
