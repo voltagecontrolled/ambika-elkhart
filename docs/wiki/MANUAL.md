@@ -20,7 +20,7 @@ SVF, fuzz, and bit-reduction — covers melodic and textural ground
 equally well.
 
 When this manual and `docs/planning/control_map.md` disagree, the
-control map wins. It's extracted directly from `controller/ui.cc`
+control map wins — it's extracted directly from `controller/ui.cc`
 `page_registry[]`, `controller/parameter.cc`, and the
 `controller/ui_pages/*.cc` handlers.
 
