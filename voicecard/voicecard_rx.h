@@ -76,25 +76,25 @@ class VoicecardProtocolRx {
     }
   }
   
-  // Patch byte addresses for the 16-byte trigger snapshot. Mirrors the
-  // controller's PatchAddrToSeqField mapping for page1[8] + page2[8].
-  // 0xff = skip (NOTE has its own bytes; REL slots are dead).
-  static const uint8_t kSnapshotAddrs[16];
+  // Patch byte addresses for the 20-byte trigger snapshot. Mirrors the
+  // controller's PatchAddrToSeqField mapping for page1[8] + page2[8] + page3[4].
+  // 0xff = skip (NOTE has its own bytes; dead slots).
+  static const uint8_t kSnapshotAddrs[20];
 
   static void DoLongCommand() {
     switch (command_ & 0xf0) {
       case COMMAND_NOTE_ON:
         if (command_ & 0x02) {
-          // Snapshot variant: bytes 0..15 = page1+page2, 16..17 = note, 18 = vel.
-          for (uint8_t i = 0; i < 16; ++i) {
+          // Snapshot variant: bytes 0..19 = page1+page2+page3, 20..21 = note, 22 = vel.
+          for (uint8_t i = 0; i < 20; ++i) {
             uint8_t addr = pgm_read_byte(&kSnapshotAddrs[i]);
             if (addr != 0xff) {
               voice.set_patch_data(addr, arguments_[i]);
             }
           }
           voice.Trigger(
-              (arguments_[16] << 8) | arguments_[17],
-              arguments_[18],
+              (arguments_[20] << 8) | arguments_[21],
+              arguments_[22],
               command_ & 1);
         } else {
           voice.Trigger(
@@ -186,7 +186,7 @@ class VoicecardProtocolRx {
         state_ = EXPECTING_ARGUMENTS;
         if (command_ == COMMAND_NOTE_ON_WITH_SNAPSHOT ||
             command_ == COMMAND_NOTE_ON_WITH_SNAPSHOT_LEGATO) {
-          data_size_ = 19;
+          data_size_ = 23;
         } else if (command_ >= COMMAND_NOTE_ON &&
             command_ < COMMAND_WRITE_PATCH_DATA) {
           data_size_ = 3;
@@ -219,9 +219,9 @@ class VoicecardProtocolRx {
   static uint8_t state_;
   static uint8_t data_size_;
   static uint8_t* data_ptr_;
-  // 19 bytes covers COMMAND_NOTE_ON_WITH_SNAPSHOT (16-byte snapshot + note H/L + vel);
+  // 23 bytes covers COMMAND_NOTE_ON_WITH_SNAPSHOT (20-byte snapshot + note H/L + vel);
   // shorter commands write into the same buffer head.
-  static uint8_t arguments_[19];
+  static uint8_t arguments_[23];
   static uint8_t rx_led_counter_;
   static uint8_t lights_out_;
    

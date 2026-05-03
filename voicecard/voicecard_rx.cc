@@ -36,15 +36,16 @@ uint8_t* VoicecardProtocolRx::data_ptr_;
 uint8_t VoicecardProtocolRx::rx_led_counter_;
 
 /* static */
-uint8_t VoicecardProtocolRx::arguments_[19];
+uint8_t VoicecardProtocolRx::arguments_[23];
 
 // page1[]: NOTE skipped (sent as note bytes), WAVE1, PARA1, BLND, RTIO, WAVE2, PARA2, FINE.
-// page2[]: E1DEC, TUN2 (osc2 coarse, addr 6), E2DEC, FIN2 (osc2 detune, addr 7),
-//          E3DEC, E3REL dead, NOIS, SUB.
+// page2[]: E1DEC, TUN2 (addr 6), E2DEC, FIN2 (addr 7), E3DEC, E3REL dead, NOIS, SUB.
+// page3[]: FREQ (addr 16), FAMT (addr 22), PAMT (addr 58), WAVE (addr 11).
 /* static */
-const uint8_t VoicecardProtocolRx::kSnapshotAddrs[16] PROGMEM = {
+const uint8_t VoicecardProtocolRx::kSnapshotAddrs[20] PROGMEM = {
   0xff, 0,    1,    8,    10,   4,    5,    3,
   25,   6,    33,   7,    41,   0xff, 13,   12,
+  16,   22,   58,   11,
 };
 
 /* static */
