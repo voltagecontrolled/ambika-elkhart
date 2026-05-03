@@ -96,16 +96,20 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_PART, 5, 0x0f,
   },
 
-  // S7 group 6: transport (relocated from S5).
+  // S7 group 6: transport (relocated from S5). Single-page group — clock
+  // params (groove amount aka swng) are surfaced inline on PAGE_MULTI.
   { PAGE_MULTI,
     &MultiPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_MULTI_CLOCK, 6, 0xf0,
+    PAGE_MULTI, 6, 0xf0,
   },
 
+  // Vestigial entry kept so PAGE_MULTI_CLOCK (the upper bound used by
+  // ShowPageRelative wraparound) stays in the registry. All-0xff data makes
+  // the encoder skip past it.
   { PAGE_MULTI_CLOCK,
     &ParameterEditor::event_handlers_,
-    { 62, 63, 64, 65, 0xff, 0xff, 0xff, 0xff },
+    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
     PAGE_MULTI, 6, 0x0f,
   },
 

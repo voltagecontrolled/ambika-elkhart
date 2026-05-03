@@ -12,6 +12,273 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Sequencer round 5a-1: hardware-test bugfix bump (2026-05-02)
+
+**Flash result:** controller 47,082 B (71.8%, +116 B over 0x30); voicecard
+unchanged. RAM unchanged. `kSystemVersion` 0x30 → 0x31 on the **controller
+only** — voicecard code didn't change, so existing 0x30 voicecards stay.
+
+Findings from the first hardware-test pass on round 5a:
+
+- **PROB ceiling was unreachable.** Pot wrote 0..127 but the resolver
+  short-circuit was `if (prob < 255)`, so 127 = ~50% skip rate. Storage
+  rescaled to 0..127 native, default `kDefaultStepPage[kSPPROB] = 127`,
+  resolver compares `(rand & 0x7F) > prob`. 127 = always fires, 0 = never.
+  Display now renders as `0%`..`100%` (`prob * 100 / 127`).
+- **VEL was inert.** `kDefaultMod` slot 11 (VELOCITY → VCA) had `amount = 0`
+  — the routing was wired but at zero depth, so velocity had no audible
+  effect. Bumped to `127` (full sensitivity matching the round-5a env-depth
+  rescale). This also unmasks `VOL` on S6 — `(vel * VOL) >> 8` had nothing
+  to attenuate before.
+- **BLND glitched in upper half.** The reserved-for-future-FM range
+  (BLND ≥ 64) produced undefined output. UI pot now clamps `value >> 1`,
+  so 0..127 pot → 0..63 crossfade-only. Half-resolution but no glitch zone.
+- **`SCAL pMi` cosmetic.** Scale labels now use a leading-space pattern
+  (`" chr"`, `" maj"`, `" pMi"` …) so the cell renders `SCAL pMi` not
+  `SCALpMi`. `chro` shortened to `chr`.
+
+Voicecards stay at 0x30 — only `firmware/latest/AMBIKA.BIN` needs flashing.
+
+### Sequencer round 5a: env-depth rescale + S5/S6/S7 layout + step-behavior wiring (2026-05-02)
+
+**Flash result:** controller 46,966 B (71.7%, +984 B over 0x25);
+voicecard 26,194 B (79.9%, ~unchanged). **RAM:** controller 3,469 B
+(no change), voicecard 1,049 B (no change). `kSystemVersion` bumped
+to `0x30` on both sides.
+
+Round 5a is the first half of the sequencer round-5 effort: ship the
+layout / cosmetic / env-depth changes plus the cheap resolver wiring
+(PROB / GLID / VEL+VOL / SCAL). The rest of round 5 (RATE / REPT /
+SSUB ratchet execution, Mutate, the Custom/Edit substep editor)
+moves to round 5b.
+
+#### Envelope-depth range extended 0..63 → 0..127, unipolar
+
+The old bipolar -63..+63 mapping was too narrow for percussive use —
+in particular building a kick wanted more headroom on the VCA and
+filter envelopes. Both `famt` (filter-env depth) and `pamt`
+(pitch-env depth) on S5b now pass the pot value through unmodified
+(0..127, unsigned), and display unsigned. Storage stays as `int8_t`
+so the existing `S8U8Mul` / `S8S8Mul` matrix paths are unchanged.
+
+The VCA-amount path in `voicecard/voice.cc` `ProcessModulationMatrix`
+needed adjusting because it special-cased "amount == 63 → full
+mod, skip the U8Mix": `<< 2` → `<< 1`, `!= 63` → `!= 127`. Net
+effect: amount=127 still means full pass-through (matches the old
+amount=63 behavior at full depth); intermediate values now have
+finer granularity. The two additive paths (filter_env via patch
+addr 22, ENV3→pitch via mod slot 2 amount) needed no voicecard
+changes — they already accepted the full int8 range.
+
+Defaults: `kCfgE1DEPT` 63 → 127, `kCfgE2DEPT` 63 → 64
+(`kCfgE3DEPT` stays 0).
+
+#### Sequencer-mode page rebind (S5a / S5b / S5c)
+
+The three sequencer-mode lock pages were rebuilt and reordered so the
+step-behavior surface is leftmost — default `cursor_=0` now lands on
+NOTE, the most foundational sequencer knob. Voice 1 (osc/mix) follows
+on S5b and Voice 2 (filter/env/sub) on S5c. The encoder still walks
+cursor 0..23 left-to-right; spilling past S5c lands on S6 (track
+settings), and each transition zooms outward (per-step → per-voice
+tone → per-track pattern).
+
+NOIS moved up to S5b top1 (was on the old voice-2 page); FREQ (filter
+cutoff, config-mapped to patch addr 16) moved into S5c top1 alongside
+the filter/env params; the rest of S5c reshuffled to group filter /
+env / sub cleanly. Sub-osc `wave`, `famt`, `pamt` remain config-mapped
+(write through `Part::SetValue`).
+
+```
+S5a  top  note vel  glid rate
+     bot  subs prob mint mdir
+
+S5b  top  nois w1   pa1  tun2
+     bot  mix  w2   pa2  fin2
+
+S5c  top  freq fdec famt adec
+     bot  pdec pamt sub  wave
+```
+
+`subs` (S5a bot1) is the first merged-cell on the seq surface: a
+single bipolar knob writing to either `kSPSSUB` or `kSPREPT` (with
+mutex zeroing). Pot bands: 0..7 = Edit (-2), 8..15 = Cust (-1),
+16..62 = repeats 7..1, 63..71 = normal (deadzone), 72..127 =
+ratchets +1..+8. Display glyphs: `Edit` / `Cust` / `N r` / `0` /
+`N x`. UI/storage land in this round; ratchet/repeat/Custom-edit
+*execution* is round 5b.
+
+#### Cosmetic: `wav1`/`wav2` → `w1`/`w2`
+
+The 4-char abbreviations on the wave cells ate two columns the wave
+name needed. Wave cells now render the abbr at 2 chars (positions
+1..2) and grow the value field to 6 chars (positions 3..8).
+`triangl`, `square`, `polysaw` etc. fit without the truncation that
+made it impossible to tell apart `polys` from `polyt` on the prior
+4-char field.
+
+#### Track-page rework (S6)
+
+```
+top  dirn cdiv rota leng
+bot  scal root ----  vol
+```
+
+- `kPatBPCH` slot retired — `defaults[kP1NOTE]` is the de-facto
+  per-track base pitch. The slot is kept reserved (cell renders
+  `----`, pot is inhibited); a future signed track-transpose will
+  live on the Performance page.
+- `kPatOLEV` renamed to `kPatVOL` (pot 0..127 → 0..255). Wired in
+  `Sequencer::FireStep` as a multiplicative scale on the resolved
+  velocity: `velocity = (vel * VOL) >> 8`. VOL=255 = identity,
+  VOL=0 = silent track.
+- `kPatSCAL` knob now indexes an 8-entry scale LUT (chromatic /
+  major / minor / dorian / mixolydian / pentaMaj / pentaMin /
+  blues). The labels render on the cell (`chro` / `maj ` / `min `
+  / etc.). `QuantizeToScale` snaps the resolved note down to the
+  nearest scale-allowed semitone using `kPatROOT` as the
+  reference; chromatic is a no-op pass-through.
+
+#### Step-behavior resolver (`Sequencer::FireStep`)
+
+- **PROB**: `if (prob < 255 && Random::GetByte() > prob) return;`
+  before the snapshot is even built. 255 = always fire.
+- **VEL + VOL**: lock-or-default `kSPVEL`, then multiply by
+  `pattern[kPatVOL]` (>> 8).
+- **SCAL**: `QuantizeToScale(note, scal & 7, root)` after the note
+  is resolved from the lock/default.
+- **GLID**: lock-or-default `kSPGLID`; any non-zero value sets the
+  legato bit on `TriggerWithSnapshot` (0x12 → 0x13). The voicecard
+  side already honored the legato bit (round 3 work).
+
+A small `ResolveStepByte(track, step_idx, kSP*)` helper centralizes
+the lock-or-default lookup so adding the remaining step-behavior
+params in round 5b is a one-liner per param.
+
+Deferred to round 5b: `kSPRATE` per-step subdivision override,
+`kSPREPT` repeats, positive `kSPSSUB` ratchets, the Custom/Edit
+substep editor (encoder-click + held-step on `subs` cell), and
+Mutate (`kSPMINT` / `kSPMDIR`) — likely consolidated into the
+substep editor since walking pitch only makes sense across
+ratchets.
+
+#### Transport (S7) alignment
+
+`swng` was rendered at columns 16..23, but its pot is top2 — which
+sits over columns 10..19. Fixed by rebuilding line 0 around the
+canonical 4-cells-per-row convention: `bpm` in cell 0 (cols 1..7),
+`swng` in cell 1 (cols 11..17). Line 1 (play / paus / rst / exit)
+unchanged.
+
+
+
+**Flash result:** controller 45,982 B (70.2%, +404 B over 0x23);
+voicecard 26,196 B (no size change). **RAM:** controller 3,469 B
+(no change), voicecard 1,049 B (no change). `kSystemVersion` bumped
+to `0x25` on both sides — voicecard joined the bump because the
+snapshot table now writes to addresses 6 / 7.
+
+A round of UI iteration on top of the sequencer foundation: the S5
+page-1/2 cells were rebuilt around per-cell descriptor tables so a
+single cell can target either a lockable param or a config byte.
+Page 1 now exposes osc 2 coarse / fine tuning as proper per-step
+locks; page 2 surfaces the env depth amounts (`famt` / `pamt`) and
+sub-osc shape (`wave`) inline. The S7 group collapsed from two pages
+to one, with the groove-amount knob (`swng`) folded onto the
+transport page.
+
+#### Defaults
+
+- `kDefaultPage1[kP1FINE] 64 → 0`. Osc 1 detune now sits at the int8
+  center; the previous "64" rendered as "+64 cents" via UNIT_INT8.
+- `kDefaultPage1[kP1RTIO]` stays at `7` (1.0 ratio). Comment retitled
+  to flag the byte as *reserved for future linear FM* — the slot will
+  drive the osc2:osc1 ratio LUT when the BLND≥64 FM mode lands.
+- `kDefaultPage2[kP2TUN2] = 0`, `kDefaultPage2[kP2FIN2] = 0` in the
+  reclaimed slots (centered int8).
+
+#### Lockable space reshuffle (`controller/sequencer.h`)
+
+- `kP2E1REL` (idx 1, lock idx 9) → `kP2TUN2` (osc 2 coarse, patch
+  addr 6). Voicecard ignored E1REL writes (release_mod removed in
+  0x21), so the slot was dead.
+- `kP2E2REL` (idx 3, lock idx 11) → `kP2FIN2` (osc 2 detune, patch
+  addr 7). Same justification.
+- `kP2E3REL` (idx 5, lock idx 13) remains dead pending future use.
+- `kCfgOSC2R` / `kCfgOSC2D` enum slots stay (removing them cascades
+  through every other reference) but are now unused — the bytes live
+  in `defaults.page2` for lockability.
+- `controller/part.cc` `PatchAddrToSeqField` cases 6 / 7 now route to
+  `defaults[8 + kP2TUN2/FIN2]`. Cases 27 / 35 (E1REL / E2REL release
+  bytes) are dropped — they had no live consumers; case 43 retained
+  for legacy CC paths to land somewhere.
+- `voicecard/voicecard_rx.cc` `kSnapshotAddrs[9] = 6`, `[11] = 7`.
+  Per-step locks now reach the voicecard via the snapshot path
+  exactly like the existing page-2 lockables.
+
+#### S5 sequencer mode (`controller/ui_pages/seq_steps_page.cc`)
+
+- Rewritten around two PROGMEM cell-descriptor tables —
+  `kCellLockable[24]` (lockable index per cell, `0xff` = config) and
+  `kCellPatchAddr[24]` (patch address for config-mapped cells).
+  Encoding lets a single cell target either a per-step lockable
+  byte or a voice-wide config byte; config cells push through
+  `Part::SetValue` so changes reach the voicecard immediately.
+- New page-1 layout (8 cells):
+  ```
+  top  note  WAV1  PA1   tun2
+  bot  mix   WAV2  PA2   fin2
+  ```
+  All eight are lockable. RTIO + FINE retired from this surface but
+  still reachable on S1a / S1b.
+- New page-2 layout:
+  ```
+  top  fdec  famt  pdec  pamt
+  bot  adec  nois  sub   wave
+  ```
+  `famt` / `pamt` / `wave` are config-mapped (filter-env depth at
+  patch addr 22, pitch-env depth at 58, sub-osc shape at 11). Dead
+  `*REL` cells gone from the UI.
+- Page-3 (step behavior) layout unchanged.
+
+#### Display polish
+
+- WAVE1 / WAVE2 / sub-WAVE cells render the waveform name string
+  instead of the raw byte (uses `STR_RES_NONE` / `STR_RES_SQU1` base
+  + value, parallels `Parameter::PrintValue`).
+- Signed display for `tun2` / `fin2` (lockable, lock indices 9 / 11)
+  and `famt` / `pamt` (config). NOTE cell value shifted +1 column so
+  its octave digit right-aligns with neighbouring values.
+- New helpers: `MapPotInt8(value, min, max)` for bipolar pot scaling,
+  `WriteI8Right` for signed-display formatting, and
+  `IsSignedLockable(lockable)` so the dispatch doesn't conflate
+  lockable tun2/fin2 with config-mapped famt/pamt.
+
+#### S7 transport collapse (`controller/ui_pages/multi_page.cc` + `controller/ui.cc`)
+
+- `MultiPage::OnPot` index 1 now drives `PRM_MULTI_CLOCK_GROOVE_AMOUNT`.
+  Line 0 reads `bpm xxx | swng xxx`.
+- `PAGE_MULTI` `next_page` set to itself (single-page group). Pressing
+  S7 a second time is a no-op rather than walking to clock params.
+- `PAGE_MULTI_CLOCK` registry entry retained (still needed as the
+  upper bound used by `ShowPageRelative`'s wraparound) but its data
+  cells are now all `0xff` so the encoder skips it.
+
+#### Notes for next session
+
+- Hardware verification of 0x25 still pending. The snapshot semantic
+  change (addrs 6 / 7 became active) means a stale 0x23 voicecard
+  would silently ignore the per-step tun2/fin2 locks.
+- Linear FM via `BLND ≥ 64` + RTIO ratio LUT is queued for a separate
+  planning phase (likely phase-mod-first to keep voicecard CPU sane,
+  with a 16-entry ratio LUT at 0.25/0.5/.../4.0).
+- `docs/wiki/MANUAL.md` is now significantly behind the implementation
+  (mentions LPGD/LPGA/LPGO macro envelopes that never shipped, plus
+  the older Page 1 layout with RTIO / FINE). Refresh tracked in
+  `BOARD.md` Later.
+
+---
+
 ### Sequencer foundation: hardware-pass fixes (2026-05-02)
 
 **Flash result:** controller 45,578 B (69.5%), +366 B over the foundation

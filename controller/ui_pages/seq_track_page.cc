@@ -18,8 +18,10 @@ namespace ambika {
 uint8_t SeqTrackPage::cursor_ = 0;
 
 // 4-char short_name per knob (lowercase by default; uppercased on cursor).
+// `----` slot at index 6 is the retired BPCH cell (round 5: track-transpose
+// will live on the future Performance page; pot is inhibited here).
 static const prog_char kAbbr[] PROGMEM =
-  "dirncdivrotalengscalrootbpcholev";
+  "dirncdivrotalengscalroot----vol ";
 
 // CDIV display labels (matches sequencer.cc kCDivValues): 1, 2, 3, 4, 6, 8, 12, 16.
 static const prog_char kCDivLabels[] PROGMEM =
@@ -31,6 +33,12 @@ static const prog_char kDirnLabels[] PROGMEM = " fwd rev pendrnd ";
 // 12 root note names, 3 chars each, padded with leading space to 4.
 static const prog_char kRootLabels[] PROGMEM =
   " C   C#  D   D#  E   F   F#  G   G#  A   A#  B  ";
+
+// 8 scale labels, 4 chars each — leading-space pattern so the value field
+// has a visible separator from the abbr (renders "SCAL pMi" not "SCALpMi").
+// "chro" → " chr"; full word still readable.
+static const prog_char kScaleLabels[] PROGMEM =
+  " chr maj min dor mix pMa pMi blu";
 
 /* static */
 const prog_EventHandlers SeqTrackPage::event_handlers_ PROGMEM = {
@@ -85,16 +93,15 @@ uint8_t SeqTrackPage::OnPot(uint8_t index, uint8_t value) {
     case 3:  // LENG: 1..8
       mapped = (value >> 4) + 1;
       break;
-    case 4:  // SCAL: TBD; pass through for now
-      mapped = value;
+    case 4:  // SCAL: 0..7 indexes kScaleMasks[]
+      mapped = value >> 4;
       break;
     case 5:  // ROOT: 0..11
       mapped = (static_cast<uint16_t>(value) * 12) >> 7;
       break;
-    case 6:  // BPCH: 0..127 (matches MIDI note range)
-      mapped = value;
-      break;
-    case 7:  // OLEV: 0..254 — scale pot up to byte-sized range
+    case 6:  // BPCH retired — pot is inhibited; ignore writes.
+      return 0;
+    case 7:  // VOL: 0..255 — scales velocity in FireStep
       mapped = value << 1;
       break;
     default:
@@ -136,8 +143,14 @@ void SeqTrackPage::UpdateScreen() {
       case 1:  // CDIV
         memcpy_P(val, kCDivLabels + (v & 7) * 4, 4);
         break;
+      case 4:  // SCAL
+        memcpy_P(val, kScaleLabels + (v & 7) * 4, 4);
+        break;
       case 5:  // ROOT
         memcpy_P(val, kRootLabels + (v % 12) * 4, 4);
+        break;
+      case 6:  // BPCH retired — show ----.
+        val[0] = ' '; val[1] = '-'; val[2] = '-'; val[3] = '-';
         break;
       default:
         val[0] = ' ';

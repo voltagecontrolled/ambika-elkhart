@@ -42,6 +42,10 @@ uint8_t MultiPage::OnPot(uint8_t index, uint8_t value) {
     multi.SetValue(PRM_MULTI_CLOCK_BPM, bpm);
     return 1;
   }
+  if (index == 1) {
+    multi.SetValue(PRM_MULTI_CLOCK_GROOVE_AMOUNT, value);
+    return 1;
+  }
   return 0;
 }
 
@@ -66,11 +70,16 @@ uint8_t MultiPage::OnKey(uint8_t key) {
 
 /* static */
 void MultiPage::UpdateScreen() {
-  char* buffer = display.line_buffer(0) + 1;
-  memcpy_P(&buffer[0], PSTR("bpm "), 4);
-  UnsafeItoa<uint8_t>(multi.data().clock_bpm, 3, &buffer[4]);
-  AlignRight(&buffer[4], 3);
-  buffer[14] = kDelimiter;
+  // Canonical 4-cells-per-row layout (cell width 10, abbr at +1, value at +5).
+  // bpm sits in cell 0 (under top1 pot); swng in cell 1 (under top2 pot).
+  char* buffer = display.line_buffer(0);
+  memcpy_P(&buffer[1], PSTR("bpm "), 4);
+  UnsafeItoa<uint8_t>(multi.data().clock_bpm, 3, &buffer[5]);
+  AlignRight(&buffer[5], 3);
+  buffer[10] = kDelimiter;
+  memcpy_P(&buffer[11], PSTR("swng"), 4);
+  UnsafeItoa<uint8_t>(multi.data().clock_groove_amount, 3, &buffer[15]);
+  AlignRight(&buffer[15], 3);
 
   buffer = display.line_buffer(1) + 1;
   memcpy_P(&buffer[0],  PSTR("play "), 5);

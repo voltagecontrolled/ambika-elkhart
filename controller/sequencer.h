@@ -21,13 +21,15 @@ static const uint8_t kP1WAVE2 = 5;
 static const uint8_t kP1PARA2 = 6;
 static const uint8_t kP1FINE  = 7;
 
-// ---- page2[] indices (Voice Page 2 — Envelope DEC/REL + mixer) ----
+// ---- page2[] indices ----
+// Slots 1 / 3 reclaimed from the dead E1REL / E2REL bytes for lockable
+// OSC2 coarse / detune. Slot 5 (E3REL) remains dead pending future use.
 static const uint8_t kP2E1DEC = 0;
-static const uint8_t kP2E1REL = 1;
+static const uint8_t kP2TUN2  = 1;   // OSC2 coarse pitch (patch addr 6, int8)
 static const uint8_t kP2E2DEC = 2;
-static const uint8_t kP2E2REL = 3;
+static const uint8_t kP2FIN2  = 3;   // OSC2 detune       (patch addr 7, int8)
 static const uint8_t kP2E3DEC = 4;
-static const uint8_t kP2E3REL = 5;
+static const uint8_t kP2E3REL = 5;   // dead
 static const uint8_t kP2NOIS  = 6;
 static const uint8_t kP2SUB   = 7;
 
@@ -67,8 +69,8 @@ static const uint8_t kPatROTA = 2;
 static const uint8_t kPatLENG = 3;
 static const uint8_t kPatSCAL = 4;
 static const uint8_t kPatROOT = 5;
-static const uint8_t kPatBPCH = 6;
-static const uint8_t kPatOLEV = 7;
+static const uint8_t kPatBPCH = 6;   // retired (round 5); slot reserved
+static const uint8_t kPatVOL  = 7;   // track velocity scale (round 5; was OLEV)
 
 // DIRN values
 static const uint8_t kDirnFwd  = 0;
@@ -98,8 +100,8 @@ static const uint8_t kCfgPHSE  = 17;  // oscillator phase reset on trigger
 static const uint8_t kCfgSMTH  = 18;  // portamento / smoothing
 // config[19]: reserved
 static const uint8_t kCfgOSC1R = 20;  // osc1 range
-static const uint8_t kCfgOSC2R = 21;  // osc2 range
-static const uint8_t kCfgOSC2D = 22;  // osc2 detune
+static const uint8_t kCfgOSC2R = 21;  // unused — OSC2 coarse moved to defaults[8 + kP2TUN2]
+static const uint8_t kCfgOSC2D = 22;  // unused — OSC2 detune moved to defaults[8 + kP2FIN2]
 static const uint8_t kCfgFMOP  = 23;  // FM/crossmod operator mode
 static const uint8_t kCfgFUZZ  = 24;  // fuzz
 static const uint8_t kCfgE1DEPT = 25; // ENV1→VCA depth (mod slot 10 amount)

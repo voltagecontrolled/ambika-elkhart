@@ -38,8 +38,8 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 3:  return &tr.defaults[kP1FINE];
     case 4:  return &tr.defaults[kP1WAVE2];
     case 5:  return &tr.defaults[kP1PARA2];
-    case 6:  return &tr.config[kCfgOSC2R];
-    case 7:  return &tr.config[kCfgOSC2D];
+    case 6:  return &tr.defaults[8 + kP2TUN2];   // lockable per-step
+    case 7:  return &tr.defaults[8 + kP2FIN2];   // lockable per-step
     // Mixer
     case 8:  return &tr.defaults[kP1BLND];
     case 9:  return &tr.config[kCfgFMOP];
@@ -66,9 +66,10 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 26: return &tr.config[kCfgE1CRV];
     case 34: return &tr.config[kCfgE2CRV];
     case 42: return &tr.config[kCfgE3CRV];
-    // Envelope releases (per-step lockable)
-    case 27: return &tr.defaults[8 + kP2E1REL];
-    case 35: return &tr.defaults[8 + kP2E2REL];
+    // Envelope releases — voicecard ignores these bytes (release_mod was
+    // removed in 0x21). Only addr 43 still resolves so SetValue(43,…) has
+    // a place to land for legacy MIDI/CC paths; the resolved byte is the
+    // dead E3REL slot in defaults.page2.
     case 43: return &tr.defaults[8 + kP2E3REL];
     // LFO4 (voice_lfo on voicecard)
     case 48: return &tr.config[kCfgLSHP];          // voice_lfo_shape

@@ -17,15 +17,49 @@ Sequencer sequencer;
 // CDIV lookup: pattern[kPatCDIV] indexes this table (PROGMEM).
 static const prog_uint8_t kCDivValues[] PROGMEM = { 1, 2, 3, 4, 6, 8, 12, 16 };
 
+// 12-bit scale masks (bit i = semitone i above ROOT is allowed).
+//   chro = chromatic (all 12)
+//   maj  = ionian       0,2,4,5,7,9,11
+//   min  = aeolian      0,2,3,5,7,8,10
+//   dor  = dorian       0,2,3,5,7,9,10
+//   mix  = mixolydian   0,2,4,5,7,9,10
+//   pMa  = penta major  0,2,4,7,9
+//   pMi  = penta minor  0,3,5,7,10
+//   blu  = blues        0,3,5,6,7,10
+static const prog_uint16_t kScaleMasks[] PROGMEM = {
+  0x0fff, 0x0ab5, 0x05ad, 0x06ad,
+  0x06b5, 0x0295, 0x04a9, 0x04d1,
+};
+
+// Walk down to the nearest semitone allowed by the scale relative to root.
+// note 0..127, scale_idx 0..7, root 0..11. note=0..11 is C0; ROOT shifts the
+// allowed-set within each octave.
+static uint8_t QuantizeToScale(uint8_t note, uint8_t scale_idx, uint8_t root) {
+  if (scale_idx == 0) return note;  // chromatic — no-op
+  uint16_t mask = pgm_read_word(&kScaleMasks[scale_idx & 7]);
+  // Offset from root within the 12-tone octave.
+  int8_t offset = static_cast<int8_t>(note % 12) - static_cast<int8_t>(root % 12);
+  if (offset < 0) offset += 12;
+  for (uint8_t i = 0; i < 12; ++i) {
+    int8_t test = offset - static_cast<int8_t>(i);
+    if (test < 0) test += 12;
+    if (mask & (1U << test)) {
+      // Step down by i semitones (or wrap into the octave below if it crosses).
+      return (note >= i) ? note - i : 0;
+    }
+  }
+  return note;
+}
+
 static const prog_uint8_t kDefaultPage1[] PROGMEM = {
   60,   // NOTE = middle C
   1,    // WAVE1 = polyblep_saw (index 1 in waveform enum)
   0,    // PARA1
   0,    // BLND = 0 (Osc 1 only, no FM)
-  7,    // RTIO = index 7 ≈ ratio 1.0
+  7,    // RTIO = osc2:osc1 ratio (index 7 ≈ 1.0; reserved for future linear-FM)
   0,    // WAVE2 = none
   0,    // PARA2
-  64,   // FINE = center (0 cents detune)
+  0,    // FINE = OSC1 detune (0 = centered, int8_t)
 };
 
 static const prog_uint8_t kDefaultPage2[] PROGMEM = {
@@ -40,7 +74,7 @@ static const prog_uint8_t kDefaultPage2[] PROGMEM = {
 };
 
 static const prog_uint8_t kDefaultStepPage[] PROGMEM = {
-  255,  // PROB = always fire
+  127,  // PROB = always fire (range 0..127 = 0%..100%)
   0,    // SSUB = normal (no ratchet)
   0,    // REPT = no repeat
   0,    // RATE = normal (1×)
@@ -76,8 +110,8 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // OSC2D = center
   0,    // FMOP = no FM
   0,    // FUZZ = no fuzz
-  63,   // E1DEPT = ENV1→VCA full depth
-  63,   // E2DEPT = ENV2→VCF depth (matches init_patch filter_env)
+  127,  // E1DEPT = ENV1→VCA full depth (round 5: 0..127 unipolar)
+  64,   // E2DEPT = ENV2→VCF depth (round 5 mid; can push higher now)
   0,    // E3DEPT = ENV3→pitch depth (default off)
   0,    // WSUB = WAVEFORM_SUB_OSC_SQUARE_1
 };
@@ -95,7 +129,7 @@ const prog_uint8_t kDefaultMod[42] PROGMEM = {
   11, 0, 0,   // slot  8: SEQ_1 → PARAMETER_1
   12, 1, 0,   // slot  9: SEQ_2 → PARAMETER_2
   0, 18, 63,  // slot 10: ENV_1 → VCA (amount from E1DEPT)
-  14, 18, 0,  // slot 11: VELOCITY → VCA
+  14, 18, 127, // slot 11: VELOCITY → VCA (round 5a-1: was 0 — vel was inert)
   16, 4, 0,   // slot 12: PITCH_BEND → OSC_1_2_COARSE
   0, 0, 0,    // slot 13: cleared
 };
@@ -203,13 +237,26 @@ void Sequencer::AdvanceStep(uint8_t t) {
   tr.shadow[kShdwSTEP] = step;
 }
 
+// Resolve a step-page (steppage[]) byte: lock if set, otherwise track default.
+// step_param is a kSP* index in [0..7].
+static inline uint8_t ResolveStepByte(
+    const SeqTrack& tr, uint8_t step_index, uint8_t step_param) {
+  const SeqStep& step = tr.steps[step_index];
+  return (step.lock_flags[2] & (1 << step_param))
+      ? step.steppage[step_param]
+      : tr.defaults[16 + step_param];
+}
+
 void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
   SeqTrack& tr = tracks_[t];
   const SeqStep& step = tr.steps[step_index];
 
+  // PROB — uint8_t 0..127 (matches pot range). 127 = always fire, 0 = never.
+  // Compare 7-bit random to prob: rand 0..127 > prob ↔ skip probability.
+  uint8_t prob = ResolveStepByte(tr, step_index, kSPPROB);
+  if ((Random::GetByte() & 0x7F) > prob) return;
+
   // Resolve 16-byte snapshot: page1[8] || page2[8].
-  // For each lockable index N in [0..15], pick the per-step lock value
-  // when lock_flags bit N is set, otherwise the track default.
   uint8_t snapshot[16];
   for (uint8_t i = 0; i < 16; ++i) {
     uint8_t locked = step.lock_flags[i >> 3] & (1 << (i & 7));
@@ -219,17 +266,20 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
     snapshot[i] = *src;
   }
 
-  // Note (page1 index 0 = kP1NOTE) and velocity (steppage index kSPVEL,
-  // bit 16+kSPVEL in lock_flags) — same lock-or-default pattern.
+  // Note: lock-or-default at kP1NOTE, then quantize by track scale + root.
   uint8_t note = snapshot[kP1NOTE];
-  uint8_t vel_locked = step.lock_flags[2] & (1 << kSPVEL);
-  uint8_t velocity = vel_locked
-      ? step.steppage[kSPVEL]
-      : tr.defaults[16 + kSPVEL];
+  note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
 
-  // GLID (legato) is a future step-behavior feature; pass 0 for now.
+  // Velocity: lock-or-default, then scale by track VOL (255 = identity).
+  uint8_t velocity = ResolveStepByte(tr, step_index, kSPVEL);
+  velocity = (static_cast<uint16_t>(velocity) * tr.pattern[kPatVOL]) >> 8;
+
+  // GLID: any non-zero value flips the SPI command bit (0x12 → 0x13).
+  uint8_t glid = ResolveStepByte(tr, step_index, kSPGLID);
+  uint8_t legato = glid ? 1 : 0;
+
   voicecard_tx.TriggerWithSnapshot(
-      t, static_cast<uint16_t>(note) << 7, velocity, 0, snapshot);
+      t, static_cast<uint16_t>(note) << 7, velocity, legato, snapshot);
 }
 
 void Sequencer::Play() {
