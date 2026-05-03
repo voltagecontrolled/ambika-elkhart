@@ -1,12 +1,13 @@
 # Elkhart
 
-Custom firmware for the Mutable Instruments Ambika, targeting a **6-voice
-polymetric percussive step sequencer** on the Michigan Synth Works Xena
-motherboard (ATmega644p) + SVF voicecards (ATmega328p).
+Polymetric 6-track groovebox firmware for the Ambika — parameter locks,
+per-step mutation, probability.
 
-Fork of YAM (`bjoeri/ambika`, "Yet Another Mutation") — uses YAM's oscillator
-DSP as the voice engine. The sequencer, parameter-lock system, fixed mod
-routing, and ADR+Curve envelope are the original contribution.
+Targets the Michigan Synth Works Xena motherboard (ATmega644p) + SVF
+voicecards (ATmega328p). Fork of YAM (`bjoeri/ambika`, "Yet Another
+Mutation") — uses YAM's oscillator DSP as the voice engine. The
+sequencer, parameter-lock system, fixed mod routing, and ADR+Curve
+envelope are the original contribution.
 
 ## Status
 

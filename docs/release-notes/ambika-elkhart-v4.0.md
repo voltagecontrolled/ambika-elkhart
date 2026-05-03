@@ -1,8 +1,9 @@
 # ambika-elkhart v4.0
 
-> **Draft.** First public release of elkhart — a 6-voice polymetric percussive
-> step sequencer firmware for the Mutable Instruments Ambika hardware (Michigan
-> Synth Works Xena motherboard + SVF voicecards). Fork of YAM (`bjoeri/ambika`).
+> **Draft.** First public release of elkhart — polymetric 6-track groovebox
+> firmware for the Ambika, with parameter locks, per-step mutation, and
+> probability. Targets the Michigan Synth Works Xena motherboard + SVF
+> voicecards. Fork of YAM (`bjoeri/ambika`).
 >
 > Items still tracked on the [v4.0 milestone](https://github.com/voltagecontrolled/ambika-elkhart/milestone/1)
 > will fill in the **Highlights** and **Known limitations** sections as they
