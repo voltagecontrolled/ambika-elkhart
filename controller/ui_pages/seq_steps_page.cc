@@ -165,33 +165,34 @@ uint8_t SeqStepsPage::OnClick() {
     for (uint8_t s = 0; s < 8; ++s) {
       if (ui.switch_held(s)) {
         substep_step_ = 7 - s;
-        editing_substeps_ = true;
         SeqTrack* tr = sequencer.mutable_track(ui.state().active_part);
         SeqStep& step = tr->steps[substep_step_];
-        // Read current SSUB and REPT to determine substep count.
         uint8_t rept_v = (step.lock_flags[2] & (1 << kSPREPT))
             ? step.steppage[kSPREPT]
             : tr->defaults[16 + kSPREPT];
         int8_t ssub_v = static_cast<int8_t>((step.lock_flags[2] & (1 << kSPSSUB))
             ? step.steppage[kSPSSUB]
             : tr->defaults[16 + kSPSSUB]);
-        // Migrate ratchet count to REPT so the custom pattern has the same count.
-        if (ssub_v > 0 && rept_v == 0) {
-          rept_v = static_cast<uint8_t>(ssub_v);
-          step.steppage[kSPREPT] = rept_v;
-          step.lock_flags[2] |= (1 << kSPREPT);
+        // Only enter if step has substep activity.
+        if (ssub_v == 0 && rept_v == 0) return 1;
+        if (ssub_v > 0) {
+          // Ratchets: gate each slot via substep_bits (kStepFlagGated).
+          substep_count_ = static_cast<uint8_t>(ssub_v) + 1;
+          step.step_flags |= kStepFlagGated;
+        } else {
+          // Repeats (SSUB=0+REPT, or already SSUB=-2): enter gated-repeat mode.
+          step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
+          step.lock_flags[2] |= (1 << kSPSSUB);
+          substep_count_ = (rept_v > 0) ? rept_v + 1 : 8;
+          step.step_flags &= ~kStepFlagGated;
         }
-        // SSUB=-2: substep_bits gates each REPT repeat fire.
-        step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
-        step.lock_flags[2] |= (1 << kSPSSUB);
-        // substep_count_ = REPT+1 (initial fire + REPT repeats), or 8 if unconstrained.
-        substep_count_ = (rept_v > 0) ? rept_v + 1 : 8;
         // Auto-enable all active slots when substep_bits is empty.
         if (step.substep_bits == 0) {
           step.substep_bits = (substep_count_ < 8)
               ? static_cast<uint8_t>((1 << substep_count_) - 1)
               : 0xff;
         }
+        editing_substeps_ = true;
         return 1;
       }
     }
@@ -234,29 +235,52 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   if (index >= 8) return 0;
   uint8_t track = ui.state().active_part;
 
-  // Substep editor: pot 4 = substep count, pots 6/7 = MINT/MDIR, rest swallowed.
+  // Substep editor: pot 0 = count (CCW=repeats, deadzone, CW=ratchets),
+  //                  pot 1 = MINT, pot 2 = MDIR; all others swallowed.
   if (editing_substeps_) {
     SeqTrack* tr = sequencer.mutable_track(track);
     SeqStep& step = tr->steps[substep_step_];
-    if (index == 4) {
-      // Total fire count 2..8 (= REPT+1). REPT=0 means 1 fire; pot covers 2..8.
-      uint8_t cnt = ScalePot(value, 6) + 2;  // 2..8 total fires
-      if (cnt > substep_count_) {
-        for (uint8_t b = substep_count_; b < cnt; ++b) step.substep_bits |= (1 << b);
-      } else if (cnt < substep_count_) {
-        if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
+    if (index == 0) {
+      // Mirrors S5a subs pot: 0..55=repeats 8r..1r, 56..71=deadzone, 72..127=ratchets 1x..8x.
+      if (value < 56) {
+        uint8_t rept_v = 8 - (value / 7);
+        if (rept_v < 1) rept_v = 1;
+        uint8_t cnt = rept_v + 1;
+        if (cnt > substep_count_) {
+          for (uint8_t b = substep_count_; b < cnt; ++b) step.substep_bits |= (1 << b);
+        } else if (cnt < substep_count_) {
+          if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
+        }
+        substep_count_ = cnt;
+        step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
+        step.steppage[kSPREPT] = rept_v;
+        step.lock_flags[2] |= (1 << kSPSSUB) | (1 << kSPREPT);
+        step.step_flags &= ~kStepFlagGated;
+      } else if (value > 71) {
+        uint8_t r = (value - 72) / 7 + 1;
+        if (r > 8) r = 8;
+        uint8_t cnt = r + 1;
+        if (cnt > substep_count_) {
+          for (uint8_t b = substep_count_; b < cnt; ++b) step.substep_bits |= (1 << b);
+        } else if (cnt < substep_count_) {
+          if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
+        }
+        substep_count_ = cnt;
+        step.steppage[kSPSSUB] = r;
+        step.steppage[kSPREPT] = 0;
+        step.lock_flags[2] |= (1 << kSPSSUB) | (1 << kSPREPT);
+        step.step_flags |= kStepFlagGated;
       }
-      substep_count_ = cnt;
-      step.steppage[kSPREPT] = cnt - 1;  // store REPT = total - 1
-      step.lock_flags[2] |= (1 << kSPREPT);
       return 1;
     }
-    if (index < 6) return 0;
-    uint8_t param_idx = (index == 6) ? kSPMINT : kSPMDIR;
-    uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 1) : value;
-    step.steppage[param_idx] = mapped;
-    step.lock_flags[2] |= (1 << param_idx);
-    return 1;
+    if (index == 1 || index == 2) {
+      uint8_t param_idx = (index == 1) ? kSPMINT : kSPMDIR;
+      uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 1) : value;
+      step.steppage[param_idx] = mapped;
+      step.lock_flags[2] |= (1 << param_idx);
+      return 1;
+    }
+    return 0;
   }
 
   uint8_t page = sequencer.global().lock_page;

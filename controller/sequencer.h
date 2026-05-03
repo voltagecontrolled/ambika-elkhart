@@ -54,7 +54,9 @@ static const uint8_t kNumLockableParams = 28;
 static const uint8_t kNumStepsPerTrack  = 8;
 
 // bit 0 of step_flags: trigger enabled
-static const uint8_t kStepFlagOn = 0x01;
+static const uint8_t kStepFlagOn     = 0x01;
+// bit 1 of step_flags: substep gating active (SSUB>0 ratchets gated by substep_bits)
+static const uint8_t kStepFlagGated  = 0x02;
 
 // SeqStep — 34 bytes.
 // lock_flags bit N: lockable param N is overridden for this step.
@@ -175,7 +177,7 @@ class Sequencer {
 
  private:
   void AdvanceStep(uint8_t t);
-  void FireStep(uint8_t t, uint8_t step_index);
+  void FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx);
 
   SeqTrack  tracks_[kNumVoices];  // 6 × 297 = 1,782 bytes
   SeqGlobal global_;               // 32 bytes

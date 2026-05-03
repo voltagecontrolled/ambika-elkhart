@@ -223,7 +223,11 @@ void Sequencer::Clock(uint8_t ticks) {
         if (slot_now != slot_prev && slot_now > 0) {
           voicecard_tx.Release(t);
           if (tr.steps[cur].step_flags & kStepFlagOn) {
-            FireStep(t, cur);
+            // kStepFlagGated: gate each ratchet slot by substep_bits.
+            if (!(tr.steps[cur].step_flags & kStepFlagGated) ||
+                (slot_now < 8 && (tr.steps[cur].substep_bits & (1 << slot_now)))) {
+              FireStep(t, cur, slot_now);
+            }
           }
         }
       }
@@ -239,19 +243,18 @@ void Sequencer::Clock(uint8_t ticks) {
       if (tr.shadow[kShdwREPT] > 0) {
         // REPT: re-fire the last-fired step, no advance.
         uint8_t last = tr.shadow[kShdwLAST];
+        uint8_t rept_total = ResolveStepByte(tr, last, kSPREPT);
         tr.shadow[kShdwREPT]--;
+        uint8_t repeat_idx = rept_total - tr.shadow[kShdwREPT];
         voicecard_tx.Release(t);
         if (tr.steps[last].step_flags & kStepFlagOn) {
           int8_t ssub_l = static_cast<int8_t>(ResolveStepByte(tr, last, kSPSSUB));
           if (ssub_l != -2) {
-            FireStep(t, last);
+            FireStep(t, last, repeat_idx);
           } else {
             // Custom pattern: gate this repeat by substep_bits.
-            // repeat_idx counts up from 1 after each decrement.
-            uint8_t rept_total = ResolveStepByte(tr, last, kSPREPT);
-            uint8_t repeat_idx = rept_total - tr.shadow[kShdwREPT];
             if (repeat_idx < 8 && (tr.steps[last].substep_bits & (1 << repeat_idx))) {
-              FireStep(t, last);
+              FireStep(t, last, repeat_idx);
             }
           }
         }
@@ -267,7 +270,7 @@ void Sequencer::Clock(uint8_t ticks) {
           int8_t ssub_f = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
           // SSUB=-2: gate initial fire on bit 0 of substep_bits.
           if (ssub_f != -2 || (tr.steps[fired].substep_bits & 0x01)) {
-            FireStep(t, fired);
+            FireStep(t, fired, 0);
           }
         }
         uint8_t rept = ResolveStepByte(tr, fired, kSPREPT);
@@ -318,7 +321,7 @@ void Sequencer::AdvanceStep(uint8_t t) {
   tr.shadow[kShdwSTEP] = step;
 }
 
-void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
+void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   SeqTrack& tr = tracks_[t];
   const SeqStep& step = tr.steps[step_index];
 
@@ -345,6 +348,20 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index) {
   // Note: lock-or-default at kP1NOTE, then quantize by track scale + root.
   uint8_t note = snapshot[kP1NOTE];
   note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
+
+  // MINT/MDIR: walk note per sub-trigger index (repeats and ratchets).
+  if (sub_idx > 0) {
+    uint8_t mint = ResolveStepByte(tr, step_index, kSPMINT);
+    if (mint > 0) {
+      uint8_t mdir = ResolveStepByte(tr, step_index, kSPMDIR);
+      int16_t delta = static_cast<int16_t>(sub_idx) * static_cast<int16_t>(mint);
+      if (mdir) delta = -delta;
+      int16_t new_note = static_cast<int16_t>(note) + delta;
+      if (new_note < 0) new_note = 0;
+      if (new_note > 127) new_note = 127;
+      note = static_cast<uint8_t>(new_note);
+    }
+  }
 
   // Velocity: lock-or-default, then scale by track VOL (255 = identity).
   uint8_t velocity = ResolveStepByte(tr, step_index, kSPVEL);
