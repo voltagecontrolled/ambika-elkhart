@@ -11,6 +11,13 @@ fix).
 
 > Last extracted against master at `58a240d`. Re-extract whenever
 > page_registry, parameter.cc, or any ui_page handler changes.
+>
+> **Cell labels** are derived from `controller/resources.cc` `prog_char
+> str_res_*` strings, truncated to the cell width (4 chars for normal
+> cells, 2 chars for wave cells in S5b/S5c). Labels render lowercase by
+> default and uppercase when the cursor is on that cell. Trailing spaces
+> are part of the displayed label where shown (e.g. `mix `, `amp `,
+> `vol `).
 
 ---
 
@@ -58,80 +65,83 @@ arbitration is in `Ui::Poll` (verify when working in this area).
 
 **Handler:** `ParameterEditor`  ·  **Param indices:** `{0, 1, 2, 3, 4, 5, 6, 7}`
 
-| Slot  | Idx | Abbrev (verify) | Name           | Range           | Notes |
-|-------|-----|-----------------|----------------|-----------------|-------|
-| top1  | 0   | `wvfm`          | Osc 1 waveform | 0..43 enum      | CZ filter-sim variants 6..14 should be skipped (strip pending) |
-| top2  | 1   | `parm`          | Osc 1 parameter| 0..127          | Algorithm-dependent (PWM, formant, FM index, fold depth, …) |
-| top3  | 2   | `rnge`          | Osc 1 range    | -24..+24 semis  | Coarse pitch offset |
-| top4  | 3   | `tune`          | Osc 1 detune   | -64..+64 cents  | Fine pitch offset |
-| bot1  | 4   | `wvfm`          | Osc 2 waveform | 0..43 enum      | |
-| bot2  | 5   | `parm`          | Osc 2 parameter| 0..127          | |
-| bot3  | 6   | `rnge`          | Osc 2 range    | -24..+24 semis  | |
-| bot4  | 7   | `tune`          | Osc 2 detune   | -64..+64 cents  | |
+Cell labels are the `short_name` resource string (`controller/resources.cc`)
+truncated to the 4-char cell width by `Parameter::PrintName`.
+
+| Slot  | Idx | Label  | short_name str         | Name           | Range           | Notes |
+|-------|-----|--------|------------------------|----------------|-----------------|-------|
+| top1  | 0   | `wave` | `str_res_waveform`     | Osc 1 waveform | 0..43 enum      | CZ filter-sim variants 6..14 strip pending |
+| top2  | 1   | `para` | `str_res_parameter`    | Osc 1 parameter| 0..127          | Algorithm-dependent (PWM, formant, FM index, fold depth, …) |
+| top3  | 2   | `rang` | `str_res_range`        | Osc 1 range    | -24..+24 semis  | Coarse pitch offset |
+| top4  | 3   | `tune` | `str_res_tune`         | Osc 1 detune   | -64..+64 cents  | Fine pitch offset |
+| bot1  | 4   | `wave` | `str_res_waveform`     | Osc 2 waveform | 0..43 enum      | |
+| bot2  | 5   | `para` | `str_res_parameter`    | Osc 2 parameter| 0..127          | |
+| bot3  | 6   | `rang` | `str_res_range`        | Osc 2 range    | -24..+24 semis  | |
+| bot4  | 7   | `tune` | `str_res_tune`         | Osc 2 detune   | -64..+64 cents  | |
 
 ## S1b — `PAGE_MIXER` (Group 0, bottom half)
 
 **Handler:** `ParameterEditor`  ·  **Param indices:** `{8, 13, 12, 11, 9, 10, 14, 15}`
 
-| Slot  | Idx | Abbrev | Name              | Range  | Notes |
-|-------|-----|--------|-------------------|--------|-------|
-| top1  | 8   | `mix`  | Osc balance / BLND| 0..63  | (BLND ≥ 64 FM zone clamped in default builds) |
-| top2  | 13  | `nois` | Noise level       | 0..63  | |
-| top3  | 12  | `subo` | Sub-osc level     | 0..63  | |
-| top4  | 11  | `wvfm` | Sub-osc waveform  | 0..10  | 6 traditional + 5 transient |
-| bot1  | 9   | `xmod` | X-mod operator    | 0..N   | Cross-mod type select |
-| bot2  | 10  | `amnt` | X-mod amount      | 0..63  | |
-| bot3  | 14  | `fuzz` | Fuzz / distortion | 0..63  | |
-| bot4  | 15  | `crsh` | Crush / bitcrush  | 0..31  | |
+| Slot  | Idx | Label  | short_name str         | Name              | Range  | Notes |
+|-------|-----|--------|------------------------|-------------------|--------|-------|
+| top1  | 8   | `mix ` | `str_res_mix`          | Osc balance / BLND| 0..63  | BLND ≥ 64 FM zone clamped in default builds |
+| top2  | 13  | `nois` | `str_res_noise`        | Noise level       | 0..63  | |
+| top3  | 12  | `sub ` | `str_res_sub_osc_`     | Sub-osc level     | 0..63  | "sub osc." truncated |
+| top4  | 11  | `wave` | `str_res_waveform`     | Sub-osc waveform  | 0..10  | 6 traditional + 5 transient |
+| bot1  | 9   | `xmod` | `str_res_xmod`         | X-mod operator    | 0..N   | Cross-mod type select |
+| bot2  | 10  | `amnt` | `str_res_amnt`         | X-mod amount      | 0..63  | |
+| bot3  | 14  | `fuzz` | `str_res_fuzz`         | Fuzz / distortion | 0..63  | |
+| bot4  | 15  | `crsh` | `str_res_crsh`         | Crush / bitcrush  | 0..31  | |
 
 ## S2 — `PAGE_FILTER` (Group 1)
 
 **Handler:** `ParameterEditor`  ·  **Param indices:** `{16, 17, 0xff, 18, 22, 0xff, 0xff, 0xff}`
 
-| Slot  | Idx  | Abbrev | Name          | Range   | Notes |
-|-------|------|--------|---------------|---------|-------|
-| top1  | 16   | `freq` | Cutoff        | 0..127  | Lockable per-step on S5c |
-| top2  | 17   | `reso` | Resonance     | 0..63   | |
-| top3  | —    | —      | (unused)      | —       | |
-| top4  | 18   | `mode` | Filter mode   | 0..3    | LP / BP / HP / Notch |
-| bot1  | 22   | `famt` | Env 2 → cutoff| -63..+63| Lockable per-step on S5c |
-| bot2  | —    | —      | (unused)      | —       | |
-| bot3  | —    | —      | (unused)      | —       | |
-| bot4  | —    | —      | (unused)      | —       | |
+| Slot  | Idx  | Label  | short_name str        | Name           | Range   | Notes |
+|-------|------|--------|-----------------------|----------------|---------|-------|
+| top1  | 16   | `freq` | `str_res_frequency`   | Cutoff         | 0..127  | Lockable per-step on S5c |
+| top2  | 17   | `reso` | `str_res_resonance`   | Resonance      | 0..63   | |
+| top3  | —    | —      | —                     | (unused)       | —       | |
+| top4  | 18   | `mode` | `str_res_mode`        | Filter mode    | 0..3    | LP / BP / HP / Notch |
+| bot1  | 22   | `env2` | `str_res_env2Tvcf`    | Env 2 → cutoff | 0..63   | "env2~vcf" truncated. Lockable on S5c as `famt` |
+| bot2  | —    | —      | —                     | (unused)       | —       | |
+| bot3  | —    | —      | —                     | (unused)       | —       | |
+| bot4  | —    | —      | —                     | (unused)       | —       | |
 
-`DRIV` and `BITS` referenced in MANUAL are **not present on this page** in
-the current registry — they live on S1b (`fuzz` / `crsh`). MANUAL needs
-correction here.
+`DRIV` and `BITS` referenced in the previous MANUAL are **not present on
+this page** in the current registry — they live on S1b (`fuzz` / `crsh`).
+MANUAL needs correction.
 
 ## S3a — `PAGE_ENV_LFO` (Group 2, top half)
 
 **Handler:** `ParameterEditor`  ·  **Param indices:** `{24, 25, 26, 27, 28, 75, 76, 77}`
 
-| Slot  | Idx | Abbrev | Name          | Range  | Notes |
-|-------|-----|--------|---------------|--------|-------|
-| top1  | 24  | `rise` | Env 1 rise    | 0..127 | Attack rate |
-| top2  | 25  | `fall` | Env 1 fall    | 0..127 | Decay/release rate (= `adec` lockable on S5c) |
-| top3  | 26  | `curv` | Env 1 curve   | 0..127 | 0=linear, 127=expo |
-| top4  | 27  | `amp`  | Env 1 → VCA   | 0..127 | Depth (virtual addr 200) |
-| bot1  | 28  | `rise` | Env 2 rise    | 0..127 | |
-| bot2  | 75  | `fall` | Env 2 fall    | 0..127 | (= `fdec` lockable on S5c) |
-| bot3  | 76  | `curv` | Env 2 curve   | 0..127 | |
-| bot4  | 77  | `flt`  | Env 2 → cutoff| 0..127 | Depth (virtual addr 201; same value as `famt` on S5c) |
+| Slot  | Idx | Label  | short_name str    | Name           | Range  | Notes |
+|-------|-----|--------|-------------------|----------------|--------|-------|
+| top1  | 24  | `rise` | `str_res_rise`    | Env 1 rise     | 0..127 | Attack rate |
+| top2  | 25  | `fall` | `str_res_fall`    | Env 1 fall     | 0..127 | Decay/release rate (= `adec` lockable on S5c) |
+| top3  | 26  | `curv` | `str_res_curv`    | Env 1 curve    | 0..127 | 0=linear, 127=expo |
+| top4  | 27  | `amp ` | `str_res_amp`     | Env 1 → VCA    | 0..127 | Depth (virtual addr 200). 3-char string + space pad |
+| bot1  | 28  | `rise` | `str_res_rise`    | Env 2 rise     | 0..127 | |
+| bot2  | 75  | `fall` | `str_res_fall`    | Env 2 fall     | 0..127 | (= `fdec` lockable on S5c) |
+| bot3  | 76  | `curv` | `str_res_curv`    | Env 2 curve    | 0..127 | |
+| bot4  | 77  | `flt ` | `str_res_flt`     | Env 2 → cutoff | 0..127 | Depth (virtual addr 201; same value as `famt` on S5c) |
 
 ## S3b — `PAGE_VOICE_LFO` (Group 2, bottom half / also reachable via S4)
 
 **Handler:** `ParameterEditor`  ·  **Param indices:** `{78, 79, 80, 81, 32, 33, 82, 83}`
 
-| Slot  | Idx | Abbrev | Name             | Range    | Notes |
-|-------|-----|--------|------------------|----------|-------|
-| top1  | 78  | `rise` | Env 3 rise       | 0..127   | |
-| top2  | 79  | `fall` | Env 3 fall       | 0..127   | (= `pdec` lockable on S5c) |
-| top3  | 80  | `curv` | Env 3 curve      | 0..127   | |
-| top4  | 81  | `pitc` | Env 3 → pitch    | 0..127   | Depth (virtual addr 202; = `pamt` on S5c) |
-| bot1  | 32  | `rate` | LFO 4 rate       | 0..127   | Tempo-sync extension pending (#12) |
-| bot2  | 33  | `shap` | LFO 4 waveform   | 0..N enum| Sine/tri/sqr/ramp/S&H |
-| bot3  | 82  | `dest` | LFO 4 destination| 0..N enum| |
-| bot4  | 83  | `dept` | LFO 4 depth      | -63..+63 | Signed |
+| Slot  | Idx | Label  | short_name str    | Name              | Range    | Notes |
+|-------|-----|--------|-------------------|-------------------|----------|-------|
+| top1  | 78  | `rise` | `str_res_rise`    | Env 3 rise        | 0..127   | |
+| top2  | 79  | `fall` | `str_res_fall`    | Env 3 fall        | 0..127   | (= `pdec` lockable on S5c) |
+| top3  | 80  | `curv` | `str_res_curv`    | Env 3 curve       | 0..127   | |
+| top4  | 81  | `pitc` | `str_res_pch`     | Env 3 → pitch     | 0..127   | Depth (virtual addr 202; = `pamt` on S5c). String literal is `"pitc"` despite resource enum being `pch` |
+| bot1  | 32  | `rate` | `str_res_rate`    | LFO 4 rate        | 0..127   | Tempo-sync extension pending (#12) |
+| bot2  | 33  | `wave` | `str_res_waveform`| LFO 4 waveform    | 0..N enum| Sine/tri/sqr/ramp/S&H |
+| bot3  | 82  | `dest` | `str_res_dest`    | LFO 4 destination | 0..N enum| |
+| bot4  | 83  | `dept` | `str_res_dept`    | LFO 4 depth       | -63..+63 | Signed |
 
 ## S4 — Mod matrix (planned; currently `PAGE_MODULATIONS` placeholder)
 
@@ -218,16 +228,18 @@ range and re-enabled if nothing survives the trim.
 
 **Handler:** `SeqTrackPage`  ·  All pots write into the active track's `pattern[]`.
 
-| Slot  | Abbrev | Name           | Range  | Mapping                  |
+Labels from `kAbbr[] PROGMEM = "dirncdivrotalengscalroot----vol "` (lowercase by default, uppercased on cursor).
+
+| Slot  | Label  | Name           | Range  | Mapping                  |
 |-------|--------|----------------|--------|--------------------------|
-| top1  | `DIRN` | Direction      | 0..3   | `pot >> 5`. fwd / rev / pend / rnd |
-| top2  | `CDIV` | Clock division | 0..7   | `pot >> 4` → index into `kCDivValues[] = {1,2,3,4,6,8,12,16}` (pending #14 ratio rework) |
-| top3  | `ROTA` | Rotate         | 0..7   | `pot >> 4` |
-| top4  | `LENG` | Pattern length | 1..8   | `(pot >> 4) + 1` |
-| bot1  | `SCAL` | Scale          | 0..7   | `pot >> 4` → `kScaleMasks[]` (chro/maj/min/dor/mix/pMa/pMi/blu) |
-| bot2  | `ROOT` | Scale root     | 0..11  | `pot * 12 / 128` |
+| top1  | `dirn` | Direction      | 0..3   | `pot >> 5`. Values from `kDirnLabels`: ` fwd`, ` rev`, `pend`, `rnd ` |
+| top2  | `cdiv` | Clock division | 0..7   | `pot >> 4` → index into `kCDivValues[] = {1,2,3,4,6,8,12,16}` (pending #14 ratio rework) |
+| top3  | `rota` | Rotate         | 0..7   | `pot >> 4` |
+| top4  | `leng` | Pattern length | 1..8   | `(pot >> 4) + 1` |
+| bot1  | `scal` | Scale          | 0..7   | `pot >> 4` → `kScaleMasks[]`. Labels: ` chr`, ` maj`, ` min`, ` dor`, ` mix`, ` pMa`, ` pMi`, ` blu` |
+| bot2  | `root` | Scale root     | 0..11  | `pot * 12 / 128` → ` C  `..` B  ` |
 | bot3  | `----` | (BPCH retired) | —      | Pot inhibited; cell renders `----`. Reserved for track transpose. |
-| bot4  | `VOL`  | Track volume   | 0..255 | `pot << 1`. Multiplicative scale on resolved velocity. |
+| bot4  | `vol ` | Track volume   | 0..255 | `pot << 1`. Multiplicative scale on resolved velocity. |
 
 **Encoder:** walks 8 cells; spills to neighboring page at boundaries.
 
@@ -235,16 +247,16 @@ range and re-enabled if nothing survives the trim.
 
 **Handler:** `SeqMixerPage`  ·  Source: `controller/ui_pages/seq_mixer_page.{h,cc}`
 
-| Slot  | Function                                          |
-|-------|---------------------------------------------------|
-| top1  | V1 volume (pickup-catch → `pattern[kPatVOL]`)     |
-| top2  | V2 volume                                         |
-| top3  | V3 volume                                         |
-| top4  | Mode display (read-only)                          |
-| bot1  | V4 volume                                         |
-| bot2  | V5 volume                                         |
-| bot3  | V6 volume                                         |
-| bot4  | "clr unmt" hint (read-only)                       |
+| Slot  | Cell idx | Label  | Function                                       |
+|-------|----------|--------|------------------------------------------------|
+| top1  | 0        | `v1`   | V1 volume (pickup-catch → `pattern[kPatVOL]`, value `>> 1`) |
+| top2  | 1        | `v2`   | V2 volume                                      |
+| top3  | 2        | `v3`   | V3 volume                                      |
+| top4  | 3        | `mode` | Mode display: `MT-S` / `MT-A` / `SOLO` (read-only — S7 cycles) |
+| bot1  | 4        | `v4`   | V4 volume                                      |
+| bot2  | 5        | `v5`   | V5 volume                                      |
+| bot3  | 6        | `v6`   | V6 volume                                      |
+| bot4  | 7        | `clr`  | Hint cell — renders `clr  unmt` (read-only — S8 unmutes all) |
 
 | Button | No `S7` hold                  | `S7` held                          |
 |--------|-------------------------------|------------------------------------|
@@ -318,9 +330,18 @@ Patch saving (issue #10) will move firmware-upgrade to S8b and add a
 **Encoder:** cycles `active_control_` 0..5 to select voicecard slot for
 flashing.
 
-**`PAGE_SYSTEM_SETTINGS`** (`ParameterEditor`, indices `{66, 67, 71, 72, 68, 69, 0xff, 70}`)
-exposes MIDI channel, MIDI thru, voicecard LEDs, swap LEDs, help text,
-snap-to-knob, and auto-backup. Reachable through the S8 group cycle.
+**`PAGE_SYSTEM_SETTINGS`** (`ParameterEditor`, indices `{66, 67, 71, 72, 68, 69, 0xff, 70}`):
+
+| Slot  | Idx | Label  | short_name str          | Name                     | Range  |
+|-------|-----|--------|-------------------------|--------------------------|--------|
+| top1  | 66  | `inpt` | `str_res_inpt_filter`   | MIDI input filter        | 0..15  |
+| top2  | 67  | `outp` | `str_res_outp_mode`     | MIDI output mode         | 0..2   |
+| top3  | 71  | `leds` | `str_res_leds`          | Voicecard LED enable     | 0..1   |
+| top4  | 72  | `swap` | `str_res_swap_colors`   | Swap LED colors          | 0..1   |
+| bot1  | 68  | `help` | `str_res_help`          | Show help text           | 0..1   |
+| bot2  | 69  | `snap` | `str_res_snap`          | Snap to knob on load     | 0..1   |
+| bot3  | —   | —      | —                       | (unused)                 | —      |
+| bot4  | 70  | `auto` | `str_res_auto_backup`   | Auto backup to SD        | 0..1   |
 
 ---
 
