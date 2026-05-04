@@ -152,11 +152,13 @@ Index enums: `kP1*`, `kP2*`, `kP3*`, `kSP*`, `kCfg*`, `kPat*`, `kShdw*`.
   - Otherwise: write the track default (`defaults[]`).
 - **Step toggle**: tap a step button to flip `step_flags & kStepFlagOn`.
   If a pot moved while held, the toggle is suppressed for that release.
-- **`SWITCH_8 + encoder`** (existing framework convention): selects voice
-  via `state_.active_part`. Note: SPEC names "S1+encoder=voice select"
-  but the as-built handler is on SWITCH_8.
-- **`SWITCH_1 + encoder`** (existing framework convention): ×8 encoder
-  acceleration — effectively a full-page jump.
+- **`SWITCH_1 + encoder`** (existing framework convention): selects voice
+  via `state_.active_part`. `SWITCH_1` is the leftmost button (`S1` in
+  user labels); see `docs/planning/control_map.md` for the
+  numbering-convention note.
+- **`SWITCH_2 + encoder`** / **`SWITCH_8 + encoder`**: ×8 encoder
+  acceleration — effectively a full-page jump. Both chords are wired to
+  the same multiplier in `Ui::Poll`.
 
 LCD layout:
 - Line 0: 4-char abbreviations × 8 columns. Page tag at columns 36–37

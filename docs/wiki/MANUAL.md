@@ -160,10 +160,9 @@ pots are inert.
 
 ### Voice select
 
-Hold `S8` and turn the encoder to cycle the active track / voice. All
+Hold `S1` and turn the encoder to cycle the active track / voice. All
 sequencer-mode editing — step toggles, knob writes, lock writes —
-applies to the active voice's pattern. The `S8 + encoder` chord is
-shared with the page-jump multiplier; arbitration is in `Ui::Poll`.
+applies to the active voice's pattern.
 
 ### Sequencer mode toggle
 
@@ -330,7 +329,7 @@ The pot is inhibited and the cell renders `----`. A clear-function
 on this slot is slated for v4.0; see
 [Pending v4.0 release](#pending-v40-release).
 
-The active track is selected by the `S8 + encoder` voice-select
+The active track is selected by the `S1 + encoder` voice-select
 chord — see [Voice select](#voice-select).
 
 ### S6b — Performance mixer
@@ -433,7 +432,7 @@ walks across all 24 cells; the active page is `cursor >> 3`.
 
 ### Voice selection
 
-Hold `S8` and turn the encoder to cycle the active track / voice.
+Hold `S1` and turn the encoder to cycle the active track / voice.
 All sequencer-mode editing — step toggles, knob writes, lock writes
 — applies to the active voice's pattern.
 

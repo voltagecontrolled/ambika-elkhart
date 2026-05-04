@@ -12,6 +12,13 @@ fix).
 > Last extracted against master at `58a240d`. Re-extract whenever
 > page_registry, parameter.cc, or any ui_page handler changes.
 >
+> **Switch numbering convention.** User-facing labels `S1..S8` and code
+> identifiers `SWITCH_1..SWITCH_8` use the same numbering left → right
+> (so `SWITCH_1 = S1`, `SWITCH_8 = S8`). The hardware shift-register
+> *poll order* is reversed (`SR-index 0 = SWITCH_8`); that mapping is
+> applied inside `Ui::Poll` via `control = SWITCH_8 - i` and shouldn't
+> appear in feature-level docs.
+>
 > **Cell labels** are derived from `controller/resources.cc` `prog_char
 > str_res_*` strings, truncated to the cell width (4 chars for normal
 > cells, 2 chars for wave cells in S5b/S5c). Labels render lowercase by
@@ -49,15 +56,11 @@ the encoder skips them.
 |--------------------------|---------------------------------------------------------|
 | Encoder turn             | Walk cursor through current page's parameters           |
 | Encoder click            | Focused-edit on current parameter (ParameterEditor pages) |
+| `S1` + encoder turn      | Voice select — cycle the active track                   |
 | `S2` + encoder turn      | ×8 page-jump multiplier — skip whole page groups        |
 | `S8` + encoder turn      | ×8 page-jump multiplier (same as `S2`)                  |
 | `S8` hold                | System-wide SHIFT prefix (Copy / Swap / Paste / Snapshot in `Ui::Poll`) |
 | `S5` (button-press)      | Toggle between sequencer mode and normal mode (symmetric) |
-
-**Voice select:** ambiguous between sources. `docs/planning/sequencer.md`
-notes "as-built handler is on `SWITCH_8`" — `S8 + encoder`. The page-jump
-multiplier and voice-select handlers both consume `S8 + encoder`; precise
-arbitration is in `Ui::Poll` (verify when working in this area).
 
 ---
 
