@@ -141,10 +141,9 @@ static inline uint8_t IsSubWaveCell(uint8_t lockable) {
   return lockable == 27;   // kP3WAVE (24 + kP3WAVE=3)
 }
 
-// MINT interval names for 0..24 semitones (4 chars each, pot clamped to 0..24).
-// 13..24 = octave + interval (prefix "8" = one octave up).
+// MINT interval step size, 0..12 semitones (4 chars each).
 static const prog_char kMintNames[] PROGMEM =
-  " off"  // 0
+  " off"  // 0  mutation disabled
   " m2 "  // 1  minor 2nd
   " M2 "  // 2  major 2nd
   " m3 "  // 3  minor 3rd
@@ -156,26 +155,19 @@ static const prog_char kMintNames[] PROGMEM =
   " M6 "  // 9  major 6th
   " m7 "  // 10 minor 7th
   " M7 "  // 11 major 7th
-  " 8va"  // 12 octave
-  "8m2 "  // 13 octave + minor 2nd
-  "8M2 "  // 14 octave + major 2nd
-  "8m3 "  // 15 octave + minor 3rd
-  "8M3 "  // 16 octave + major 3rd
-  "8P4 "  // 17 octave + perfect 4th
-  "8TT "  // 18 octave + tritone
-  "8P5 "  // 19 octave + perfect 5th
-  "8m6 "  // 20 octave + minor 6th
-  "8M6 "  // 21 octave + major 6th
-  "8m7 "  // 22 octave + minor 7th
-  "8M7 "  // 23 octave + major 7th
-  "8va2";  // 24 two octaves
+  " oct"; // 12 octave
 
-// MDIR direction labels (4 chars each). Values 0..3.
+// MDIR wave-shape labels (4 chars each). Values 0..7.
+// Sawtooth wraps to base; triangle bounces; random picks a MINT-multiple.
 static const prog_char kMdirNames[] PROGMEM =
-  " up "   // 0 ascending
-  " dn "   // 1 descending
-  " ud "   // 2 up then down (ping-pong)
-  " rnd";  // 3 random
+  " up "   // 0 sawtooth, base..+MOCT oct
+  " dn "   // 1 sawtooth, base..-MOCT oct
+  " ud "   // 2 triangle, ±MOCT oct (bipolar)
+  "ud+ "   // 3 triangle, base..+MOCT oct
+  "ud- "   // 4 triangle, base..-MOCT oct
+  " rnd"   // 5 random, ±MOCT oct (bipolar)
+  "rnd+"   // 6 random, base..+MOCT oct
+  "rnd-";  // 7 random, base..-MOCT oct
 
 /* static */
 const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
@@ -285,7 +277,8 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   uint8_t track = ui.state().active_part;
 
   // Substep editor: pot 0 = count (CCW=repeats, deadzone, CW=ratchets),
-  //                  pot 1 = MINT, pot 2 = MDIR; all others swallowed.
+  //                  pot 1 = MINT, pot 2 = MDIR, pot 3 = MOCT; all others swallowed.
+  // MDIR and MOCT share kSPMDIR byte (MDIR in bits 0..2, MOCT in bits 3..4).
   if (editing_substeps_) {
     SeqTrack* tr = sequencer.mutable_track(track);
     SeqStep& step = tr->steps[substep_step_];
@@ -328,11 +321,27 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
       }
       return 1;
     }
-    if (index == 1 || index == 2) {
-      uint8_t param_idx = (index == 1) ? kSPMINT : kSPMDIR;
-      uint8_t mapped = (param_idx == kSPMDIR) ? ScalePot(value, 3) : ScalePot(value, 24);
-      step.steppage[param_idx] = mapped;
-      step.lock_flags[2] |= (1 << param_idx);
+    if (index == 1) {
+      // MINT — interval step size, 0..12.
+      step.steppage[kSPMINT] = ScalePot(value, 12);
+      step.lock_flags[2] |= (1 << kSPMINT);
+      return 1;
+    }
+    if (index == 2) {
+      // MDIR — wave shape, 0..7. Preserve packed MOCT bits in the same byte.
+      uint8_t mapped = ScalePot(value, 7);
+      uint8_t cur = step.steppage[kSPMDIR];
+      step.steppage[kSPMDIR] = (cur & 0x18) | (mapped & 0x07);
+      step.lock_flags[2] |= (1 << kSPMDIR);
+      return 1;
+    }
+    if (index == 3) {
+      // MOCT — range cap in octaves, displayed 1..4 (stored 0..3 in bits 3..4).
+      // Preserve packed MDIR bits in the same byte.
+      uint8_t mapped = ScalePot(value, 3);
+      uint8_t cur = step.steppage[kSPMDIR];
+      step.steppage[kSPMDIR] = (cur & 0x07) | ((mapped & 0x03) << 3);
+      step.lock_flags[2] |= (1 << kSPMDIR);
       return 1;
     }
     return 0;
@@ -518,20 +527,31 @@ void SeqStepsPage::UpdateScreen() {
     line0[9] = ' ';
     // MINT cell (offset 10..19)
     line0[10] = kDelimiter;
-    memcpy_P(&line0[11], PSTR("MINT"), 4);
+    memcpy_P(&line0[11], PSTR("mint"), 4);
     {
       uint8_t mint = step.steppage[kSPMINT];
-      memcpy_P(&line0[15], kMintNames + (mint <= 24 ? mint : 24) * 4, 4);
+      memcpy_P(&line0[15], kMintNames + (mint <= 12 ? mint : 12) * 4, 4);
     }
     line0[19] = ' ';
     // MDIR cell (offset 20..29)
     line0[20] = kDelimiter;
-    memcpy_P(&line0[21], PSTR("MDIR"), 4);
+    memcpy_P(&line0[21], PSTR("mdir"), 4);
     {
-      uint8_t mdir = step.steppage[kSPMDIR] & 3;
+      uint8_t mdir = MdirOf(step.steppage[kSPMDIR]);
       memcpy_P(&line0[25], kMdirNames + mdir * 4, 4);
     }
     line0[29] = ' ';
+    // MOCT cell (offset 30..39)
+    line0[30] = kDelimiter;
+    memcpy_P(&line0[31], PSTR("moct"), 4);
+    {
+      uint8_t moct = MoctOf(step.steppage[kSPMDIR]);
+      line0[35] = ' ';
+      line0[36] = ' ';
+      line0[37] = ' ';
+      line0[38] = '0' + moct;
+    }
+    line0[39] = ' ';
     // Substep bit pattern on line 1 (8 slots × 4 chars = 32 chars).
     // Slots >= substep_count_ are shown blank (not interactive).
     uint8_t bits = step.substep_bits;

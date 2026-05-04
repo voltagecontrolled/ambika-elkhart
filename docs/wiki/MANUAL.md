@@ -572,10 +572,13 @@ While the editor is active:
   gated-repeat and gated-ratchet modes. A pickup guard absorbs the
   first ADC reading on entry so the resting pot position doesn't
   overwrite the stored value.
-- **Pot 1 (`mint` slot):** **MINT** — semitone walk per sub-trigger,
-  0..24. Labels: `off`, `m2`..`M7`, `8va`, `8m2`..`8va2`.
-- **Pot 2 (`mdir` slot):** **MDIR** — direction: `up` / `dn` / `ud`
-  (ping-pong) / `rnd`.
+- **Pot 1 (`mint` slot):** **MINT** — interval step size, 0..12.
+  Labels: `off`, `m2`, `M2`, `m3`, `M3`, `P4`, `TT`, `P5`, `m6`, `M6`,
+  `m7`, `M7`, `oct`.
+- **Pot 2 (`mdir` slot):** **MDIR** — wave shape: `up` / `dn`
+  (sawtooth), `ud` / `ud+` / `ud-` (triangle), `rnd` / `rnd+` / `rnd-`
+  (random). See **Mutation** below.
+- **Pot 3 (`moct` slot):** **MOCT** — range cap in octaves, 1..4.
 - **`S1`..`S8`:** toggle individual `substep_bits` slots. Slots above
   the active count are inactive (button no-op, LED dark).
 - All other pots are inert while the editor is active.
@@ -583,7 +586,7 @@ While the editor is active:
 LCD layout while editing:
 
 ```
-Line 0:  subs Nr | MINT m3 | MDIR up
+Line 0:  subs Nr | mint m3 | mdir up | moct 2
 Line 1:  # # - # # # - -    (one slot per active position)
 ```
 
@@ -595,21 +598,53 @@ survives the trim, all active slots re-enable.
 
 **Exit:** click the encoder again.
 
-### Mutation (MINT + MDIR)
+### Mutation (MINT + MDIR + MOCT)
 
-When MINT is non-zero, repeats and ratchet sub-triggers walk the step
-pitch by `MINT` semitones per fire. Direction is set by MDIR:
+When MINT is non-zero, every ratchet sub-trigger and repeat fire
+after the first walks the step's pitch by integer multiples of MINT
+semitones, bounded to ±`MOCT × 12` semitones from the base note. MDIR
+selects the wave shape of the walk. The final pitch is clamped to
+0..127 and re-quantized to the track's scale.
 
-| MDIR | Label | Effect                                        |
-|------|-------|-----------------------------------------------|
-| 0    | `up`  | `+sub_idx × MINT`                             |
-| 1    | `dn`  | `−sub_idx × MINT`                             |
-| 2    | `ud`  | Odd `sub_idx`: `+MINT`; even: `−MINT`         |
-| 3    | `rnd` | Random `±MINT` offset per fire                |
+**MINT** sets the step size in semitones:
 
-The note is clamped to 0..127 and re-quantized to the track's scale
-after the offset is applied. Mutation is resolved on the controller —
-the voicecard receives the final computed pitch.
+| Label | Semitones | Interval     |
+|-------|-----------|--------------|
+| `off` | —         | disabled     |
+| `m2`  | 1         | minor 2nd    |
+| `M2`  | 2         | major 2nd    |
+| `m3`  | 3         | minor 3rd    |
+| `M3`  | 4         | major 3rd    |
+| `P4`  | 5         | perfect 4th  |
+| `TT`  | 6         | tritone      |
+| `P5`  | 7         | perfect 5th  |
+| `m6`  | 8         | minor 6th    |
+| `M6`  | 9         | major 6th    |
+| `m7`  | 10        | minor 7th    |
+| `M7`  | 11        | major 7th    |
+| `oct` | 12        | octave       |
+
+**MDIR** sets the wave shape of the walk:
+
+| MDIR  | Shape    | Range                                    |
+|-------|----------|------------------------------------------|
+| `up`  | sawtooth | base → `+MOCT` oct, then wraps to base   |
+| `dn`  | sawtooth | base → `−MOCT` oct, then wraps to base   |
+| `ud`  | triangle | `±MOCT` oct, bipolar around base note    |
+| `ud+` | triangle | base ↔ `+MOCT` oct (bounces off base)    |
+| `ud-` | triangle | base ↔ `−MOCT` oct (bounces off base)    |
+| `rnd` | random   | random MINT-multiple in `±MOCT` oct      |
+| `rnd+`| random   | random MINT-multiple in 0..`+MOCT` oct   |
+| `rnd-`| random   | random MINT-multiple in 0..`−MOCT` oct   |
+
+All eight modes step in integer multiples of MINT, so the labelled
+musical interval is preserved as the step size — `mint=oct, moct=4,
+up` walks base, +1, +2, +3, +4 oct, then wraps. `rnd` differs from
+`ud` only in choosing the next MINT-multiple at random instead of in
+a deterministic wave; both are bounded by MOCT.
+
+Mutation is resolved on the controller — the voicecard receives the
+final computed pitch.
 
 ### Stateless triggering
 

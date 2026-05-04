@@ -12,6 +12,68 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### MINT/MDIR/MOCT redesign: arpeggiator-style mutation walk (2026-05-03)
+
+**Flash:** controller 54,968 B (83.9%, +508 B). **RAM:** 3,776 B (92.2%,
+unchanged). `kSystemVersion` bumped controller `0x34` → `0x35`. Controller only.
+
+The substep mutation feature is overhauled to separate step-size from range
+cap and to match arpeggiator semantics. Old behavior (surfaced during
+pre-release manual review) had two problems:
+
+1. **Naming.** `8va` / `8va2` / `8m2..8M7` used musical notation that
+   overloaded "8" to mean both "one octave" and "octave-plus-interval".
+2. **`rnd` semantic mismatch.** `up`/`dn`/`ud` walked in MINT-multiples, but
+   `rnd` picked any random semitone offset within ±MINT — so `mint=8va, rnd`
+   produced chromatic chaos within ±1 octave instead of octave-flavored
+   randomness.
+
+The redesign splits MINT and MOCT and gives MDIR eight wave shapes:
+
+- **MINT** (0..12): step size in semitones. Labels: `off`, `m2`..`M7`, `oct`.
+- **MOCT** (1..4): range cap in octaves. New control on substep editor pot 3.
+- **MDIR** (0..7): wave shape. `up`/`dn` (sawtooth, wrap to base);
+  `ud`/`ud+`/`ud-` (triangle: bipolar / above-base / below-base);
+  `rnd`/`rnd+`/`rnd-` (random pick of MINT-multiple in ±/+/− MOCT octaves).
+
+All eight modes step in integer multiples of MINT, so the labelled musical
+interval is preserved as the walk's grid. After the offset the note is
+clamped 0..127 and re-quantized to the track scale.
+
+#### controller/sequencer.h — bit-packing helpers
+
+- `kSPMDIR` byte now packs MDIR (bits 0..2) + MOCT (bits 3..4). Old saved
+  state (high bits zero) decodes as MOCT=1, preserving the prior MDIR
+  values 0..3 as `up`/`dn`/`ud`/`rnd`.
+- New inlines: `MdirOf(b)`, `MoctOf(b)` (returns 1..4), `PackMdirMoct(mdir, moct)`.
+
+#### controller/sequencer.cc — arpeggiator walk
+
+`Sequencer::FireStep()` mutation block (`sub_idx > 0` branch) replaced with
+8-mode switch. Per mode, with `N = MOCT × 12 / MINT`:
+
+- `up`/`dn`: `delta = ±(sub_idx % (N+1)) × MINT` — sawtooth, wraps to base.
+- `ud`: triangle, period `4N`, bipolar through base.
+- `ud+`/`ud-`: triangle, period `2N`, bounces off base on the chosen side.
+- `rnd`: `Random::GetByte() % (2N+1) - N` then × MINT (bipolar).
+- `rnd+`/`rnd-`: `±Random::GetByte() % (N+1) × MINT` (one-sided).
+
+#### controller/ui_pages/seq_steps_page.cc — UI
+
+- `kMintNames` collapsed from 25 entries to 13 (`off`, `m2`..`M7`, `oct`).
+- `kMdirNames` expanded from 4 entries to 8 (`up`, `dn`, `ud`, `ud+`, `ud-`,
+  `rnd`, `rnd+`, `rnd-`).
+- Substep editor pot routing: pot 1 = MINT (scale 12), pot 2 = MDIR (scale 7,
+  preserves packed MOCT bits), pot 3 = MOCT (scale 3, preserves packed MDIR
+  bits, displayed +1 as 1..4).
+- LCD substep-editor row extended from 3 cells to 4: `subs Nr | mint m3 |
+  mdir up | moct 2`.
+
+#### docs/wiki/MANUAL.md
+
+Substep editor controls + Mutation section rewritten to describe the new
+8-mode walk and MOCT control.
+
 ### MANUAL.md interim refresh against current master (2026-05-03)
 
 Doc-only. Interim pass on `docs/wiki/MANUAL.md` realigning page-by-page

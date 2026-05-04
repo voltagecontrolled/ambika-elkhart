@@ -214,12 +214,19 @@ While editing:
   mirrors S5a subs pot. Changing CCW↔CW switches between gated-repeat and
   gated-ratchet modes. A pickup guard (`substep_pot0_entry_`) absorbs the
   first ADC reading on entry so the stored value isn't overwritten.
-- **Pot 1** (top-row `mint`): MINT — semitone walk per sub-trigger, 0..24.
-  Labels: `off`, `m2`..`M7`, `8va`, `8m2`..`8va2`.
-- **Pot 2** (top-row `mdir`): MDIR — direction; `up`/`dn`/`ud`/`rnd`.
+- **Pot 1** (top-row `mint`): MINT — interval step size, 0..12. Labels:
+  `off`, `m2`..`M7`, `oct`.
+- **Pot 2** (top-row `mdir`): MDIR — wave shape, 0..7. Labels: `up`/`dn`
+  (sawtooth wrapping to base), `ud`/`ud+`/`ud-` (triangle: bipolar /
+  above-base / below-base), `rnd`/`rnd+`/`rnd-` (random pick of a
+  MINT-multiple in the matching range).
+- **Pot 3** (top-row `moct`): MOCT — range cap in octaves, 1..4. Stored
+  packed in the upper bits of the kSPMDIR byte (bits 3..4); see
+  `MdirOf`/`MoctOf`/`PackMdirMoct` in `controller/sequencer.h`.
 - Step buttons toggle individual `substep_bits` slots; slots ≥ substep_count_
   are inactive (button is a no-op, LED dark).
-- Screen line 0: `subs Nr` (or `Nx`/`cus`) | `MINT m3 ` | `MDIR up `.
+- Screen line 0: `subs Nr` (or `Nx`/`cus`) | `mint m3 ` | `mdir up ` |
+  `moct  2`.
   Line 1: `#`/`-` per active slot, blank for inactive.
 - LEDs mirror `substep_bits` masked to `substep_count_`.
 
@@ -227,8 +234,12 @@ On entry, `substep_bits` is trimmed to the active range; if nothing survives
 the trim (stale out-of-range bits from a prior session), all slots re-enable.
 
 `FireStep(t, step_index, sub_idx)`: initial fire passes `sub_idx=0`; REPT
-re-fires and ratchet sub-triggers pass the fire index (1-based). MINT × sub_idx
-semitones are added to the base note, direction set by MDIR.
+re-fires and ratchet sub-triggers pass the fire index (1-based). With
+`N = MOCT × 12 / MINT`, the offset is an integer multiple of MINT in the
+arpeggiator-style walk selected by MDIR — sawtooth wrap (`up`/`dn`),
+triangle (`ud`/`ud+`/`ud-`), or random MINT-multiple (`rnd`/`rnd+`/`rnd-`).
+After the offset, the note is clamped 0..127 and re-quantized to the track
+scale.
 
 S5c `freq`/`famt`/`pamt`/`wave` are now fully per-step lockable (round 5b);
 previously they were config-mapped.
@@ -364,6 +375,7 @@ loop). The substep overhaul and MINT/MDIR work that followed are controller-only
 | Round 5b: substep editor — SSUB=-2 gates REPT period fires via `substep_bits`; pots 0/1/2; pot pickup guard; bits sanitization on entry |
 | Round 5b: gated ratchets — `kStepFlagGated` + `substep_bits` gate in `Clock()` SSUB>0 path |
 | Round 5b: `FireStep(sub_idx)` — MINT/MDIR note walk; up/dn/ud/rnd modes; MINT interval names 0..24; MDIR 4-mode pot |
+| Post-5b: MINT/MDIR/MOCT redesign — MINT 0..12 (`oct` only), MOCT 1..4 octaves cap (packed in kSPMDIR bits 3..4), MDIR 8-mode arpeggiator walk (sawtooth/triangle/random × bipolar/+/−), substep editor pot 3 added |
 
 ### Open / next iteration
 
@@ -385,7 +397,7 @@ loop). The substep overhaul and MINT/MDIR work that followed are controller-only
 
 - **`FireStep` resolver is the central place for step-behavior work.** PROB
   becomes a probabilistic skip; REPT a small loop around `voicecard_tx`;
-  RATE multiplies the per-track tick period; MINT/MDIR transforms `note`
+  RATE multiplies the per-track tick period; MINT/MDIR/MOCT transforms `note`
   before the snapshot is built; GLID flips bit 0 of the SPI command.
 - **The `ParameterEditor` focused-edit pattern** (lines 162–186 of
   `parameter_editor.cc`) is the reference for the click-to-edit display

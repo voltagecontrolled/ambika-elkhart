@@ -358,37 +358,71 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   uint8_t note = snapshot[kP1NOTE];
   note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
 
-  // MINT/MDIR: walk note per sub-trigger index.
-  // MDIR 0=up, 1=dn, 2=ud (ping-pong ±mint), 3=rnd (random ±mint).
+  // MINT/MDIR/MOCT: arpeggiator-style walk per sub-trigger index.
+  // MINT = step size (semitones), MOCT = range cap in octaves (1..4),
+  // MDIR = wave shape: 0=up/1=dn (sawtooth, wrap to base),
+  //                    2=ud bipolar / 3=ud+ above / 4=ud- below (triangle),
+  //                    5=rnd bipolar / 6=rnd+ above / 7=rnd- below (random).
+  // All modes step in integer multiples of MINT, capped at ±MOCT*12 semitones.
   if (sub_idx > 0) {
     uint8_t mint = ResolveStepByte(tr, step_index, kSPMINT);
     if (mint > 0) {
-      uint8_t mdir = ResolveStepByte(tr, step_index, kSPMDIR) & 3;
-      int16_t delta;
+      uint8_t mdir_byte = ResolveStepByte(tr, step_index, kSPMDIR);
+      uint8_t mdir = MdirOf(mdir_byte);
+      uint8_t moct = MoctOf(mdir_byte);
+      uint8_t cap_semi = moct * 12;
+      uint8_t N = cap_semi / mint;
+      if (N == 0) N = 1;
+      int16_t step_count = 0;
       switch (mdir) {
         default:
-        case 0:
-          delta =  static_cast<int16_t>(sub_idx) * static_cast<int16_t>(mint);
+        case 0: {  // up sawtooth
+          step_count = sub_idx % (N + 1);
           break;
-        case 1:
-          delta = -static_cast<int16_t>(sub_idx) * static_cast<int16_t>(mint);
+        }
+        case 1: {  // dn sawtooth
+          step_count = -static_cast<int16_t>(sub_idx % (N + 1));
           break;
-        case 2:
-          // Ping-pong: alternate +mint / -mint from base note each fire.
-          delta = (sub_idx & 1) ? static_cast<int16_t>(mint)
-                                : -static_cast<int16_t>(mint);
+        }
+        case 2: {  // ud bipolar triangle, period 4N
+          uint8_t period = N << 2;
+          uint8_t phase = sub_idx % period;
+          if (phase <= N) step_count = phase;
+          else if (phase <= 3 * N) step_count = static_cast<int16_t>(2 * N) - phase;
+          else step_count = static_cast<int16_t>(phase) - static_cast<int16_t>(period);
           break;
-        case 3:
-          // Random offset ±mint from base note.
-          delta = static_cast<int16_t>(Random::GetByte() % (2 * mint + 1))
-                  - static_cast<int16_t>(mint);
+        }
+        case 3: {  // ud+ unipolar above, period 2N
+          uint8_t period = N << 1;
+          uint8_t phase = sub_idx % period;
+          step_count = (phase <= N) ? phase : static_cast<int16_t>(2 * N) - phase;
           break;
+        }
+        case 4: {  // ud- unipolar below, period 2N
+          uint8_t period = N << 1;
+          uint8_t phase = sub_idx % period;
+          int16_t s = (phase <= N) ? phase : static_cast<int16_t>(2 * N) - phase;
+          step_count = -s;
+          break;
+        }
+        case 5: {  // rnd bipolar
+          step_count = static_cast<int16_t>(Random::GetByte() % (2 * N + 1)) - N;
+          break;
+        }
+        case 6: {  // rnd+ unipolar above
+          step_count = static_cast<int16_t>(Random::GetByte() % (N + 1));
+          break;
+        }
+        case 7: {  // rnd- unipolar below
+          step_count = -static_cast<int16_t>(Random::GetByte() % (N + 1));
+          break;
+        }
       }
+      int16_t delta = step_count * static_cast<int16_t>(mint);
       int16_t new_note = static_cast<int16_t>(note) + delta;
       if (new_note < 0) new_note = 0;
       if (new_note > 127) new_note = 127;
       note = static_cast<uint8_t>(new_note);
-      // Snap mutated note to the track scale (matches base-note quantization).
       note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
     }
   }

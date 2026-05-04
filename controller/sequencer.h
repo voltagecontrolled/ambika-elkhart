@@ -41,7 +41,15 @@ static const uint8_t kSPRATE  = 3;
 static const uint8_t kSPVEL   = 4;
 static const uint8_t kSPGLID  = 5;
 static const uint8_t kSPMINT  = 6;
+// kSPMDIR byte packs two fields:
+//   bits 0..2: MDIR (0..7) — wave shape (up/dn/ud/ud+/ud-/rnd/rnd+/rnd-)
+//   bits 3..4: MOCT (0..3) — range cap, decoded as 1..4 octaves
 static const uint8_t kSPMDIR  = 7;
+inline uint8_t MdirOf(uint8_t b) { return b & 0x07; }
+inline uint8_t MoctOf(uint8_t b) { return ((b >> 3) & 0x03) + 1; }
+inline uint8_t PackMdirMoct(uint8_t mdir, uint8_t moct_one_based) {
+  return (mdir & 0x07) | (((moct_one_based - 1) & 0x03) << 3);
+}
 
 // ---- page3[] indices (Voice Page 3 — Filter / Pitch / Sub) ----
 // lock indices 24..27, snapshot bytes 16..19.

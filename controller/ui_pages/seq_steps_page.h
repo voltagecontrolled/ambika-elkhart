@@ -34,7 +34,7 @@ class SeqStepsPage : public UiPage {
 
   // Substep editor state: entered via encoder click while on `subs` cell
   // with a step button held. While active, step buttons toggle substep_bits
-  // and pots 6/7 control MINT/MDIR for the target step.
+  // and pots 1/2/3 control MINT/MDIR/MOCT for the target step.
   static bool editing_substeps_;
   static uint8_t substep_step_;
   static uint8_t substep_count_;      // active slot count for current edit session
