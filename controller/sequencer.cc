@@ -15,8 +15,15 @@ namespace ambika {
 /* extern */
 Sequencer sequencer;
 
-// CDIV lookup: pattern[kPatCDIV] indexes this table (PROGMEM).
-static const prog_uint8_t kCDivValues[] PROGMEM = { 1, 2, 3, 4, 6, 8, 12, 16 };
+// Rate lookup: pattern[kPatCDIV] (track) indexes this table directly (0..14).
+// Per-step kSPRATE uses 0 as the "inherit track" sentinel and 1..15 as direct
+// picks (with rate-1 indexing into this table). Values are step periods in
+// MIDI ticks at 24 PPQN (one Multi::Clock() = 1 tick).
+// Labels (musical notation): 32, 16t, 16, 8t, 16d, 8, 4t, 8d, 4, 2t, 4d, 2,
+//                            1, 1d, 2B.
+static const prog_uint8_t kRateValues[] PROGMEM = {
+    3, 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48, 96, 144, 192
+};
 
 // 12-bit scale masks (bit i = semitone i above ROOT is allowed).
 //   chro = chromatic (all 12)
@@ -85,7 +92,7 @@ static const prog_uint8_t kDefaultStepPage[] PROGMEM = {
   127,  // PROB = always fire (range 0..127 = 0%..100%)
   0,    // SSUB = normal (no ratchet)
   0,    // REPT = no repeat
-  0,    // RATE = normal (1×)
+  0,    // RATE = 0 → " trk" sentinel (inherit track rate)
   100,  // VEL
   0,    // GLID = no glide
   0,    // MINT = off (no mutate)
@@ -154,7 +161,7 @@ static inline uint8_t ResolveStepByte(
 
 static const prog_uint8_t kDefaultPattern[] PROGMEM = {
   kDirnFwd,  // DIRN = forward
-  0,          // CDIV index 0 → ÷1 (normal rate)
+  2,          // RATE index 2 → " 16" = 16th note per step
   0,          // ROTA = no rotation
   8,          // LENG = 8 steps
   0,          // SCAL = chromatic
@@ -201,12 +208,12 @@ void Sequencer::Clock(uint8_t ticks) {
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     SeqTrack& tr = tracks_[t];
 
-    // RATE: per-step CDIV override for the currently-playing step.
-    // 0 = use track CDIV; 1..7 = use that index directly.
+    // RATE: per-step rate override for the currently-playing step.
+    // 0 = inherit track; 1..15 = direct pick from kRateValues[rate-1].
     uint8_t rate = ResolveStepByte(tr, tr.shadow[kShdwLAST], kSPRATE);
-    uint8_t cdiv_idx = rate ? (rate & 7) : tr.pattern[kPatCDIV];
-    uint8_t cdiv   = pgm_read_byte(kCDivValues + cdiv_idx);
-    uint8_t period = kNumTicksPerStep * cdiv;
+    uint8_t cdiv_idx = rate ? (rate - 1) : tr.pattern[kPatCDIV];
+    if (cdiv_idx >= 15) cdiv_idx = 14;
+    uint8_t period = pgm_read_byte(kRateValues + cdiv_idx);
 
     tr.shadow[kShdwTICK] += ticks;
 
@@ -469,9 +476,9 @@ void Sequencer::Reset() {
     // Pre-charge TICK so the first Clock() call after Play() crosses period
     // and fires step 0 immediately. Without this, tracks with CDIV>1 wait
     // their full period before firing and start off-grid relative to CDIV=1.
-    uint8_t cdiv_idx = tracks_[t].pattern[kPatCDIV] & 7;
-    uint8_t period = kNumTicksPerStep *
-        pgm_read_byte(kCDivValues + cdiv_idx);
+    uint8_t cdiv_idx = tracks_[t].pattern[kPatCDIV];
+    if (cdiv_idx >= 15) cdiv_idx = 14;
+    uint8_t period = pgm_read_byte(kRateValues + cdiv_idx);
     tracks_[t].shadow[kShdwTICK] = period;
   }
 }

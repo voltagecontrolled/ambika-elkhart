@@ -21,11 +21,14 @@ uint8_t SeqTrackPage::cursor_ = 0;
 // `----` slot at index 6 is the retired BPCH cell (round 5: track-transpose
 // will live on the future Performance page; pot is inhibited here).
 static const prog_char kAbbr[] PROGMEM =
-  "dirncdivrotalengscalroot----vol ";
+  "dirnraterotalengscalroot----vol ";
 
-// CDIV display labels (matches sequencer.cc kCDivValues): 1, 2, 3, 4, 6, 8, 12, 16.
-static const prog_char kCDivLabels[] PROGMEM =
-  "  1   2   3   4   6   8  12  16";
+// Rate display labels (matches sequencer.cc kRateValues): musical-notation values.
+// 4 chars × 15 entries = 60 bytes PROGMEM. Shared with seq_steps_page.cc via
+// extern declaration. Right-justified within each 4-char field.
+//   32, 16t, 16, 8t, 16d, 8, 4t, 8d, 4, 2t, 4d, 2, 1, 1d, 2B
+extern const prog_char kRateLabels[] PROGMEM =
+  "  32 16t  16  8t 16d   8  4t  8d   4  2t  4d   2   1  1d  2B";
 
 // DIRN labels right-justified into 4-char fields.
 static const prog_char kDirnLabels[] PROGMEM = " fwd rev pendrnd ";
@@ -84,8 +87,8 @@ uint8_t SeqTrackPage::OnPot(uint8_t index, uint8_t value) {
     case 0:  // DIRN: 0..3
       mapped = value >> 5;  // 0..127 → 0..3
       break;
-    case 1:  // CDIV: index 0..7
-      mapped = value >> 4;  // 0..127 → 0..7
+    case 1:  // rate (track): index 0..14
+      mapped = (static_cast<uint16_t>(value) * 15) >> 7;  // 0..127 → 0..14
       break;
     case 2:  // ROTA: 0..7
       mapped = value >> 4;
@@ -140,9 +143,12 @@ void SeqTrackPage::UpdateScreen() {
       case 0:  // DIRN
         memcpy_P(val, kDirnLabels + (v & 3) * 4, 4);
         break;
-      case 1:  // CDIV
-        memcpy_P(val, kCDivLabels + (v & 7) * 4, 4);
+      case 1: {  // rate
+        uint8_t i = v;
+        if (i >= 15) i = 14;
+        memcpy_P(val, kRateLabels + i * 4, 4);
         break;
+      }
       case 4:  // SCAL
         memcpy_P(val, kScaleLabels + (v & 7) * 4, 4);
         break;

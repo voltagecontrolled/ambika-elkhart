@@ -12,6 +12,57 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Sequencer rate redesign: musical-notation labels with override semantics (2026-05-05)
+
+**Flash:** controller 55,076 B (84.0%, +108 B). **RAM:** 3,776 B (92.2%,
+unchanged). `kSystemVersion` bumped controller `0x35` → `0x36`. Controller
+only.
+
+The S6a track-level `cdiv` cell is renamed to `rate` and the per-step S5a
+`rate` cell now shares the same value table. Previous raw-index display
+(`1..16`) is replaced with 15 musical-notation entries:
+
+`32, 16t, 16, 8t, 16d, 8, 4t, 8d, 4, 2t, 4d, 2, 1, 1d, 2B`
+
+Tick periods at 24 PPQN: `{3, 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48, 96, 144, 192}`.
+
+#### Override semantics
+
+Per-step `rate` is a 16-entry field. Index `0` is a ` trk` sentinel — the
+step inherits whatever the track is currently set to. Indices `1..15` index
+directly into the 15-entry table (offset by one). When non-zero, the
+per-step value **replaces** the track value for that step (no relative
+math, no scaling). This resolves the prior confusion where ratio-style
+labels under absolute-beat semantics didn't compose intuitively across
+different track CDIVs.
+
+#### controller/sequencer.cc
+
+- `kCDivValues[]` renamed to `kRateValues[]`; values changed to the 15
+  musical entries above.
+- `Sequencer::Clock()` and `Reset()` adjusted to the new 1-based indexing
+  for per-step overrides; defensive clamp `cdiv_idx >= 15 → 14`.
+- Default track `rate = 2` (= ` 16` sixteenth note); per-step default
+  stays `0` (= ` trk` inherit).
+
+#### controller/ui_pages/seq_track_page.cc
+
+- `kAbbr` slot renamed `cdiv` → `rate`.
+- `kCDivLabels` renamed to `kRateLabels`; 15-entry × 4-char PROGMEM table.
+- Pot scaling `(value * 15) >> 7` for 0..14 indexing.
+- RATE per-step lock field widened from 3 to 4 bits.
+
+#### controller/ui_pages/seq_steps_page.cc
+
+- Extern decl renamed to `kRateLabels`.
+- S5a `rate` cell render: `r == 0` → ` trk`; else `kRateLabels[r - 1]`
+  with clamp.
+
+#### docs/wiki/MANUAL.md, docs/planning/v4.0_sprint.md
+
+- Updated S6a / S5a `rate` cell descriptions and parameter tables.
+- v4.0 sprint plan #14 entry rewritten to reflect final shipped scope.
+
 ### MINT/MDIR/MOCT redesign: arpeggiator-style mutation walk (2026-05-03)
 
 **Flash:** controller 54,968 B (83.9%, +508 B). **RAM:** 3,776 B (92.2%,

@@ -307,12 +307,12 @@ bot  scal | root | ---- | vol
 ```
 
 - **`dirn`:** direction — fwd / rev / pend (pendulum) / rnd.
-- **`cdiv`:** clock division — the polymeter engine. Eight values:
-  index `0..7` into `kCDivValues[] = {1, 2, 3, 4, 6, 8, 12, 16}`.
-  Two tracks at different divisions drift in and out of phase as
-  their patterns cycle. (Ratio-style labels — `1/4`, `1/2`, `2/3`,
-  etc. — are slated for v4.0; see
-  [Pending v4.0 release](#pending-v40-release).)
+- **`rate`:** track step length — the polymeter engine. 15 musical
+  values selectable per track: `32` (32nd), `16t` (16th triplet),
+  `16` (16th), `8t`, `16d`, `8`, `4t`, `8d`, `4` (quarter), `2t`,
+  `4d`, `2` (half), `1` (whole), `1d`, `2B` (2 bars in 4/4). Two
+  tracks at different rates drift in and out of phase as their
+  patterns cycle. Default for new tracks is `16` (sixteenth note).
 - **`rota`:** rotate pattern start point (0–7) without altering step
   data. Useful for shifting the downbeat of a fixed pattern.
 - **`leng`:** pattern length in steps (1–8). Combined with `cdiv`,
@@ -492,7 +492,7 @@ bot  subs | prob | glid | gtim
 | `note` | Step note           | 0..127, displayed as note name. Quantized to track scale. |
 | `vel`  | Velocity            | 0..127. |
 | `vamt` | Velocity → VCA depth| Voice-wide config (mod slot 11 amount); not lockable per step. |
-| `rate` | Step rate           | Per-step CDIV override — fires faster / slower than the track CDIV. |
+| `rate` | Step rate           | Per-step rate override — replaces the track `rate` for this step (no relative math). `trk` = inherit track rate (no override). Other values are the same 15 musical entries available on S6a (`32` … `2B`). |
 | `subs` | Sub-steps / mode    | Bipolar combined SSUB+REPT cell. CCW = repeats `8r`..`1r`, deadzone at center, CW = ratchets `1x`..`8x`. Display: `Nr` / `0` / `Nx` / `cus` (custom from substep editor). |
 | `prob` | Probability         | 0..127 → 0..100% per-step fire probability. |
 | `glid` | Glide               | Tie this step to the next — suppresses envelope retrigger on the next step (legato). |
@@ -752,7 +752,7 @@ what's outstanding.
 | #8    | S6b mixer cosmetic fixes (S7/S8 cell layout, color convention) | Pending |
 | #9    | S7 Transport `mrst` (master reset) on top3 pot — range `off`, 2..128 steps | Pending |
 | #10   | S8a patch slot save/load page; OS Info moves to S8b | Pending |
-| #14   | S6a `cdiv` displayed as ratios (`1/4`, `1/2`, `2/3`, `3/4`, `1/1`, `3/2`, `2/1`) instead of raw indices | Pending |
+| #14   | S6a `cdiv` displayed as ratios (`1/4`, `1/2`, `2/3`, `3/4`, `1/1`, `3/2`, `2/1`) instead of raw indices | Done — final scope: renamed `cdiv` → `rate`; 15 musical-notation values (`32`…`2B`); per-step `rate` override with `trk` sentinel for inherit |
 | #18   | Wavefolder waveform added to the oscillator palette (`para` = fold depth); CZ filter-sim variants may be pulled to free flash | Pending |
 | #22   | Hold-`S7` + encoder turn = transport / mixer shortcut, callable from any page including sequencer mode | Pending |
 | #23   | S5a layout change: drop legato `glid`, rename `gtim` → lockable `glid` on bot3, leave bot4 empty | Pending |
@@ -834,7 +834,7 @@ Six of the eight pots on this page are inert.
 | Abbrev | Name           | Notes |
 |--------|----------------|-------|
 | `dirn` | Direction      | fwd / rev / pend / rnd |
-| `cdiv` | Clock division | Index into `{1, 2, 3, 4, 6, 8, 12, 16}` |
+| `rate` | Track step length | 15 musical values: `32, 16t, 16, 8t, 16d, 8, 4t, 8d, 4, 2t, 4d, 2, 1, 1d, 2B` |
 | `rota` | Rotate         | Pattern start offset, 0..7 |
 | `leng` | Length         | Steps per cycle (1–8) |
 | `scal` | Scale          | chro / maj / min / dor / mix / pMa / pMi / blu |
@@ -861,7 +861,7 @@ Per-voice volume + MT-S / MT-A / SOLO toggles. State not persisted.
 | `note` | Step note         | Quantized to track scale |
 | `vel`  | Velocity          | 0..127 |
 | `vamt` | Vel → VCA amount  | Voice-wide config (mod slot 11); not lockable |
-| `rate` | Step rate         | Per-step CDIV override |
+| `rate` | Step rate         | Per-step rate override (`trk` = inherit track; `32`…`2B` direct, replaces track) |
 | `subs` | Sub-steps / mode  | Bipolar SSUB + REPT cell |
 | `prob` | Probability       | 0..127 → 0..100% |
 | `glid` | Glide (legato)    | Tie to next step |

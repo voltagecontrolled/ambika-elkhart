@@ -13,8 +13,9 @@ Six independent tracks run in parallel, each driving one voicecard. Each
 track has 8 steps (`SeqStep`), a per-track pattern config (`pattern[8]`),
 voice defaults (`defaults[24]`) for the 24 lockable params, voice-wide
 non-lockable settings (`config[29]`), and a transient playhead
-(`shadow[5]`). Tracks advance independently — `pattern[kPatCDIV]` divides
-the master tick to produce polymeter.
+(`shadow[5]`). Tracks advance independently — `pattern[kPatCDIV]` (the
+`rate` field; legacy variable name) selects the step period from
+`kRateValues[]` to produce polymeter.
 
 Every trigger is **stateless**: the controller resolves locks against
 defaults into a 20-byte snapshot and ships it atomically alongside the
@@ -122,8 +123,8 @@ See `controller/sequencer.h` for authoritative definitions.
   + `lock_flags[4]` (32-bit bitfield: bits 0..7 = page1, 8..15 = page2,
   16..23 = steppage, 24..27 = page3, bits 28..31 reserved) + `step_flags`
   (bit 0 = trigger on/off) + `substep_bits`.
-- **`SeqTrack`** (343 B): 8 × `SeqStep` (272 B) + `pattern[8]` (DIRN, CDIV,
-  ROTA, LENG, SCAL, ROOT, BPCH, VOL) + `defaults[28]` + `config[29]` +
+- **`SeqTrack`** (343 B): 8 × `SeqStep` (272 B) + `pattern[8]` (DIRN, RATE
+  [was CDIV], ROTA, LENG, SCAL, ROOT, BPCH, VOL) + `defaults[28]` + `config[29]` +
   `shadow[6]`.
   - `defaults[0..7]` = page1 defaults; `[8..15]` = page2; `[16..23]` = steppage;
     `[24..27]` = page3 (FREQ, FAMT, PAMT, WAVE).
@@ -166,7 +167,7 @@ LCD layout:
   label on the active page.
 - Line 1: 8 values aligned to the abbreviation columns. NOTE renders as
   3-char note name; everything else is right-aligned uint8 (with named
-  enums for DIRN/CDIV/ROOT on the track page).
+  enums for DIRN/RATE/ROOT on the track page).
 
 Knob layout (round 5b — `kSystemVersion 0x32`):
 
@@ -278,13 +279,14 @@ active track's `pattern[8]`. Encoder turn cycles to the next page in the
 group.
 
 ```
-top  DIRN CDIV ROTA LENG
+top  DIRN RATE ROTA LENG
 bot  SCAL ROOT ---- VOL
 ```
 
 Pot ranges (round 5a):
 - DIRN: 0..3 (pot >> 5) — fwd / rev / pend / rnd
-- CDIV: 0..7 (pot >> 4) — index into `kCDivValues[] = {1,2,3,4,6,8,12,16}`
+- RATE: 0..14 ((pot * 15) >> 7) — index into `kRateValues[15]` (musical-notation
+        labels: 32, 16t, 16, 8t, 16d, 8, 4t, 8d, 4, 2t, 4d, 2, 1, 1d, 2B)
 - ROTA: 0..7 (pot >> 4)
 - LENG: 1..8 ((pot >> 4) + 1)
 - SCAL: 0..7 (pot >> 4) — index into `kScaleMasks[]`
@@ -333,7 +335,7 @@ loop). The substep overhaul and MINT/MDIR work that followed are controller-only
 | Controller `TriggerWithSnapshot()` TX                |
 | `Sequencer::FireStep()` lock resolution              |
 | Sequencer Mode UI (3 lock pages on S5, encoder cycles cursor 0..23) |
-| Per-track settings page (S6) — DIRN/CDIV/ROTA/LENG/SCAL/ROOT/BPCH/OLEV |
+| Per-track settings page (S6) — DIRN/RATE/ROTA/LENG/SCAL/ROOT/BPCH/OLEV |
 | Transport relocation S5 → S7                         |
 | Encoder spill at lock-page boundary (cursor → previous/next page) |
 | Page registry order so encoder walks S3 → S5 → S6 → S7 in button order |
@@ -369,6 +371,7 @@ loop). The substep overhaul and MINT/MDIR work that followed are controller-only
 | Round 5b: lockable `freq` / `famt` / `pamt` / `wave` — `page3[4]` + `lock_flags[4]`, snapshot 16→20 bytes, both-sides reflash (0x32/0x31) |
 | Round 5b: `Part::PatchAddrToSeqField` cases 16/22/58/11 → `tr.defaults[24+kP3*]` (previously `tr.config[]`) |
 | Round 5b: RATE per-step CDIV override in `Clock()` |
+| Issue #14: rate redesign — `cdiv`→`rate` rename, 15 musical-notation entries (`32`…`2B`), per-step `trk` sentinel + override semantics, RATE field 3→4 bits |
 | Round 5b: REPT period re-fire with `shadow[kShdwREPT]` countdown |
 | Round 5b: SSUB ratchets — N+1 evenly-spaced sub-triggers per period, `sub_period=0` guard |
 | Round 5b: S5a layout — `note`/`vel`/`vamt`/`rate` top, `subs`/`prob`/`glid`/`gtim` bot |
@@ -385,7 +388,6 @@ loop). The substep overhaul and MINT/MDIR work that followed are controller-only
 |------------------------------------------------------|-------|
 | Hardware verification of round 5b                    | Pending; controller `0x32` + all voicecards `0x31` must be reflashed (snapshot protocol changed). Substep editor, gated ratchets, MINT/MDIR walk all untested on hardware |
 | Round 5b: S6b page (portamento + vel-mod settings)   | New sub-page in group 5: portamento (`kCfgSMTH`, virtual addr 203) + `vdst` (vel destination) + `vamt` (vel amount). `PAGE_PART_ARPEGGIATOR` stub is the natural slot |
-| RATE/CDIV ratio display                              | User wants ratios (`1/4`, `1/3`, `1/2` … `2/1`) not raw indices. Requires `kNumTicksPerStep=12`, new period table `{3,4,6,8,9,12,18,24}`, display labels in `seq_track_page.cc` and `seq_steps_page.cc` |
 | Encoder-click focused-edit display                   | Click outside substep editor is a no-op; needs full-row `page \| name value` layout + PROGMEM full-name table for 28 lockable params |
 | Hold-step semantics polish                           | Any held step + pot turn writes lock today. Long-press detection + double-tap-to-clear not yet implemented |
 | Round 5c: slot-based patch storage                   | Numbered slots + save button, no kits/patches abstraction. `tracks_[6]` + `global_` raw dump (~1.8 KB) per slot. `PAGE_LIBRARY` enum slot is the registry home. Voice copy/paste UX TBD |
@@ -399,7 +401,8 @@ loop). The substep overhaul and MINT/MDIR work that followed are controller-only
 
 - **`FireStep` resolver is the central place for step-behavior work.** PROB
   becomes a probabilistic skip; REPT a small loop around `voicecard_tx`;
-  RATE multiplies the per-track tick period; MINT/MDIR/MOCT transforms `note`
+  RATE replaces the per-track tick period (override semantics, not relative);
+  MINT/MDIR/MOCT transforms `note`
   before the snapshot is built; GLID flips bit 0 of the SPI command.
 - **The `ParameterEditor` focused-edit pattern** (lines 162–186 of
   `parameter_editor.cc`) is the reference for the click-to-edit display

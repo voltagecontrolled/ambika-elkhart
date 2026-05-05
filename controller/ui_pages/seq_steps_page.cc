@@ -27,6 +27,9 @@
 
 namespace ambika {
 
+// Rate label table, defined in seq_track_page.cc. 15 entries × 4 chars.
+extern const prog_char kRateLabels[] PROGMEM;
+
 // Scale a 0..127 pot value to 0..max (inclusive).
 static inline uint8_t ScalePot(uint8_t value, uint8_t max) {
   return (static_cast<uint16_t>(value) * (max + 1)) >> 7;
@@ -415,6 +418,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     // for future linear-FM and isn't implemented; the dead range produced
     // glitchy output. 0..127 pot → 0..63 crossfade only.
     mapped = value >> 1;
+  } else if (lockable == 19) {
+    // RATE — per-step CDIV override; 0 = use track CDIV, 1..15 = CDIV index.
+    mapped = value >> 3;  // 0..127 → 0..15
   }
   // freq / famt / pamt pass through 0..127 (matches PAGE_FILTER pot semantics
   // and the round-5 unipolar env-depth range).
@@ -676,6 +682,17 @@ void SeqStepsPage::UpdateScreen() {
       AlignRight(&buffer[5], 4);
     } else if (IsSignedLockable(lockable)) {
       WriteI8Right(&buffer[5], v);
+    } else if (lockable == 19) {
+      // RATE per-step override. 0 = inherit track (rendered " trk");
+      // 1..15 = direct rate, indexes kRateLabels[(r-1)..14].
+      uint8_t r = v & 15;
+      if (r == 0) {
+        memcpy_P(&buffer[5], PSTR(" trk"), 4);
+      } else {
+        uint8_t i = r - 1;
+        if (i >= 15) i = 14;
+        memcpy_P(&buffer[5], kRateLabels + i * 4, 4);
+      }
     } else if (lockable == 16) {
       // PROB — render as percentage. Storage 0..127 → display 0%..100%.
       uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
