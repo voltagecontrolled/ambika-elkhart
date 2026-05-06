@@ -1,9 +1,15 @@
 # Sequencer
 
+> ⚠️ **Diverged from implementation.** This planning doc captures original
+> design intent and earlier round-by-round status. As features evolve, the
+> details below may not match shipped behavior. For authoritative current
+> behavior see `CHANGELOG.md` (as-built) and `docs/wiki/MANUAL.md`
+> (player-facing); for code, see `controller/sequencer.{cc,h}` and
+> `controller/ui_pages/seq_steps_page.cc`.
+
 Topic spec for the elkhart 6-track polymetric step sequencer with per-step
-parameter locks. Authoritative for sub-project status; cross-references
-`voice_envelopes.md` for the envelope/LFO surface and `sequencer.h` for the
-data structure layouts.
+parameter locks. Cross-references `voice_envelopes.md` for the envelope/LFO
+surface and `sequencer.h` for the data structure layouts.
 
 ---
 

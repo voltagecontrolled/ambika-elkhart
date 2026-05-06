@@ -25,6 +25,43 @@ static const prog_uint8_t kRateValues[] PROGMEM = {
     3, 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48, 96, 144, 192
 };
 
+// MINT chord shapes (mutation step). Value 0 = off (no walk). Values 1..12
+// index kChordOffsets / kChordSizes to slice into kChordIntervals. Each chord
+// is a list of semitone offsets within an octave (0..11); the walk climbs by
+// 12 semitones per cycle through the chord, capped at MOCT octaves.
+//   1 oct  {0}             — pure octave climb
+//   2 pwr  {0,7}           — root + 5
+//   3 maj  {0,4,7}
+//   4 min  {0,3,7}
+//   5 sus2 {0,2,7}
+//   6 sus4 {0,5,7}
+//   7 dim  {0,3,6}
+//   8  7   {0,4,7,10}      — dominant 7
+//   9 m7   {0,3,7,10}
+//  10 M7   {0,4,7,11}
+//  11 7sus {0,5,7,10}
+//  12 pent {0,3,5,7,10}    — minor pentatonic
+static const prog_uint8_t kChordIntervals[] PROGMEM = {
+  /* oct  */  0,
+  /* pwr  */  0, 7,
+  /* maj  */  0, 4, 7,
+  /* min  */  0, 3, 7,
+  /* sus2 */  0, 2, 7,
+  /* sus4 */  0, 5, 7,
+  /* dim  */  0, 3, 6,
+  /*  7   */  0, 4, 7, 10,
+  /* m7   */  0, 3, 7, 10,
+  /* M7   */  0, 4, 7, 11,
+  /* 7sus */  0, 5, 7, 10,
+  /* pent */  0, 3, 5, 7, 10,
+};
+static const prog_uint8_t kChordOffsets[] PROGMEM = {
+  0, 1, 3, 6, 9, 12, 15, 18, 22, 26, 30, 34
+};
+static const prog_uint8_t kChordSizes[] PROGMEM = {
+  1, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5
+};
+
 // 12-bit scale masks (bit i = semitone i above ROOT is allowed).
 //   chro = chromatic (all 12)
 //   maj  = ionian       0,2,4,5,7,9,11
@@ -380,19 +417,23 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
 
   // MINT/MDIR/MOCT: arpeggiator-style walk per sub-trigger index.
-  // MINT = step size (semitones), MOCT = range cap in octaves (1..4),
-  // MDIR = wave shape: 0=up/1=dn (sawtooth, wrap to base),
+  // MINT = chord shape (0=off, 1..12 indexes kChordIntervals),
+  // MOCT = range cap in octaves (1..4),
+  // MDIR = wave shape: 0=up/1=dn (sawtooth, wrap to root),
   //                    2=ud bipolar / 3=ud+ above / 4=ud- below (triangle),
   //                    5=rnd bipolar / 6=rnd+ above / 7=rnd- below (random).
-  // All modes step in integer multiples of MINT, capped at ±MOCT*12 semitones.
+  // The walk visits chord tones in interval order, climbing by 12 semitones
+  // each time it cycles through the chord, capped at MOCT octaves above/below.
   if (sub_idx > 0) {
     uint8_t mint = ResolveStepByte(tr, step_index, kSPMINT);
-    if (mint > 0) {
+    if (mint > 0 && mint <= 12) {
       uint8_t mdir_byte = ResolveStepByte(tr, step_index, kSPMDIR);
       uint8_t mdir = MdirOf(mdir_byte);
       uint8_t moct = MoctOf(mdir_byte);
-      uint8_t cap_semi = moct * 12;
-      uint8_t N = cap_semi / mint;
+      uint8_t chord_idx = mint - 1;
+      uint8_t chord_size = pgm_read_byte(&kChordSizes[chord_idx]);
+      uint8_t chord_offset = pgm_read_byte(&kChordOffsets[chord_idx]);
+      uint8_t N = chord_size * moct;  // walk has positions 0..N (N+1 total)
       if (N == 0) N = 1;
       int16_t step_count = 0;
       switch (mdir) {
@@ -439,7 +480,16 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
           break;
         }
       }
-      int16_t delta = step_count * static_cast<int16_t>(mint);
+      // Chord-aware delta: |step_count| picks a chord-tone position
+      // (apos % size = which chord tone, apos / size = which octave above root).
+      uint8_t apos = step_count < 0
+          ? static_cast<uint8_t>(-step_count)
+          : static_cast<uint8_t>(step_count);
+      uint8_t interval = pgm_read_byte(
+          &kChordIntervals[chord_offset + (apos % chord_size)]);
+      int16_t delta = static_cast<int16_t>(interval)
+          + static_cast<int16_t>(apos / chord_size) * 12;
+      if (step_count < 0) delta = -delta;
       int16_t new_note = static_cast<int16_t>(note) + delta;
       if (new_note < 0) new_note = 0;
       if (new_note > 127) new_note = 127;

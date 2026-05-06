@@ -156,24 +156,25 @@ static inline uint8_t IsSubWaveCell(uint8_t lockable) {
   return lockable == 27;   // kP3WAVE (24 + kP3WAVE=3)
 }
 
-// MINT interval step size, 0..12 semitones (4 chars each).
+// MINT chord shape, 0..12 (4 chars each). Each value selects a chord whose
+// intervals are walked across sub-triggers; see kChordIntervals in sequencer.cc.
 static const prog_char kMintNames[] PROGMEM =
   " off"  // 0  mutation disabled
-  " m2 "  // 1  minor 2nd
-  " M2 "  // 2  major 2nd
-  " m3 "  // 3  minor 3rd
-  " M3 "  // 4  major 3rd
-  " P4 "  // 5  perfect 4th
-  " TT "  // 6  tritone
-  " P5 "  // 7  perfect 5th
-  " m6 "  // 8  minor 6th
-  " M6 "  // 9  major 6th
-  " m7 "  // 10 minor 7th
-  " M7 "  // 11 major 7th
-  " oct"; // 12 octave
+  " oct"  // 1  {0}                — octave climb
+  " pwr"  // 2  {0, 7}             — root + 5
+  " maj"  // 3  {0, 4, 7}          — major triad
+  " min"  // 4  {0, 3, 7}          — minor triad
+  "sus2"  // 5  {0, 2, 7}
+  "sus4"  // 6  {0, 5, 7}
+  " dim"  // 7  {0, 3, 6}
+  "  7 "  // 8  {0, 4, 7, 10}      — dominant 7
+  " m7 "  // 9  {0, 3, 7, 10}      — minor 7
+  " M7 "  // 10 {0, 4, 7, 11}      — major 7
+  "7sus"  // 11 {0, 5, 7, 10}      — 7sus4
+  "pent"; // 12 {0, 3, 5, 7, 10}   — minor pentatonic
 
 // MDIR wave-shape labels (4 chars each). Values 0..7.
-// Sawtooth wraps to base; triangle bounces; random picks a MINT-multiple.
+// Sawtooth wraps to root; triangle bounces; random picks a chord-tone position.
 static const prog_char kMdirNames[] PROGMEM =
   " up "   // 0 sawtooth, base..+MOCT oct
   " dn "   // 1 sawtooth, base..-MOCT oct
@@ -337,7 +338,7 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
       return 1;
     }
     if (index == 1) {
-      // MINT — interval step size, 0..12.
+      // MINT — chord shape, 0..12 (0 = off).
       step.steppage[kSPMINT] = ScalePot(value, 12);
       step.lock_flags[2] |= (1 << kSPMINT);
       return 1;

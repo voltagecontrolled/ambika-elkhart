@@ -609,9 +609,9 @@ While the editor is active:
   gated-repeat and gated-ratchet modes. A pickup guard absorbs the
   first ADC reading on entry so the resting pot position doesn't
   overwrite the stored value.
-- **Pot 1 (`mint` slot):** **MINT** — interval step size, 0..12.
-  Labels: `off`, `m2`, `M2`, `m3`, `M3`, `P4`, `TT`, `P5`, `m6`, `M6`,
-  `m7`, `M7`, `oct`.
+- **Pot 1 (`mint` slot):** **MINT** — chord shape, 0..12.
+  Labels: `off`, `oct`, `pwr`, `maj`, `min`, `sus2`, `sus4`, `dim`,
+  `7`, `m7`, `M7`, `7sus`, `pent`.
 - **Pot 2 (`mdir` slot):** **MDIR** — wave shape: `up` / `dn`
   (sawtooth), `ud` / `ud+` / `ud-` (triangle), `rnd` / `rnd+` / `rnd-`
   (random). See **Mutation** below.
@@ -638,28 +638,30 @@ survives the trim, all active slots re-enable.
 ### Mutation (MINT + MDIR + MOCT)
 
 When MINT is non-zero, every ratchet sub-trigger and repeat fire
-after the first walks the step's pitch by integer multiples of MINT
-semitones, bounded to ±`MOCT × 12` semitones from the base note. MDIR
-selects the wave shape of the walk. The final pitch is clamped to
-0..127 and re-quantized to the track's scale.
+after the first walks the step's pitch through the chord tones
+selected by MINT, climbing by 12 semitones each time the walk
+cycles through the chord. MOCT caps the climb at ±`MOCT` octaves
+from the base note. MDIR selects the shape of the walk. The final
+pitch is clamped to 0..127 and re-quantized to the track's scale.
 
-**MINT** sets the step size in semitones:
+**MINT** selects the chord whose tones the walk visits. Each chord
+is a list of semitone offsets from the step's note (the root):
 
-| Label | Semitones | Interval     |
-|-------|-----------|--------------|
-| `off` | —         | disabled     |
-| `m2`  | 1         | minor 2nd    |
-| `M2`  | 2         | major 2nd    |
-| `m3`  | 3         | minor 3rd    |
-| `M3`  | 4         | major 3rd    |
-| `P4`  | 5         | perfect 4th  |
-| `TT`  | 6         | tritone      |
-| `P5`  | 7         | perfect 5th  |
-| `m6`  | 8         | minor 6th    |
-| `M6`  | 9         | major 6th    |
-| `m7`  | 10        | minor 7th    |
-| `M7`  | 11        | major 7th    |
-| `oct` | 12        | octave       |
+| Label  | Intervals          | Notes                          |
+|--------|--------------------|--------------------------------|
+| `off`  | —                  | disabled                       |
+| `oct`  | {0}                | pure octave climb              |
+| `pwr`  | {0, 7}             | root + 5                       |
+| `maj`  | {0, 4, 7}          | major triad                    |
+| `min`  | {0, 3, 7}          | minor triad                    |
+| `sus2` | {0, 2, 7}          | suspended 2nd                  |
+| `sus4` | {0, 5, 7}          | suspended 4th                  |
+| `dim`  | {0, 3, 6}          | diminished                     |
+| `7`    | {0, 4, 7, 10}      | dominant 7                     |
+| `m7`   | {0, 3, 7, 10}      | minor 7                        |
+| `M7`   | {0, 4, 7, 11}      | major 7                        |
+| `7sus` | {0, 5, 7, 10}      | 7sus4                          |
+| `pent` | {0, 3, 5, 7, 10}   | minor pentatonic               |
 
 **MDIR** sets the wave shape of the walk:
 
@@ -670,15 +672,16 @@ selects the wave shape of the walk. The final pitch is clamped to
 | `ud`  | triangle | `±MOCT` oct, bipolar around base note    |
 | `ud+` | triangle | base ↔ `+MOCT` oct (bounces off base)    |
 | `ud-` | triangle | base ↔ `−MOCT` oct (bounces off base)    |
-| `rnd` | random   | random MINT-multiple in `±MOCT` oct      |
-| `rnd+`| random   | random MINT-multiple in 0..`+MOCT` oct   |
-| `rnd-`| random   | random MINT-multiple in 0..`−MOCT` oct   |
+| `rnd` | random   | random chord-tone position in `±MOCT` oct |
+| `rnd+`| random   | random chord-tone position in 0..`+MOCT` oct |
+| `rnd-`| random   | random chord-tone position in 0..`−MOCT` oct |
 
-All eight modes step in integer multiples of MINT, so the labelled
-musical interval is preserved as the step size — `mint=oct, moct=4,
-up` walks base, +1, +2, +3, +4 oct, then wraps. `rnd` differs from
-`ud` only in choosing the next MINT-multiple at random instead of in
-a deterministic wave; both are bounded by MOCT.
+All eight modes traverse the chord tones in interval order, with
+each chord-cycle advancing by an octave — `mint=maj, moct=1, up`
+walks base, +M3, +P5, +oct, then wraps; `mint=oct, moct=4, up`
+walks base, +1, +2, +3, +4 oct. `rnd` picks chord-tone positions
+at random instead of stepping through them; both are bounded by
+MOCT.
 
 Mutation is resolved on the controller — the voicecard receives the
 final computed pitch.

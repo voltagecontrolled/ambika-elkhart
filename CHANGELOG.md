@@ -12,6 +12,39 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### MINT becomes chord-shape selector (2026-05-05)
+
+**Flash:** controller 56,060 B (85.5%, +140 B). **RAM:** 3,816 B (93.2%,
+unchanged — chord tables are PROGMEM). Controller only.
+
+`MINT` was a single semitone interval (0..12 = `off`, `m2`..`M7`, `oct`)
+that the MDIR walk multiplied to produce sub-trigger pitch offsets.
+It now selects a chord shape; the walk visits chord tones in interval
+order, advancing by an octave each time it cycles through the chord,
+capped at MOCT octaves.
+
+New labels (0..12): `off`, `oct`, `pwr`, `maj`, `min`, `sus2`, `sus4`,
+`dim`, `7`, `m7`, `M7`, `7sus`, `pent`. The old single-interval shapes
+(`m2`, `M2`, `m3`, `M3`, `P4`, `TT`, `P5`, `m6`, `M6`, plus single-interval
+`m7`/`M7`) are gone — most were redundant with the chord set, and the
+fifth/octave survive inside `pwr` (`{0, 7}`) and `oct` (`{0}`).
+
+- `controller/sequencer.cc` — added `kChordIntervals` (39 B),
+  `kChordOffsets` (12 B), `kChordSizes` (12 B) PROGMEM tables.
+  Walk math at `FireStep` no longer computes `delta = step_count *
+  mint`; instead, `|step_count|` indexes a chord tone via
+  `apos % chord_size` and octave-shifts via `apos / chord_size`,
+  with sign re-applied. `N = chord_size * MOCT` (was
+  `cap_semi / mint`). MDIR up/dn/ud/ud+/ud-/rnd/rnd+/rnd- semantics
+  are unchanged.
+- `controller/ui_pages/seq_steps_page.cc` — `kMintNames` relabeled.
+- `docs/wiki/MANUAL.md` — Mutation section rewritten.
+- `docs/planning/sequencer.md` — added divergence banner; existing
+  MINT prose left as historical context.
+
+No migration: existing patterns with non-zero MINT will play
+different pitches. Re-enter MINT to taste.
+
 ### Transport gestures + step-button polish + mrst Master Reset (2026-05-05)
 
 **Flash:** controller 55,920 B (85.3%, +850 B). **RAM:** 3,816 B (93.2%,
