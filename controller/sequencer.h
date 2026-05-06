@@ -178,6 +178,8 @@ class Sequencer {
   void Play();
   void Pause();
   void Reset();
+  void Stop();
+  void Panic();
 
   SeqTrack* mutable_track(uint8_t i) { return &tracks_[i]; }
   const SeqTrack& track(uint8_t i) const { return tracks_[i]; }

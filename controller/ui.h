@@ -227,6 +227,10 @@ class Ui {
   static uint8_t inhibit_switch_;
   static uint16_t switch_press_ms_[8];
   static uint16_t switch_last_hold_ms_[8];
+  // S5 + encoder CCW transport-stop chord: first CCW arms, second within
+  // window fires Panic (kill all sound).
+  static uint16_t transport_ccw_arm_ms_;
+  static uint8_t transport_ccw_armed_;
   static Pots pots_;
   static UiState state_;
   static EventQueue<8> queue_;

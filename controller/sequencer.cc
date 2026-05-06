@@ -483,4 +483,16 @@ void Sequencer::Reset() {
   }
 }
 
+void Sequencer::Stop() {
+  Reset();
+  global_.transport = kSeqStopped;
+}
+
+void Sequencer::Panic() {
+  for (uint8_t t = 0; t < kNumVoices; ++t) {
+    voicecard_tx.Kill(t);
+  }
+  global_.transport = kSeqStopped;
+}
+
 }  // namespace ambika

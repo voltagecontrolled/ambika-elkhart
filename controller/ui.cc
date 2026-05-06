@@ -26,6 +26,7 @@
 #include "controller/leds.h"
 #include "controller/multi.h"
 #include "controller/resources.h"
+#include "controller/sequencer.h"
 #include "controller/system_settings.h"
 
 #include "controller/ui_pages/card_info_page.h"
@@ -173,6 +174,8 @@ uint8_t Ui::cycle_;
 uint8_t Ui::inhibit_switch_;
 uint16_t Ui::switch_press_ms_[8];
 uint16_t Ui::switch_last_hold_ms_[8];
+uint16_t Ui::transport_ccw_arm_ms_;
+uint8_t Ui::transport_ccw_armed_;
 Encoder Ui::encoder_;
 Switches Ui::switches_;
 Pots Ui::pots_;
@@ -216,6 +219,42 @@ void Ui::Poll() {
   ++cycle_;
   // I
   int8_t increment = encoder_.Read();
+  uint8_t clicked = encoder_.clicked();
+
+  // Hold-S5 + encoder = global transport chord.
+  // Click toggles play/pause; CW = Reset; CCW = Stop, double-CCW within
+  // window = Panic (Kill all voices). Inhibit only set when the chord
+  // actually fires, so a plain S5 press still toggles step / switches mode.
+  if (switches_.low(3)) {
+    if (clicked) {
+      inhibit_switch_ |= (1 << 3);
+      if (sequencer.global().transport == kSeqStopped) {
+        sequencer.Play();
+      } else {
+        sequencer.Pause();
+      }
+      clicked = 0;
+    }
+    if (increment != 0) {
+      inhibit_switch_ |= (1 << 3);
+      uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+      if (increment < 0) {
+        if (transport_ccw_armed_ && (now - transport_ccw_arm_ms_) < 400) {
+          sequencer.Panic();
+          transport_ccw_armed_ = 0;
+        } else {
+          sequencer.Stop();
+          transport_ccw_armed_ = 1;
+          transport_ccw_arm_ms_ = now;
+        }
+      } else {
+        sequencer.Reset();
+        transport_ccw_armed_ = 0;
+      }
+      increment = 0;
+    }
+  }
+
   if (increment != 0) {
     uint8_t control_id = 0;
     if (switches_.low(0)) {
@@ -233,7 +272,7 @@ void Ui::Poll() {
     }
     queue_.AddEvent(CONTROL_ENCODER, control_id, increment);
   }
-  if (encoder_.clicked()) {
+  if (clicked) {
     queue_.AddEvent(CONTROL_ENCODER_CLICK, 0, 1);
   }
   
