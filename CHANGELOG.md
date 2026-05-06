@@ -12,6 +12,64 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Transport gestures + step-button polish + mrst Master Reset (2026-05-05)
+
+**Flash:** controller 55,920 B (85.3%, +850 B). **RAM:** 3,816 B (93.2%,
++40 B). `kSystemVersion` bumped controller `0x36` → `0x37`. Controller only.
+
+Four GitHub issues land together. They cluster on the global `Ui::Poll`
+chord layer, the `SeqStepsPage` step-button event handler, and the
+Transport (`PAGE_MULTI`) page.
+
+#### Hold-S5 + encoder = global transport chord (#27)
+
+From any page: hold S5 and use the encoder to control transport without
+leaving the current screen.
+
+- Encoder click → toggle play/pause.
+- Encoder CW → Reset (release notes, zero playhead).
+- Encoder CCW → Stop (Reset + transport=stopped). Notes ring out per
+  envelope release.
+- Encoder CCW twice within 400 ms → Panic. Hard mute via
+  `voicecard_tx.Kill()` on every voice.
+
+S5's release event is suppressed only when the chord actually fires, so
+a plain S5 press still toggles steps in sequencer mode. New
+`Sequencer::Stop()` and `Sequencer::Panic()` helpers.
+
+#### Hold-S7 + encoder = cycle Transport ↔ Mixer page (#22)
+
+Hold S7 and turn the encoder to jump between `PAGE_MULTI` and
+`PAGE_SEQ_MIXER` from any context. `display.Clear()` before `ShowPage`
+so cells the new page doesn't paint don't carry stale content from the
+previous page.
+
+#### Step-button hold semantics polish (#16)
+
+Holding a step button to "peek" at its locks no longer toggles the step
+on release. New per-switch hold-duration tracking lives in `Ui::Poll`
+(updated on debounced `lowered`/`raised` edges); pages query
+`Ui::last_hold_ms(sr_index)` in `OnKey` to distinguish tap (≤ 250 ms)
+from hold.
+
+Bonus: two short taps on the same step within 300 ms clear all
+`lock_flags` for that step and undo the first tap's toggle — no on/off
+state change, locks gone. Removed the now-redundant `step_lock_dirty_`
+early-return that was eating the first tap of every double-tap (the
+`Ui::inhibit_switch` set by `OnPot` already suppresses lock-edit
+release events).
+
+#### `mrst` Master Reset on Transport pot 2 (#9)
+
+New `mrst` cell on Transport. Range: `off | 2..128` undivided steps.
+When the master tick counter reaches the threshold, `Sequencer::Reset()`
+fires and zeroes all tracks back to step 0 — useful for keeping
+polymetric tracks at varying CDIVs from drifting into open-ended
+chaos. Default `off` (free-run). New `SeqGlobal::master_tick`
+(uint16_t) accumulates ticks in `Sequencer::Clock()` and is zeroed in
+`Sequencer::Reset()`. Encoded value `k` maps to a period of `(k + 1)`
+steps for `k ≥ 1`, so storage 0..127 covers off + 2..128.
+
 ### Sequencer rate redesign: musical-notation labels with override semantics (2026-05-05)
 
 **Flash:** controller 55,076 B (84.0%, +108 B). **RAM:** 3,776 B (92.2%,

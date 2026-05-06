@@ -151,6 +151,28 @@ multiplier — a fast page-jump shortcut to walk across page groups
 without leaving the encoder. Single-detent turns without the chord
 walk one cell at a time as usual.
 
+### Global gestures
+
+Two hold-button + encoder chords are available from any page,
+including sequencer mode (where the encoder is normally consumed by
+cursor walk).
+
+**Hold `S5` + encoder = transport.** Reach play/pause/stop without
+leaving the current page.
+
+- Encoder click → toggle play/pause.
+- Encoder CW → reset (release notes, zero playhead).
+- Encoder CCW → stop. Notes ring out per envelope release.
+- Encoder CCW twice within 400 ms → panic. Hard mute on every voice.
+
+A plain `S5` press (no encoder activity) still toggles sequencer mode
+as before — the chord only consumes the release when the encoder
+actually fires.
+
+**Hold `S7` + encoder turn = jump between Transport and Mixer pages.**
+Cycles between `S7 — Transport` and `S6b — Performance mixer` from
+any context.
+
 ### Pots
 
 Pots always edit the eight parameters currently displayed. The
@@ -374,7 +396,7 @@ column are slated for v4.0; see
 Master clock and transport.
 
 ```
-top  bpm  | swng | ---- | ----
+top  bpm  | swng | mrst | ----
 bot  ---- | ---- | ---- | ----
 
 Buttons:  S1   S2    S3   S4    S5  S6  S7  S8
@@ -385,6 +407,11 @@ Buttons:  S1   S2    S3   S4    S5  S6  S7  S8
 - **`swng` (top2):** groove amount (`PRM_MULTI_CLOCK_GROOVE_AMOUNT`).
   *Functional status under review — see
   [Pending v4.0 release](#pending-v40-release).*
+- **`mrst` (top3):** master reset period. `off` (free-run) or
+  `2..128` undivided steps. When the master tick counter reaches the
+  threshold, all six tracks reset to step 0 — useful for keeping
+  polymetric tracks at varying CDIVs from drifting open-ended.
+  Default `off`.
 - **`PLAY` / `PAUS` / `RST`:** standard transport.
 - **`STOP` (S4):** single tap = `Pause` + `Reset`. **Double-tap
   within 300 ms = panic** — `Pause` + `Reset` + kill all six voices
@@ -396,8 +423,8 @@ LEDs: status LED bright while playing, dim while paused; `S1` (PLAY)
 bright while playing; `S2` (PAUS) bright while paused; `S4` (STOP)
 red flash during the double-tap window; `S8` (EXIT) always lit.
 
-A master-reset (`mrst`) pot and a hold-S7-as-shortcut chord are
-slated for v4.0; see [Pending v4.0 release](#pending-v40-release).
+Both transport actions and the Transport ↔ Mixer page jump are also
+available globally — see [Global gestures](#global-gestures).
 
 ### S8 — OS Info / firmware flashing
 
@@ -436,12 +463,23 @@ Hold `S1` and turn the encoder to cycle the active track / voice.
 All sequencer-mode editing — step toggles, knob writes, lock writes
 — applies to the active voice's pattern.
 
-### Step on/off
+### Step on/off, peek, and double-tap to clear
 
-**Tap a step button** (without holding it long enough for a hold
-gesture) to toggle that step's main `step_flags & on` bit. The
-`LED_1`..`LED_8` row lights dim for steps that are on; the trailing
-playhead step lights bright while transport is playing.
+**Tap a step button** (≤ 250 ms) to toggle that step's main
+`step_flags & on` bit. The `LED_1`..`LED_8` row lights dim for
+steps that are on; the trailing playhead step lights bright while
+transport is playing.
+
+**Hold a step button** (> 250 ms) without turning a pot to
+**peek** at its locks — the LCD reflects which parameters that step
+overrides. Releasing a long-held step does **not** toggle the step,
+so peeking is non-destructive.
+
+**Double-tap a step** within 300 ms (two short taps on the same
+step) to **clear all locks** for that step. The first tap's toggle
+is undone, so the step's on/off state is unchanged — only the
+`lock_flags` are cleared, reverting that step's parameters back to
+the track defaults.
 
 ### Lock-page cycling
 
@@ -750,20 +788,16 @@ what's outstanding.
 | Issue | Surface | Status |
 |-------|---------|--------|
 | #8    | S6b mixer cosmetic fixes (S7/S8 cell layout, color convention) | Pending |
-| #9    | S7 Transport `mrst` (master reset) on top3 pot — range `off`, 2..128 steps | Pending |
 | #10   | S8a patch slot save/load page; OS Info moves to S8b | Pending |
-| #14   | S6a `cdiv` displayed as ratios (`1/4`, `1/2`, `2/3`, `3/4`, `1/1`, `3/2`, `2/1`) instead of raw indices | Done — final scope: renamed `cdiv` → `rate`; 15 musical-notation values (`32`…`2B`); per-step `rate` override with `trk` sentinel for inherit |
 | #18   | Wavefolder waveform added to the oscillator palette (`para` = fold depth); CZ filter-sim variants may be pulled to free flash | Pending |
-| #22   | Hold-`S7` + encoder turn = transport / mixer shortcut, callable from any page including sequencer mode | Pending |
 | #23   | S5a layout change: drop legato `glid`, rename `gtim` → lockable `glid` on bot3, leave bot4 empty | Pending |
 | #24   | S7 `swng` — fix or pull (currently appears not to affect the sequencer pattern) | Pending |
 | #25   | S6a bot3 `clr` function: pot selects `clr locks` / `clr steps` / `clr notes` / `clr voice` / `clr all`; long-press S6 to arm, tap to confirm | Pending |
 
 Deferred to v5.0 (do not expect in this manual): mod matrix (#11),
 LFO 4 tempo sync (#12), encoder-click focused-edit on sequencer
-pages (#15), hold-step polish + double-tap-clear (#16), master
-transpose (#19), master scale (#20), iterative probability modes
-(#6).
+pages (#15), master transpose (#19), master scale (#20), iterative
+probability modes (#6).
 
 ---
 
