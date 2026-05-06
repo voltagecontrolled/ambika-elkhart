@@ -160,14 +160,15 @@ cursor walk).
 **Hold `S5` + encoder = transport.** Reach play/pause/stop without
 leaving the current page.
 
-- Encoder click → toggle play/pause.
-- Encoder CW → reset (release notes, zero playhead).
+- Encoder CW → toggle play/pause.
 - Encoder CCW → stop. Notes ring out per envelope release.
 - Encoder CCW twice within 400 ms → panic. Hard mute on every voice.
 
-A plain `S5` press (no encoder activity) still toggles sequencer mode
-as before — the chord only consumes the release when the encoder
-actually fires.
+Encoder click while holding `S5` is **not** consumed by the transport
+chord — it stays available for the substep editor on step 5
+(see S5a substep editor below). A plain `S5` press (no encoder
+activity) still toggles sequencer mode as before; the chord only
+consumes the release when the encoder actually rotates.
 
 **Hold `S7` + encoder turn = jump between Transport and Mixer pages.**
 Cycles between `S7 — Transport` and `S6b — Performance mixer` from
@@ -522,7 +523,7 @@ performance dimension.
 
 ```
 top  note | vel  | vamt | rate
-bot  subs | prob | glid | gtim
+bot  subs | prob | glid | sfx
 ```
 
 | Cell   | Name                | Range / behavior |
@@ -532,12 +533,9 @@ bot  subs | prob | glid | gtim
 | `vamt` | Velocity → VCA depth| Voice-wide config (mod slot 11 amount); not lockable per step. |
 | `rate` | Step rate           | Per-step rate override — replaces the track `rate` for this step (no relative math). `trk` = inherit track rate (no override). Other values are the same 15 musical entries available on S6a (`32` … `2B`). |
 | `subs` | Sub-steps / mode    | Bipolar combined SSUB+REPT cell. CCW = repeats `8r`..`1r`, deadzone at center, CW = ratchets `1x`..`8x`. Display: `Nr` / `0` / `Nx` / `cus` (custom from substep editor). |
-| `prob` | Probability         | 0..127 → 0..100% per-step fire probability. |
-| `glid` | Glide               | Tie this step to the next — suppresses envelope retrigger on the next step (legato). |
-| `gtim` | Glide time          | Voice-wide portamento time on glided notes; not lockable per step. |
-
-A planned v4.0 change drops `glid` and renames `gtim` → lockable
-`glid`; see [Pending v4.0 release](#pending-v40-release).
+| `prob` | Probability         | 0..127 → 0..100% per-step fire probability. Also gates `sfx`. |
+| `glid` | Per-step glide time | 0..127 portamento time, applied to this step only. 0 = no glide. |
+| `sfx`  | Step modifier       | Per-step only (no track default — shows `----` when no step held). Gated by `prob`. Values: `none` (default fire), `skip` (do not fire; advance), `fwd`/`rev` (set track direction sticky), `dir` (toggle Fwd↔Rev sticky), `rjmp` (jump to a random step), `jmp1`..`jmp8` (jump to absolute step). |
 
 ### S5b — Voice 1 page (cursor 8..15)
 
@@ -793,7 +791,6 @@ what's outstanding.
 | #8    | S6b mixer cosmetic fixes (S7/S8 cell layout, color convention) | Pending |
 | #10   | S8a patch slot save/load page; OS Info moves to S8b | Pending |
 | #18   | Wavefolder waveform added to the oscillator palette (`para` = fold depth); CZ filter-sim variants may be pulled to free flash | Pending |
-| #23   | S5a layout change: drop legato `glid`, rename `gtim` → lockable `glid` on bot3, leave bot4 empty | Pending |
 | #24   | S7 `swng` — fix or pull (currently appears not to affect the sequencer pattern) | Pending |
 | #25   | S6a bot3 `clr` function: pot selects `clr locks` / `clr steps` / `clr notes` / `clr voice` / `clr all`; long-press S6 to arm, tap to confirm | Pending |
 
@@ -901,8 +898,8 @@ Per-voice volume + MT-S / MT-A / SOLO toggles. State not persisted.
 | `rate` | Step rate         | Per-step rate override (`trk` = inherit track; `32`…`2B` direct, replaces track) |
 | `subs` | Sub-steps / mode  | Bipolar SSUB + REPT cell |
 | `prob` | Probability       | 0..127 → 0..100% |
-| `glid` | Glide (legato)    | Tie to next step |
-| `gtim` | Glide time        | Voice-wide portamento; not lockable |
+| `glid` | Per-step glide time | 0..127 portamento time; 0 = no glide |
+| `sfx`  | Step modifier     | Per-step `none/skip/fwd/rev/dir/rjmp/jmp1..jmp8`; gated by `prob` |
 
 ### S5b Voice 1 page (per-step lockable)
 

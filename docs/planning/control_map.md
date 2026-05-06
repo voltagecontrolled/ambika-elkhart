@@ -165,8 +165,8 @@ encoder skips it. Layout for v4.0 is being scoped on issue #11.
 | top4  | 3      | `rate` | Step rate             | yes       | Per-step CDIV override |
 | bot1  | 4      | `subs` | Sub-steps / mode      | yes       | Bipolar SSUB+REPT cell. CCW = repeats `8r..1r`, deadzone, CW = ratchets `1x..8x`. Display: `Nr` / `0` / `Nx` / `cus` |
 | bot2  | 5      | `prob` | Probability           | yes       | 0..127 → 0%..100% |
-| bot3  | 6      | `glid` | Glide                 | yes       | Tie to next step |
-| bot4  | 7      | `gtim` | Glide time            | config    | Virtual addr 203 → `VOICECARD_DATA_PART` offset 6; voice-wide portamento |
+| bot3  | 6      | `glid` | Per-step glide time   | yes       | 0..127 portamento time pushed to voicecard part offset 6 each fire (replaced binary legato gate) |
+| bot4  | 7      | `sfx ` | Step modifier (SMOD)  | per-step  | Per-step only, no track default. Packed into `step_flags` bits 2..5. Values: `none/skip/fwd/rev/dir/rjmp/jmp1..jmp8`. Gated by PROB roll. Render `----` when no step held |
 
 ## S5b — `PAGE_PART_SEQUENCER` Voice 1 page (cursor 8..15)
 

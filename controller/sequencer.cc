@@ -325,22 +325,73 @@ void Sequencer::Clock(uint8_t ticks) {
       } else {
         uint8_t step  = tr.shadow[kShdwSTEP];
         uint8_t fired = (step + tr.pattern[kPatROTA]) % len;
-        voicecard_tx.Release(t);
-        tr.shadow[kShdwLAST] = fired;
-        // PROB roll once per main step; ratchets/repeats inherit this decision.
+
+        // PROB roll first — gates both fire AND SMOD. Ratchets/repeats
+        // downstream inherit this decision via kShdwPROB.
         uint8_t prob = ResolveStepByte(tr, fired, kSPPROB);
         tr.shadow[kShdwPROB] =
             ((Random::GetByte() & 0x7F) <= prob) ? 1 : 0;
-        if (tr.shadow[kShdwPROB] && (tr.steps[fired].step_flags & kStepFlagOn)) {
-          int8_t ssub_f = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
-          // SSUB=-2: gate initial fire on bit 0 of substep_bits.
-          if (ssub_f != -2 || (tr.steps[fired].substep_bits & 0x01)) {
-            FireStep(t, fired, 0);
+
+        if (tr.shadow[kShdwPROB]) {
+          // SMOD dispatch. skip = bounded re-advance loop; fwd/rev/dir
+          // mutate kPatDIRN (sticky); rjmp/jmp[N] reseat the playhead
+          // before firing. Only applied when PROB passes.
+          uint8_t fire_now = 1;
+          uint8_t guard;
+          for (guard = 0; guard < len; ++guard) {
+            uint8_t smod = StepSmod(tr.steps[fired]);
+            if (smod == kSmodSkip) {
+              AdvanceStep(t);
+              fired = (tr.shadow[kShdwSTEP] + tr.pattern[kPatROTA]) % len;
+              continue;
+            }
+            if (smod == kSmodFwd) {
+              tr.pattern[kPatDIRN] = kDirnFwd;
+            } else if (smod == kSmodRev) {
+              tr.pattern[kPatDIRN] = kDirnRev;
+            } else if (smod == kSmodDir) {
+              // Sticky toggle Fwd <-> Rev. From Pend/Rnd, set Rev so the
+              // toggle has somewhere to go on the next dir step.
+              tr.pattern[kPatDIRN] =
+                  (tr.pattern[kPatDIRN] == kDirnRev) ? kDirnFwd : kDirnRev;
+            } else if (smod == kSmodRjmp) {
+              uint8_t target = Random::GetByte() % len;
+              tr.shadow[kShdwSTEP] = target;
+              fired = (target + tr.pattern[kPatROTA]) % len;
+            } else if (smod >= kSmodJmp1 && smod <= kSmodJmp8) {
+              uint8_t target = smod - kSmodJmp1;
+              if (target >= len) target = len - 1;
+              tr.shadow[kShdwSTEP] = target;
+              fired = (target + tr.pattern[kPatROTA]) % len;
+            }
+            break;
           }
-        }
-        uint8_t rept = ResolveStepByte(tr, fired, kSPREPT);
-        tr.shadow[kShdwREPT] = rept;
-        if (rept == 0) {
+          if (guard >= len) fire_now = 0;  // every step is skip — silent
+
+          voicecard_tx.Release(t);
+          tr.shadow[kShdwLAST] = fired;
+
+          if (fire_now && (tr.steps[fired].step_flags & kStepFlagOn)) {
+            int8_t ssub_f = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
+            // SSUB=-2: gate initial fire on bit 0 of substep_bits.
+            if (ssub_f != -2 || (tr.steps[fired].substep_bits & 0x01)) {
+              FireStep(t, fired, 0);
+            }
+          }
+          if (fire_now) {
+            uint8_t rept = ResolveStepByte(tr, fired, kSPREPT);
+            tr.shadow[kShdwREPT] = rept;
+            if (rept == 0) {
+              AdvanceStep(t);
+            }
+          } else {
+            tr.shadow[kShdwREPT] = 0;  // already advanced len times in loop
+          }
+        } else {
+          // PROB failed — no fire, no SMOD. Just advance normally.
+          voicecard_tx.Release(t);
+          tr.shadow[kShdwLAST] = fired;
+          tr.shadow[kShdwREPT] = 0;
           AdvanceStep(t);
         }
       }
@@ -502,12 +553,16 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   uint8_t velocity = ResolveStepByte(tr, step_index, kSPVEL);
   velocity = (static_cast<uint16_t>(velocity) * tr.pattern[kPatVOL]) >> 8;
 
-  // GLID: any non-zero value flips the SPI command bit (0x12 → 0x13).
+  // GLID: per-step portamento time. Pushed to the voicecard part struct
+  // (offset 6 = portamento) before the trigger so the slide uses this
+  // step's value. Note: this leaves the voicecard's portamento at the
+  // last step's glid for any interleaved MIDI/keyboard notes — acceptable
+  // since step playback is the dominant path here.
   uint8_t glid = ResolveStepByte(tr, step_index, kSPGLID);
-  uint8_t legato = glid ? 1 : 0;
+  voicecard_tx.WriteData(t, VOICECARD_DATA_PART, 6, glid);
 
   voicecard_tx.TriggerWithSnapshot(
-      t, static_cast<uint16_t>(note) << 7, velocity, legato, snapshot);
+      t, static_cast<uint16_t>(note) << 7, velocity, 0, snapshot);
 }
 
 void Sequencer::Play() {

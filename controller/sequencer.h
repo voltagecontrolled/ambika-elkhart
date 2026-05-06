@@ -65,6 +65,20 @@ static const uint8_t kNumStepsPerTrack  = 8;
 static const uint8_t kStepFlagOn     = 0x01;
 // bit 1 of step_flags: substep gating active (SSUB>0 ratchets gated by substep_bits)
 static const uint8_t kStepFlagGated  = 0x02;
+// bits 2..5 of step_flags: SMOD (step modifier) nibble — 0..13. See kSmod*
+// constants below. Bits 6..7 reserved.
+static const uint8_t kStepFlagSmodMask = 0x3c;
+
+// SMOD values (4 bits). Read/written via StepSmod / SetStepSmod.
+static const uint8_t kSmodNone = 0;   // fire normally
+static const uint8_t kSmodSkip = 1;   // do not fire; advance and re-evaluate
+static const uint8_t kSmodFwd  = 2;   // sticky: set track DIRN to forward
+static const uint8_t kSmodRev  = 3;   // sticky: set track DIRN to reverse
+static const uint8_t kSmodDir  = 4;   // transient: toggle pendulum shadow dir
+static const uint8_t kSmodRjmp = 5;   // jump to a random step
+static const uint8_t kSmodJmp1 = 6;   // jump to step 1..8 (kSmodJmp1+N-1)
+static const uint8_t kSmodJmp8 = 13;
+static const uint8_t kSmodCount = 14;
 
 // SeqStep — 34 bytes.
 // lock_flags bit N: lockable param N is overridden for this step.
@@ -77,9 +91,16 @@ struct SeqStep {
   uint8_t steppage[8];    // PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR
   uint8_t page3[4];       // FREQ, FAMT, PAMT, WAVE (lock indices 24..27)
   uint8_t lock_flags[4];  // 32-bit lock bitfield (one bit per lockable param, bits 28..31 reserved)
-  uint8_t step_flags;     // bit 0: on
+  uint8_t step_flags;     // bit 0=on, bit 1=gated, bits 2..5=SMOD nibble
   uint8_t substep_bits;   // 8-bit sub-step bitfield (SSUB = -1 or -2)
 };
+
+inline uint8_t StepSmod(const SeqStep& s) {
+  return (s.step_flags >> 2) & 0x0f;
+}
+inline void SetStepSmod(SeqStep& s, uint8_t v) {
+  s.step_flags = (s.step_flags & ~kStepFlagSmodMask) | ((v & 0x0f) << 2);
+}
 
 // ---- pattern[] indices ----
 static const uint8_t kPatDIRN = 0;

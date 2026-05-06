@@ -12,6 +12,81 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Per-step glid + sfx step-FX + S5 transport refinement (2026-05-05)
+
+**Flash:** controller 56,644 B (86.4%, +584 B). **RAM:** 3,816 B (93.2%,
+unchanged — sfx packs into existing `step_flags`). Controller only.
+
+Three GitHub issues land together on the S5a step page and the global
+S5 transport chord. They share `controller/sequencer.{h,cc}` and
+`controller/ui_pages/seq_steps_page.cc`.
+
+#### S5a glid/gtim consolidation (#23)
+
+The legato `glid` gate on bot3 had no audible effect (steps don't tie),
+and `gtim` (portamento time) on bot4 was part-global, not per-step
+lockable. Resolved by repurposing the existing `kSPGLID` slot
+(steppage[5], lockable index 21) to carry 0..127 portamento time and
+freeing bot4 entirely. Pot scaling drops the binary clamp; `FireStep`
+pushes the resolved per-step value to the voicecard part struct
+(offset 6, the existing portamento address) immediately before the
+trigger and passes `legato=0` to `TriggerWithSnapshot`.
+
+- `controller/sequencer.cc` — `FireStep` no longer derives a legato
+  flag from `glid`; instead writes `glid` via
+  `voicecard_tx.WriteData(t, VOICECARD_DATA_PART, 6, glid)`.
+- `controller/ui_pages/seq_steps_page.cc` — abbrev row drops `gtim`,
+  `kCellPatchAddr[7]` cleared to `0xff`, GLID binary clamp removed,
+  empty-cell guards added in `OnPot` and `UpdateScreen`.
+
+No migration: existing patterns lose the legato semantic (which was
+inaudible anyway) and gain per-step slide. Default `glid` stays 0
+(no glide), so silent patterns play the same.
+
+#### `sfx` step modifier on S5a bot4 (#28)
+
+New per-step modifier on bot4 (cell sentinel `0xfd`), packed into
+`step_flags` bits 2..5 — RAM-neutral, rides existing storage
+round-trip. Values: `none, skip, fwd, rev, dir, rjmp, jmp1..jmp8` (14
+total, 4 bits). Cell label is `sfx ` (3 + space) so values render with
+a gap; only meaningful per-step (no track default), shown as `----`
+when no step is held.
+
+Dispatched in `Sequencer::Clock` after the PROB roll — `sfx` only
+applies when the step's probability passes. `skip` runs a bounded
+re-advance loop (silent clock if every step is skip). `fwd`/`rev`
+write `kPatDIRN` (sticky, visible in the direction UI). `dir` toggles
+`kPatDIRN` between Fwd↔Rev (sticky toggle, since the original
+transient `kShdwDIR` flip was a no-op outside pendulum mode).
+`rjmp`/`jmp1..jmp8` reseat `kShdwSTEP` before firing.
+
+- `controller/sequencer.h` — `kSmodNone..kSmodJmp8` constants,
+  `kStepFlagSmodMask`, `StepSmod`/`SetStepSmod` accessors.
+- `controller/sequencer.cc` — SMOD dispatch block in `Clock`.
+- `controller/ui_pages/seq_steps_page.cc` — `kSmodCellSentinel` +
+  `kSmodLabels` PROGMEM table; `OnPot` and `UpdateScreen` branches.
+
+Persistence is automatic — the SMOD nibble lives inside an existing
+serialized byte. Non-touched bits (`kStepFlagOn`, `kStepFlagGated`)
+are preserved by all step_flags writes.
+
+#### S5 transport: play/pause moves from click to encoder CW (#27 follow-up)
+
+The transport chord landed in #27 used encoder click for play/pause,
+which collided with the SUBS substep editor on step 5 (also entered
+via S5 + encoder click). Resolved by moving play/pause to encoder CW
+and dropping the Reset gesture entirely; encoder click is no longer
+inhibited so it falls through to the page handler.
+
+Final mapping under hold-S5: **CW** = toggle play/pause; **CCW** =
+Stop, double-CCW within 400 ms = Panic; **click** = passes through
+(SUBS editor on step 5).
+
+- `controller/ui.cc` — restructured the hold-S5 chord to act on
+  `increment != 0` only; CW-branch handles play/pause toggle, CCW
+  branch unchanged. `transport_ccw_*` fields retained for the panic
+  window.
+
 ### MINT becomes chord-shape selector (2026-05-05)
 
 **Flash:** controller 56,060 B (85.5%, +140 B). **RAM:** 3,816 B (93.2%,

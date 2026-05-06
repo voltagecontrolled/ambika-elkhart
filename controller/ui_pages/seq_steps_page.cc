@@ -89,7 +89,7 @@ static const prog_char kNoteNames[] PROGMEM =
 // default cursor=0 lands on NOTE — the most foundational sequencer knob.
 // Voice 1 / Voice 2 follow.
 static const prog_char kAbbr[] PROGMEM =
-  "notevel vamtratesubsprobglidgtim"  // page 1 = S5a (step behavior)
+  "notevel vamtratesubsprobglidsfx "  // page 1 = S5a (step behavior; sfx=SMOD)
   "noisw1  pa1 tun2mix w2  pa2 fin2"  // page 2 = S5b (voice 1: osc / mix)
   "freqfdecfamtadecpdecpamtsub wave"; // page 3 = S5c (voice 2: filter/env/sub)
 
@@ -102,10 +102,12 @@ static const prog_char kAbbr[] PROGMEM =
 // tun2 / fin2 reclaim the dead E1REL / E2REL slots (lockable 9 / 11).
 // freq / famt / pamt / wave are now lockable (24..27) instead of config-mapped.
 static const prog_uint8_t kCellLockable[24] PROGMEM = {
-  // S5a: note, vel, vamt(cfg), rate | subs(merged), prob, glid, gtim(cfg)
-  // vamt/gtim are config-mapped (0xff); MINT/MDIR now live only in substep editor.
+  // S5a: note, vel, vamt(cfg), rate | subs(merged), prob, glid, sfx(0xfd)
+  // vamt is config-mapped (0xff); glid is per-step lockable portamento
+  // time (replaced legato gate); sfx (a.k.a. SMOD) is the per-step
+  // modifier nibble packed into step_flags bits 2..5.
   0,    20,   0xff, 19,
-  0xfe, 16,   21,   0xff,
+  0xfe, 16,   21,   0xfd,
   // S5b: nois, w1, pa1, tun2 | mix(blnd), w2, pa2, fin2
   14,   1,    2,    9,
   3,    5,    6,    11,
@@ -116,10 +118,11 @@ static const prog_uint8_t kCellLockable[24] PROGMEM = {
 
 // Patch address for config-mapped cells (0xff for lockable cells).
 // vamt = vel→VCA amount  → patch addr 85 (mod slot 11 amount)
-// gtim = portamento time → virtual addr 203 (→ VOICECARD_DATA_PART offset 6)
+// S5a bot4 (cell 7) is the empty/reserved slot — both lockable and patch
+// addr are 0xff so OnPot/UpdateScreen treat it as a no-op cell.
 // Page3 cells use kPage3PatchAddrs for their live-feedback path.
 static const prog_uint8_t kCellPatchAddr[24] PROGMEM = {
-  0xff, 0xff, 85,   0xff, 0xff, 0xff, 0xff, 203,
+  0xff, 0xff, 85,   0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 };
@@ -131,6 +134,15 @@ static const prog_uint8_t kPage3PatchAddrs[4] PROGMEM = {
 
 // Sentinel for the merged SSUB+REPT `subs` cell on S5c (cursor 20).
 static const uint8_t kSubsMergedSentinel = 0xfe;
+
+// Sentinel for the SMOD cell on S5a bot4. Value lives in step_flags bits
+// 2..5 (per-step only — no defaults entry, no lock_flags bit).
+static const uint8_t kSmodCellSentinel = 0xfd;
+
+// 4-char display labels for SMOD values 0..13. Order matches kSmod*.
+static const prog_char kSmodLabels[] PROGMEM =
+  "noneskipfwd rev dir rjmp"
+  "jmp1jmp2jmp3jmp4jmp5jmp6jmp7jmp8";
 
 // Lockable indices that store an int8_t (centered at 0).
 static inline uint8_t IsSignedLockable(uint8_t lockable) {
@@ -380,6 +392,19 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     if (ui.switch_held(s)) { held_sr = s; break; }
   }
 
+  // SMOD cell — per-step only (no track default). Pot 0..127 → 0..13
+  // value space; written into step_flags bits 2..5 of the held step.
+  if (lockable == kSmodCellSentinel) {
+    if (held_sr != 0xff) {
+      uint8_t held_step = 7 - held_sr;
+      uint8_t smod = ScalePot(value, kSmodCount - 1);
+      SetStepSmod(tr->steps[held_step], smod);
+      step_lock_dirty_ |= (1 << held_step);
+      ui.inhibit_switch(1 << held_sr);
+    }
+    return 1;
+  }
+
   // Merged subs cell — deadzone at 12 o'clock, CCW=repeats 8r..1r, CW=ratchets 1x..8x.
   // 0..55: 8 bands of 7 → 8r..1r. 56..71: deadzone (normal). 72..127: 1x..8x.
   if (lockable == kSubsMergedSentinel) {
@@ -423,9 +448,6 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   } else if (lockable == 11) {
     // fin2 — Osc2 detune, UNIT_INT8 -64..+64.
     mapped = MapPotInt8(value, -64, 64);
-  } else if (lockable == 21) {
-    // GLID — binary on/off.
-    mapped = ScalePot(value, 1);
   } else if (lockable == 3) {
     // BLND (mix) — clamp to crossfade range. Upper half (≥ 64) was reserved
     // for future linear-FM and isn't implemented; the dead range produced
@@ -439,8 +461,11 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   // and the round-5 unipolar env-depth range).
 
   // Config-mapped cells (smth, vamt) push directly to the voicecard.
+  // Empty cells (lockable & patch_addr both 0xff) are no-ops.
   if (lockable == 0xff) {
-    multi.mutable_part(track)->SetValue(patch_addr, mapped, 0);
+    if (patch_addr != 0xff) {
+      multi.mutable_part(track)->SetValue(patch_addr, mapped, 0);
+    }
     return 1;
   }
 
@@ -674,6 +699,27 @@ void SeqStepsPage::UpdateScreen() {
         memcpy_P(&buffer[5], PSTR(" cus"), 4);
       } else {
         buffer[8] = '0';
+      }
+      buffer[9] = ' ';
+      continue;
+    }
+
+    // Empty cell — blank out the value field and skip rendering.
+    if (lockable == 0xff && patch_addr == 0xff) {
+      for (uint8_t k = 5; k <= 9; ++k) buffer[k] = ' ';
+      continue;
+    }
+
+    // SMOD cell — render label of held step's SMOD nibble, or "----" when
+    // no step is held (no track-level default for SMOD).
+    if (lockable == kSmodCellSentinel) {
+      buffer[5] = ' ';
+      if (held_step != 0xff) {
+        uint8_t smod = StepSmod(tr.steps[held_step]);
+        if (smod >= kSmodCount) smod = 0;
+        memcpy_P(&buffer[5], kSmodLabels + smod * 4, 4);
+      } else {
+        buffer[5] = '-'; buffer[6] = '-'; buffer[7] = '-'; buffer[8] = '-';
       }
       buffer[9] = ' ';
       continue;
