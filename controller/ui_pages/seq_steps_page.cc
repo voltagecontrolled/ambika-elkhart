@@ -17,6 +17,7 @@
 #include "controller/ui_pages/seq_steps_page.h"
 
 #include "avrlib/string.h"
+#include "avrlib/time.h"
 #include "common/patch.h"
 #include "controller/display.h"
 #include "controller/leds.h"
@@ -63,6 +64,17 @@ uint8_t SeqStepsPage::substep_count_ = 8;
 
 /* static */
 uint8_t SeqStepsPage::substep_pot0_entry_ = 0xff;
+
+/* static */
+uint8_t SeqStepsPage::last_tap_step_ = 0xff;
+
+/* static */
+uint16_t SeqStepsPage::last_tap_ms_ = 0;
+
+// Hold ≥ this many ms = peek (no release toggle).
+static const uint16_t kStepLongPressMs = 250;
+// Two taps on the same step within this many ms = clear locks.
+static const uint16_t kStepDoubleTapMs = 300;
 
 // 2-char semitone names; index = semitone * 2.
 static const prog_char kNoteNames[] PROGMEM =
@@ -456,7 +468,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   return 1;
 }
 
-// Step toggle on release. Suppressed if a pot moved while this step was held.
+// Step toggle on release. Suppressed if the press was a long-hold (peek).
+// Two short taps on the same step within kStepDoubleTapMs clear all locks
+// for that step and undo the first tap's toggle.
 // In substep editor mode, toggles substep_bits instead of step_flags.
 /* static */
 uint8_t SeqStepsPage::OnKey(uint8_t key) {
@@ -468,12 +482,28 @@ uint8_t SeqStepsPage::OnKey(uint8_t key) {
     s.substep_bits ^= (1 << key);
     return 1;
   }
-  if (step_lock_dirty_ & (1 << key)) {
-    step_lock_dirty_ &= ~(1 << key);
+  // step_lock_dirty_ check intentionally omitted: Ui::inhibit_switch (set by
+  // OnPot during a lock edit) already suppresses the release event for the
+  // held press, so the dirty bit was leftover residue that ate the next
+  // normal tap on the same step — breaking double-tap-to-clear.
+  uint8_t sr = 7 - key;
+  uint16_t hold = ui.last_hold_ms(sr);
+  ui.clear_last_hold_ms(sr);
+  if (hold >= kStepLongPressMs) {
+    last_tap_step_ = 0xff;
     return 1;
   }
+  uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
   SeqStep& s = sequencer.mutable_track(track)->steps[key];
+  if (last_tap_step_ == key && (now - last_tap_ms_) < kStepDoubleTapMs) {
+    s.lock_flags[0] = s.lock_flags[1] = s.lock_flags[2] = s.lock_flags[3] = 0;
+    s.step_flags ^= kStepFlagOn;
+    last_tap_step_ = 0xff;
+    return 1;
+  }
   s.step_flags ^= kStepFlagOn;
+  last_tap_step_ = key;
+  last_tap_ms_ = now;
   return 1;
 }
 

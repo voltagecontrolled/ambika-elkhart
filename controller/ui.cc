@@ -20,6 +20,7 @@
 #include "controller/ui.h"
 
 #include "avrlib/string.h"
+#include "avrlib/time.h"
 
 #include "controller/display.h"
 #include "controller/leds.h"
@@ -170,6 +171,8 @@ UiPageNumber Ui::active_page_;
 UiPageNumber Ui::most_recent_non_system_page_;
 uint8_t Ui::cycle_;
 uint8_t Ui::inhibit_switch_;
+uint16_t Ui::switch_press_ms_[8];
+uint16_t Ui::switch_last_hold_ms_[8];
 Encoder Ui::encoder_;
 Switches Ui::switches_;
 Pots Ui::pots_;
@@ -236,9 +239,15 @@ void Ui::Poll() {
   
   if (!(cycle_ & 31)) {
     switches_.Read();
+    uint16_t now_ms = static_cast<uint16_t>(avrlib::milliseconds());
     uint8_t mask = 1;
     for (uint8_t i = 0; i < 8; ++i) {
+      if (switches_.lowered(i)) {
+        switch_press_ms_[i] = now_ms;
+        switch_last_hold_ms_[i] = 0;
+      }
       if (switches_.raised(i)) {
+        switch_last_hold_ms_[i] = now_ms - switch_press_ms_[i];
         if ((inhibit_switch_ & mask)) {
           inhibit_switch_ ^= mask;
         } else {

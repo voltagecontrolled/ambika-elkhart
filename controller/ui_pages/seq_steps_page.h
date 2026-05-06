@@ -40,6 +40,12 @@ class SeqStepsPage : public UiPage {
   static uint8_t substep_count_;      // active slot count for current edit session
   static uint8_t substep_pot0_entry_; // 0xff = first pot0 event not yet seen; pickup guard
 
+  // Most-recent tapped step (0xff = none) and its release ms, for
+  // double-tap-to-clear. A second tap on the same step within the window
+  // clears all lock_flags and cancels the first tap's toggle.
+  static uint8_t last_tap_step_;
+  static uint16_t last_tap_ms_;
+
   DISALLOW_COPY_AND_ASSIGN(SeqStepsPage);
 };
 

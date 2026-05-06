@@ -210,7 +210,13 @@ class Ui {
     return !(switches_.state(i) & 0x01);
   }
   static void inhibit_switch(uint8_t mask) { inhibit_switch_ |= mask; }
-  
+
+  // Hold duration of the most recently completed press on switch sr-index `i`.
+  // Updated on the debounced release edge; reset to 0 on the next press of
+  // the same switch. Pages query this in OnKey to distinguish tap from hold.
+  static uint16_t last_hold_ms(uint8_t i) { return switch_last_hold_ms_[i]; }
+  static void clear_last_hold_ms(uint8_t i) { switch_last_hold_ms_[i] = 0; }
+
  private:
   static UiPageNumber active_page_;
   static UiPageNumber most_recent_non_system_page_;
@@ -219,6 +225,8 @@ class Ui {
   static Encoder encoder_;
   static Switches switches_;
   static uint8_t inhibit_switch_;
+  static uint16_t switch_press_ms_[8];
+  static uint16_t switch_last_hold_ms_[8];
   static Pots pots_;
   static UiState state_;
   static EventQueue<8> queue_;
