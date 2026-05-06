@@ -255,6 +255,17 @@ void Ui::Poll() {
     }
   }
 
+  // Hold-S7 + encoder turn = cycle Transport ↔ Mixer page.
+  // SR-index 1 = SWITCH_7 (mapping: control = 7 - sr_index).
+  if (switches_.low(1) && increment != 0) {
+    inhibit_switch_ |= (1 << 1);
+    UiPageNumber target =
+        (active_page_ == PAGE_SEQ_MIXER) ? PAGE_MULTI : PAGE_SEQ_MIXER;
+    display.Clear();
+    ShowPage(target);
+    increment = 0;
+  }
+
   if (increment != 0) {
     uint8_t control_id = 0;
     if (switches_.low(0)) {
