@@ -164,6 +164,7 @@ struct SeqGlobal {
   uint8_t active_track;  // 0–5
   uint8_t lock_page;     // 0=Voice1, 1=Voice2, 2=Step
   uint8_t held_step;     // 0xff=none; step index during parameter lock edit
+  uint16_t master_tick;  // ticks since last Reset; gates mrst trigger
 };
 
 static const uint8_t kSeqStopped = 0;

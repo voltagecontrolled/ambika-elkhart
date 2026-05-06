@@ -38,6 +38,7 @@ static const prog_MultiData init_settings PROGMEM = {
   0,    // clock_groove_template
   0,    // clock_groove_amount
   4,    // clock_latch
+  0,    // master_reset_steps (off)
 };
 
 /* static */

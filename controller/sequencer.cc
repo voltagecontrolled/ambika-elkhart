@@ -200,10 +200,24 @@ void Sequencer::Init() {
   global_.active_track = 0;
   global_.lock_page    = 0;
   global_.held_step    = 0xff;
+  global_.master_tick  = 0;
 }
 
 void Sequencer::Clock(uint8_t ticks) {
   if (global_.transport != kSeqPlaying) return;
+
+  // Master Reset: if mrst != 0, reset all tracks every (mrst + 1)
+  // undivided steps. Stored value k → period of (k + 1) steps; k = 0 = off.
+  uint8_t mrst = multi.data().master_reset_steps;
+  if (mrst != 0) {
+    global_.master_tick += ticks;
+    uint16_t threshold =
+        static_cast<uint16_t>(mrst + 1) * kNumTicksPerStep;
+    if (global_.master_tick >= threshold) {
+      Reset();
+      return;
+    }
+  }
 
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     SeqTrack& tr = tracks_[t];
@@ -481,6 +495,7 @@ void Sequencer::Reset() {
     uint8_t period = pgm_read_byte(kRateValues + cdiv_idx);
     tracks_[t].shadow[kShdwTICK] = period;
   }
+  global_.master_tick = 0;
 }
 
 void Sequencer::Stop() {

@@ -56,6 +56,10 @@ uint8_t MultiPage::OnPot(uint8_t index, uint8_t value) {
     multi.SetValue(PRM_MULTI_CLOCK_GROOVE_AMOUNT, value);
     return 1;
   }
+  if (index == 2) {
+    multi.SetValue(PRM_MULTI_MASTER_RESET, value);
+    return 1;
+  }
   return 0;
 }
 
@@ -108,6 +112,18 @@ void MultiPage::UpdateScreen() {
   memcpy_P(&buffer[11], PSTR("swng"), 4);
   UnsafeItoa<uint8_t>(multi.data().clock_groove_amount, 3, &buffer[15]);
   AlignRight(&buffer[15], 3);
+  buffer[20] = kDelimiter;
+  memcpy_P(&buffer[21], PSTR("mrst"), 4);
+  {
+    uint8_t mrst = multi.data().master_reset_steps;
+    if (mrst == 0) {
+      memcpy_P(&buffer[25], PSTR(" off"), 4);
+    } else {
+      buffer[25] = ' ';
+      UnsafeItoa<uint8_t>(mrst + 1, 3, &buffer[26]);
+      AlignRight(&buffer[26], 3);
+    }
+  }
 
   buffer = display.line_buffer(1) + 1;
   memcpy_P(&buffer[0],  PSTR("play "), 5);

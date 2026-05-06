@@ -26,6 +26,9 @@ struct MultiData {
   uint8_t clock_groove_template;
   uint8_t clock_groove_amount;
   uint8_t clock_latch;
+  // 0 = off (free-run), 1..127 = reset every (value + 1) undivided steps,
+  // i.e. encoded value k maps to a period of (k + 1) steps for k >= 1.
+  uint8_t master_reset_steps;
 };
 
 typedef MultiData PROGMEM prog_MultiData;
@@ -35,6 +38,7 @@ enum MultiParameter {
   PRM_MULTI_CLOCK_GROOVE_TEMPLATE = 1,
   PRM_MULTI_CLOCK_GROOVE_AMOUNT = 2,
   PRM_MULTI_CLOCK_LATCH = 3,
+  PRM_MULTI_MASTER_RESET = 4,
   // Legacy addresses kept for parameter table compat — not wired to active pages.
   PRM_MULTI_MIDI_CHANNEL = 0,
   PRM_MULTI_KEYRANGE_LOW = 1,
