@@ -221,38 +221,31 @@ void Ui::Poll() {
   int8_t increment = encoder_.Read();
   uint8_t clicked = encoder_.clicked();
 
-  // Hold-S5 + encoder = global transport chord.
-  // Click toggles play/pause; CW = Reset; CCW = Stop, double-CCW within
-  // window = Panic (Kill all voices). Inhibit only set when the chord
-  // actually fires, so a plain S5 press still toggles step / switches mode.
-  if (switches_.low(3)) {
-    if (clicked) {
-      inhibit_switch_ |= (1 << 3);
+  // Hold-S5 + encoder turn = global transport chord.
+  // CW = toggle Play/Pause; CCW = Stop, double-CCW within window = Panic
+  // (Kill all voices). Encoder click is not consumed here so S5 + click
+  // remains available to the page handler (e.g. SUBS editor on step 5).
+  if (switches_.low(3) && increment != 0) {
+    inhibit_switch_ |= (1 << 3);
+    uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+    if (increment < 0) {
+      if (transport_ccw_armed_ && (now - transport_ccw_arm_ms_) < 400) {
+        sequencer.Panic();
+        transport_ccw_armed_ = 0;
+      } else {
+        sequencer.Stop();
+        transport_ccw_armed_ = 1;
+        transport_ccw_arm_ms_ = now;
+      }
+    } else {
       if (sequencer.global().transport == kSeqStopped) {
         sequencer.Play();
       } else {
         sequencer.Pause();
       }
-      clicked = 0;
+      transport_ccw_armed_ = 0;
     }
-    if (increment != 0) {
-      inhibit_switch_ |= (1 << 3);
-      uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
-      if (increment < 0) {
-        if (transport_ccw_armed_ && (now - transport_ccw_arm_ms_) < 400) {
-          sequencer.Panic();
-          transport_ccw_armed_ = 0;
-        } else {
-          sequencer.Stop();
-          transport_ccw_armed_ = 1;
-          transport_ccw_arm_ms_ = now;
-        }
-      } else {
-        sequencer.Reset();
-        transport_ccw_armed_ = 0;
-      }
-      increment = 0;
-    }
+    increment = 0;
   }
 
   // Hold-S7 + encoder turn = cycle Transport ↔ Mixer page.
