@@ -11,9 +11,8 @@ envelope are the original contribution.
 
 ## Status
 
-Iterating on hardware. v2.0 builds and runs; basic transport and step
-triggering work; many features from the spec are stubbed pending future
-phases. See `CHANGELOG.md` for the as-built record and known issues.
+First public release: v4.0. Iterating on hardware. See `CHANGELOG.md` for
+the as-built record and `docs/release-notes/` for what's in each release.
 
 ## Documentation
 
@@ -53,3 +52,5 @@ GPLv3, inherited from upstream Mutable Instruments / YAM. Contains a variant
 of Peter Knight's Cantarino formant-synthesis algorithm.
 
 Original developer (upstream): Emilie Gillet (emilie.o.gillet@gmail.com).
+
+Developed with AI assistance (Claude Code).

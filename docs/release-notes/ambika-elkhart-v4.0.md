@@ -1,17 +1,11 @@
 # ambika-elkhart v4.0
 
-> **Draft.** First public release of elkhart — polymetric 6-track groovebox
-> firmware for the Ambika, with parameter locks, per-step mutation, and
-> probability. Targets the Michigan Synth Works Xena motherboard + SVF
-> voicecards. Fork of YAM (`bjoeri/ambika`).
->
-> Items still tracked on the [v4.0 milestone](https://github.com/voltagecontrolled/ambika-elkhart/milestone/1)
-> will fill in the **Highlights** and **Known limitations** sections as they
-> close.
+First public release of elkhart — polymetric 6-track groovebox firmware for
+the Ambika, with parameter locks, per-step mutation, and probability.
+Targets the Michigan Synth Works Xena motherboard + SVF voicecards. Fork of
+YAM (`bjoeri/ambika`).
 
 ## Highlights
-
-<!-- Seed list — finalize once milestone closes. -->
 
 - **Per-step parameter locks across three sub-pages.** 28 lockable parameters
   spanning step behavior (probability, rate, repeat, glide, mutation), voice
@@ -25,16 +19,24 @@
   repeats and ratchets.
 - **Performance mixer (S6b).** Per-voice volume with pickup/catch, three
   modes: Mute-Skip, Mute-Active (kill on toggle), Solo.
-- **Transport STOP + panic (S7a).** Single-tap = pause + reset; double-tap
-  within 300 ms = panic kill all six voices.
+- **Transport page (S7a).** STOP single-tap = pause + reset; double-tap
+  within 300 ms = panic kill all six voices. Master Reset (`mrst`)
+  re-aligns all track playheads to the downbeat.
+- **Transport gestures from any screen.** Hold-S7 + encoder turns transport
+  into a global mixer/transport shortcut; dedicated S7 mixer shortcut for
+  fast access during performance.
 - **Polymetric clock divisions.** Independent CDIV per track; tracks line up
-  on the downbeat after Reset regardless of CDIV.
-
-<!-- Add as 4.0 issues close: patch saving (#10), mod matrix (#11), LFO4 clock
-sync (#12), iterative probability modes (#6), mixer cosmetic fixes (#8),
-master reset (#9), transport S7a enhancements (#2), RATE/CDIV ratio display
-(#14), encoder-click focused-edit (#15), hold-step polish (#16), wavefolder
-(#18). -->
+  on the downbeat after Reset regardless of CDIV. RATE and CDIV display as
+  human-readable ratios (`1/4`, `1/3`, `1/2`, `2/3`, `3/4`, `1/1`, `3/2`,
+  `2/1`) instead of raw indices.
+- **Patch saving (S8a).** Save and load patches directly from the
+  performance page; firmware upgrade moves to S8b.
+- **Hold-step polish.** Long-press to enter step edit, double-tap to clear
+  a locked step, consistent across all three lock sub-pages.
+- **Probability scoping.** Probability gates only step fires, not the
+  substeps within a triggered step — clearer rhythmic behavior.
+- **Track scale + substep mutations.** Track scale quantization now applies
+  to mutated pitches generated within substeps.
 
 ## Compatibility
 
@@ -68,10 +70,8 @@ section of the user manual for the full flash procedure.
 
 ## Known limitations
 
-<!-- Seed list — refine as 4.0 milestone work resolves. -->
-
 - Track relationships (cross-track transpose, clock, reset, accent) beyond
-  the v4.0 mod-matrix scope are still pending.
+  the v4.0 scope are deferred to v5.0.
 - Shadow playhead + Voltage Block / Elektron hold modes (`LTCK`) deferred.
 - Audio-rate voice LFO + pitch tracking deferred.
 - Some Page 1 / 2 / 3 knob assignments are placeholder pending empirical
@@ -83,7 +83,7 @@ section of the user manual for the full flash procedure.
   (oscillators, sub/transient layer, SVF) is YAM's work.
 - **Mutable Instruments / Émilie Gillet** — the original Ambika firmware
   and hardware design.
-- AI-assisted development credited in `README.md`.
+- Developed with AI assistance (Claude Code).
 
 ## License
 
