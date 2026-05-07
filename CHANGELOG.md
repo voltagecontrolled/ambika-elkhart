@@ -12,6 +12,60 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Save/Load snapshots to SD card (2026-05-06)
+
+**Flash:** controller 60,004 B (91.6%, +3.4 KB from previous entry).
+**RAM:** 3,822 B (93.3%, +6 B for SystemPage statics). Controller only.
+
+Resolves issue #10. New `SystemPage` (Save/Load/Info menu) reachable from
+S8 captures the full instrument state — all 6 SeqTracks (steps, pattern,
+defaults, config; transient `shadow` is excluded) plus MultiData — to a
+fixed-size 2,033-byte file at `/SNAPSHOT/NN.SNP`, slot 00–63. Magic
+`ELKS` + version + 8-bit checksum; round-trip verified by checksum on
+load. Bypasses the broken legacy `Storage::Save()` RIFF path entirely
+(`Part::raw_patch_data()` returns NULL post-Phase 3, and there is no
+reverse marshaller from legacy `Patch` bytes back into `SeqTrack`).
+
+UI shows `Cur: NN` (slot the running state was last loaded from / saved
+to) and `New: NN *` (encoder-hovered slot, `*` if occupied). Save with
+overwrite-confirm dialog; Load on empty slot reports "empty". `Cur:` is
+RAM-only — `--` again at boot.
+
+- `controller/snapshot.{h,cc}` — codec.
+- `controller/ui_pages/system_page.{h,cc}` — UI page with internal
+  MENU/SAVE/LOAD modes, dialog wiring.
+- `controller/storage.h` — `friend class Snapshot;` for `file_` / `fs_`
+  access.
+- `controller/ui.cc` — `PAGE_LIBRARY` registry slot repurposed to point
+  at `SystemPage`; `default_most_recent_page_in_group[7]` (S8 entry)
+  retargeted from `PAGE_OS_INFO` to `PAGE_LIBRARY`. `OsInfoPage` still
+  reachable via S7 from the System menu.
+
+#### SPI bus contention
+
+Voicecards and SD card share one SPI bus, arbitrated by
+`scoped_resource<SdCardSession>`. The Timer2 ISR fires
+`voicecard_tx.SendBytes()` unconditionally (no `sd_card_busy_` check),
+so any voicecard write queued during an SD session either clobbers the
+SD card's chip-select mid-transfer or is dispatched onto a bus that's
+mode-configured for the SD card — corrupting both. Two consequences for
+this feature:
+
+- `Snapshot::Load` holds `SdCardSession` in an explicit inner block,
+  so `sequencer.Reset()` and `multi.Touch()` (both queue voicecard SPI
+  traffic) run after the session ends, not inside it.
+- `Save` calls `sequencer.Stop()` and `Load` calls `sequencer.Panic()`
+  before opening the file. `BeginSdCard`'s `FlushBuffers` then waits
+  for the queued `Release`/`Kill` writes to drain before reconfiguring
+  SPI. Transport stays stopped after the operation; user presses Play
+  to resume.
+
+The clean fix would be to make `voicecard_tx.SendBytes()` short-circuit
+when `sd_card_busy_` is set, but that lives in a hot ISR path used by
+every voicecard-bound write in the firmware and is out of scope for
+this initial save/load landing. See `docs/planning/saveload.md` for
+full design notes.
+
 ### Per-step glid + sfx step-FX + S5 transport refinement (2026-05-05)
 
 **Flash:** controller 56,644 B (86.4%, +584 B). **RAM:** 3,816 B (93.2%,

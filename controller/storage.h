@@ -81,8 +81,12 @@ typedef void (*ObjectFn)(const StorageLocation& location);
 
 static const uint16_t kFsInitTimeout = 750;
 
+class Snapshot;
+
 class Storage {
  public:
+  friend class Snapshot;
+
   Storage() { }
   
   static void Init();

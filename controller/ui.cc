@@ -37,6 +37,7 @@
 #include "controller/ui_pages/seq_steps_page.h"
 #include "controller/ui_pages/seq_track_page.h"
 #include "controller/ui_pages/parameter_editor.h"
+#include "controller/ui_pages/system_page.h"
 #include "controller/voicecard_tx.h"
 
 namespace ambika {
@@ -129,9 +130,9 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_PERFORMANCE, 6, 0x0f,
   },
 
-  // PAGE_LIBRARY: replaced by OS Info page for firmware flashing.
+  // PAGE_LIBRARY: repurposed as the System page (Save/Load/Info menu).
   { PAGE_LIBRARY,
-    &OsInfoPage::event_handlers_,
+    &SystemPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0, },
     PAGE_LIBRARY, 7, 0xf0,
   },
@@ -163,7 +164,7 @@ static const prog_uint8_t default_most_recent_page_in_group[9] PROGMEM = {
   PAGE_PART_SEQUENCER,     // S5: sequencer mode (lock pages)
   PAGE_PART,               // S6: per-track settings
   PAGE_MULTI,              // S7: transport
-  PAGE_OS_INFO,            // S8
+  PAGE_LIBRARY,            // S8: System page (Save/Load/Info menu)
   PAGE_SYSTEM_SETTINGS
 };
 
