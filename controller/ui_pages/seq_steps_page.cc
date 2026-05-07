@@ -264,13 +264,28 @@ uint8_t SeqStepsPage::OnClick() {
 // Encoder turn walks cursor across 24 cells; spills to the previous/next
 // page (registry order) when stepping past the boundary.
 //
-// |increment| >= 8 indicates the S2/S8 page-jump modifier — short-circuit
-// the cursor walk and page out immediately so this page (with 24 cells)
-// doesn't absorb up to 3 modifier clicks before letting them through.
+// |increment| >= 8 indicates the S2/S8 page-jump modifier — step through
+// the 3 lock pages (Voice1 / Voice2 / Step) one at a time, only spilling
+// to the next/prev registry page when crossing the 0..2 boundary.
 /* static */
 uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
   if (increment >= 8 || increment <= -8) {
-    ui.ShowPageRelative(increment > 0 ? 1 : -1);
+    uint8_t lock_page = sequencer.global().lock_page;
+    if (increment > 0) {
+      if (lock_page >= 2) {
+        ui.ShowPageRelative(1);
+        return 1;
+      }
+      ++lock_page;
+    } else {
+      if (lock_page == 0) {
+        ui.ShowPageRelative(-1);
+        return 1;
+      }
+      --lock_page;
+    }
+    sequencer.mutable_global()->lock_page = lock_page;
+    cursor_ = lock_page << 3;
     return 1;
   }
   int8_t next = static_cast<int8_t>(cursor_) + increment;
