@@ -16,15 +16,9 @@ the as-built record and `docs/release-notes/` for what's in each release.
 
 ## Documentation
 
-- **`CHANGELOG.md`** — authoritative as-built architecture, phase history
-- **`docs/planning/SPEC.md`** — original design intent (⚠️ diverged from
-  implementation; see banner at top of file)
-- **`docs/planning/sequencer.md`** — topic spec for the per-step parameter
-  lock system + sequencer mode UI
-- **`docs/planning/voice_envelopes.md`** — topic spec for the as-built
-  3-envelope voice architecture
-- **`docs/planning/BOARD.md`** — Now / Next / Later work board
-- **`docs/wiki/MANUAL.md`** — user-facing manual draft
+- **[Wiki](https://github.com/voltagecontrolled/ambika-elkhart/wiki)** —
+  user manual: installation, controls, sequencer, parameter locks
+- **`CHANGELOG.md`** — as-built architecture and per-release history
 
 ## Releases
 

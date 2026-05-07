@@ -49,24 +49,26 @@ YAM (`bjoeri/ambika`).
 
 This release ships with:
 
-- Controller `kSystemVersion = 0x34`
-- Voicecard `kSystemVersion = 0x31`
+- Controller `kSystemVersion = 0x40`
+- Voicecard `kSystemVersion = 0x40`
 
 The OS Info page reports these — both must match what's listed here after
 flashing. Mismatched versions can corrupt the per-step snapshot protocol.
 
 ## Flashing
 
-Two binaries are attached to this release:
+A single zip is attached to this release:
 
-- `AMBIKA.BIN` — controller (motherboard) firmware
-- `VOICE.BIN` — voicecard firmware (copy to `VOICE1.BIN` … `VOICE6.BIN` on the
-  SD card root, one per voice slot you want to flash)
+- `ambika-elkhart-v4.0-firmware.zip` — contains `AMBIKA.BIN` (controller)
+  and `VOICE1.BIN` … `VOICE6.BIN` (voicecards, one per slot). The six
+  voicecard files are byte-identical; unzip the whole archive onto the SD
+  card root.
 
 See the [Wiki — Firmware Installation](https://github.com/voltagecontrolled/ambika-elkhart/wiki)
 section of the user manual for the full flash procedure.
 
-`SHA256SUMS` is attached for integrity verification.
+`SHA256SUMS` is attached separately for integrity verification of the
+unzipped binaries.
 
 ## Known limitations
 

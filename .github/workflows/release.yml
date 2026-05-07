@@ -59,12 +59,16 @@ jobs:
 
       - name: Stage release artifacts
         run: |
-          mkdir -p release
-          cp build/ambika_controller/ambika_controller.bin release/AMBIKA.BIN
-          cp build/ambika_voicecard/ambika_voicecard.bin release/VOICE.BIN
-          cd release
-          sha256sum AMBIKA.BIN VOICE.BIN > SHA256SUMS
-          ls -la
+          STAGE="release/stage"
+          mkdir -p "$STAGE" release
+          cp build/ambika_controller/ambika_controller.bin "$STAGE/AMBIKA.BIN"
+          for i in 1 2 3 4 5 6; do
+            cp build/ambika_voicecard/ambika_voicecard.bin "$STAGE/VOICE${i}.BIN"
+          done
+          ZIP="ambika-elkhart-${{ steps.vars.outputs.version }}-firmware.zip"
+          (cd "$STAGE" && zip -X "../$ZIP" AMBIKA.BIN VOICE1.BIN VOICE2.BIN VOICE3.BIN VOICE4.BIN VOICE5.BIN VOICE6.BIN)
+          (cd "$STAGE" && sha256sum AMBIKA.BIN VOICE1.BIN VOICE2.BIN VOICE3.BIN VOICE4.BIN VOICE5.BIN VOICE6.BIN > ../SHA256SUMS)
+          ls -la release
 
       - name: Create draft release
         uses: softprops/action-gh-release@v2
@@ -74,6 +78,5 @@ jobs:
           body_path: ${{ steps.vars.outputs.notes }}
           draft: true
           files: |
-            release/AMBIKA.BIN
-            release/VOICE.BIN
+            release/ambika-elkhart-${{ steps.vars.outputs.version }}-firmware.zip
             release/SHA256SUMS
