@@ -162,8 +162,16 @@ void SystemPage::RenderSlot(char* buf, uint8_t slot) {
 
 /* static */
 void SystemPage::UpdateScreen() {
-  char* l0 = display.line_buffer(0) + 1;
-  char* l1 = display.line_buffer(1) + 1;
+  // Clear both line buffers so residual glyphs from the previously-rendered
+  // page don't bleed into the unused gaps in this page's layout.
+  char* full0 = display.line_buffer(0);
+  char* full1 = display.line_buffer(1);
+  for (uint8_t i = 0; i < kLcdWidth; ++i) {
+    full0[i] = ' ';
+    full1[i] = ' ';
+  }
+  char* l0 = full0 + 1;
+  char* l1 = full1 + 1;
 
   if (mode_ == MODE_MENU) {
     memcpy_P(&l0[0], PSTR("system"), 6);
