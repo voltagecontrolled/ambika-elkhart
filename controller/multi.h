@@ -23,12 +23,20 @@ namespace ambika {
 
 struct MultiData {
   uint8_t clock_bpm;
-  uint8_t clock_groove_template;
-  uint8_t clock_groove_amount;
+  uint8_t clock_groove_template;  // unused since transport-page swng removal
+  uint8_t clock_groove_amount;    // unused since transport-page swng removal
   uint8_t clock_latch;
   // 0 = off (free-run), 1..127 = reset every (value + 1) undivided steps,
   // i.e. encoded value k maps to a period of (k + 1) steps for k >= 1.
   uint8_t master_reset_steps;
+  // MIDI per-track config — appended for snapshot v2 (see snapshot.cc).
+  uint8_t midi_channel[kNumVoices];      // 1..16, default i+1
+  uint8_t midi_only_mask;                // bit N = track N is EXT (MIDI-only)
+  uint8_t midi_clock_mode;               // 0=INT, 1=EXT, 2=OUT, 3=THR
+  // EXT-mode CC# per track. 8 slots/track: idx 0..3 on S5b, idx 4..7 on S5c.
+  // Each slot reuses the existing per-step lockable storage for its value;
+  // this array only holds the user-assigned CC numbers.
+  uint8_t midi_cc_map[kNumVoices][8];
 };
 
 typedef MultiData PROGMEM prog_MultiData;
@@ -122,10 +130,31 @@ class Multi {
     return static_cast<uint8_t*>(static_cast<void*>(&data_));
   }
 
-  static uint8_t internal_clock() { return data_.clock_bpm >= 40; }
+  // True when the internal timer drives the sequencer. Modes 0 (INT) and 2
+  // (OUT) use the internal clock; modes 1 (EXT) and 3 (THR) sync from MIDI
+  // clock-in. BPM gate keeps the original "off if BPM < 40" semantics.
+  static uint8_t internal_clock() {
+    return data_.clock_bpm >= 40 && !(data_.midi_clock_mode & 1);
+  }
 
   static uint8_t part_channel(Part* part) {
     return static_cast<uint8_t>(part - parts_);
+  }
+
+  // MIDI per-track accessors (added for snapshot v2). track_channel returns
+  // the user-assigned MIDI channel in the 1..16 range; subtract 1 for wire.
+  static inline uint8_t track_channel(uint8_t t) {
+    return data_.midi_channel[t];
+  }
+  static inline uint8_t track_is_ext(uint8_t t) {
+    return (data_.midi_only_mask >> t) & 1;
+  }
+  // EXT-slot CC# accessor. slot is 0..7 (first 4 on S5b, last 4 on S5c).
+  static inline uint8_t cc_for_slot(uint8_t t, uint8_t slot) {
+    return data_.midi_cc_map[t][slot];
+  }
+  static inline uint8_t midi_clock_mode() {
+    return data_.midi_clock_mode;
   }
 
   static uint8_t step() { return step_count_; }

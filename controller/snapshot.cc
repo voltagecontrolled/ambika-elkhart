@@ -15,7 +15,11 @@ namespace ambika {
 using namespace avrlib;
 
 static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
-static const uint8_t kVersion = 0x01;
+static const uint8_t kVersion = 0x02;
+// v1 layout had a 5-byte MultiData (bpm, groove_template, groove_amount,
+// clock_latch, master_reset_steps). v2 appends MIDI per-track config. Load
+// path falls back to v1 reads + defaults if the file is older.
+static const uint16_t kMultiDataV1Size = 5;
 
 // Persistent prefix = everything before shadow[]. offsetof is bulletproof
 // against any compiler-side struct alignment changes.
@@ -56,7 +60,7 @@ FilesystemStatus Snapshot::Save(uint8_t slot) {
   STATIC_ASSERT(offsetof(SeqTrack, defaults) == 280);
   STATIC_ASSERT(offsetof(SeqTrack, config)   == 308);
   STATIC_ASSERT(offsetof(SeqTrack, shadow)   == 337);
-  STATIC_ASSERT(sizeof(MultiData) == 5);
+  STATIC_ASSERT(sizeof(MultiData) == 61);
 
   // Stop transport so no step-fires queue voicecard SPI traffic during the
   // SD session. BeginSdCard's FlushBuffers waits for already-queued bytes
@@ -132,6 +136,7 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
   sequencer.Panic();
 
   FilesystemStatus result = FS_OK;
+  uint8_t snapshot_version = kVersion;  // populated inside the SD block
   {
     scoped_resource<SdCardSession> session;
     Storage::file_.Close();
@@ -154,11 +159,16 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       return FS_DISK_ERROR;
     }
     if (header[0] != kMagic[0] || header[1] != kMagic[1] ||
-        header[2] != kMagic[2] || header[3] != kMagic[3] ||
-        header[4] != kVersion) {
+        header[2] != kMagic[2] || header[3] != kMagic[3]) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
+    // Accept v1 and v2. v1 has a 5-byte MultiData; v2 appends MIDI fields.
+    if (header[4] != kVersion && header[4] != 0x01) {
+      Storage::file_.Close();
+      return FS_DISK_ERROR;
+    }
+    snapshot_version = header[4];
     for (uint8_t i = 0; i < 5; ++i) checksum += header[i];
 
     for (uint8_t t = 0; t < kNumVoices; ++t) {
@@ -172,12 +182,22 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
     }
 
     uint8_t* mp = multi.mutable_raw_data();
-    if (Storage::file_.Read(mp, sizeof(MultiData), &got) != FS_OK
-        || got != sizeof(MultiData)) {
+    uint16_t multi_read_size = (snapshot_version == 0x01)
+        ? kMultiDataV1Size : sizeof(MultiData);
+    if (Storage::file_.Read(mp, multi_read_size, &got) != FS_OK
+        || got != multi_read_size) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
-    for (uint8_t i = 0; i < sizeof(MultiData); ++i) checksum += mp[i];
+    for (uint16_t i = 0; i < multi_read_size; ++i) checksum += mp[i];
+    if (snapshot_version == 0x01) {
+      // v1 file: zero the appended MIDI region; populate defaults below if
+      // checksum validates. v2 defaults come from InitSettings on first re-save.
+      uint8_t* tail = mp + kMultiDataV1Size;
+      for (uint16_t i = 0; i < sizeof(MultiData) - kMultiDataV1Size; ++i) {
+        tail[i] = 0;
+      }
+    }
 
     uint8_t expected;
     if (Storage::file_.Read(&expected, 1, &got) != FS_OK || got != 1) {
@@ -193,6 +213,20 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
 
   if (result != FS_OK) {
     return result;
+  }
+
+  if (snapshot_version == 0x01) {
+    // Populate v2 MIDI defaults for snapshots that pre-date the schema.
+    // Mirrors the static init_settings in multi.cc.
+    MultiData* d = multi.mutable_data();
+    for (uint8_t i = 0; i < kNumVoices; ++i) {
+      d->midi_channel[i] = i + 1;
+      for (uint8_t c = 0; c < 8; ++c) {
+        d->midi_cc_map[i][c] = 0xff;  // off / unassigned
+      }
+    }
+    d->midi_only_mask = 0;
+    d->midi_clock_mode = 2;  // OUT
   }
 
   // Discard transient playhead state and re-sync transport.
