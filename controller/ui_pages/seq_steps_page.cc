@@ -21,6 +21,7 @@
 #include "common/patch.h"
 #include "controller/display.h"
 #include "controller/leds.h"
+#include "controller/midi_dispatcher.h"
 #include "controller/multi.h"
 #include "controller/resources.h"
 #include "controller/sequencer.h"
@@ -392,6 +393,31 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   }
 
   uint8_t page = sequencer.global().lock_page;
+
+  // EXT mode replaces S5b/S5c with the MIDI CC page. Pots 0..3 set the CC#
+  // for the page's 4 slots; pots 4..7 set the lockable value (which is the
+  // CC value sent at fire time). Slots 0..3 live on S5b (page 1) and slots
+  // 4..7 on S5c (page 2). The lockable storage is shared with INT-mode
+  // synth values — same bytes, different interpretation.
+  uint8_t ext_value_mode = 0;
+  if (multi.track_is_ext(track) && (page == 1 || page == 2)) {
+    uint8_t slot_base = (page - 1) * 4;
+    if (index < 4) {
+      // Top row: CC#. Pot fully CCW (value 0) → 0xff (off / unassigned),
+      // skipping all emit. Pot 1..127 → CC 1..127 directly. CC 0 (Bank
+      // Select MSB) is intentionally dropped from the dialable range — it's
+      // a routing-only controller and the "off" semantic is more useful.
+      uint8_t cc = (value == 0) ? 0xff : (value & 0x7f);
+      multi.mutable_data()->midi_cc_map[track][slot_base + index] = cc;
+      return 1;
+    }
+    // Bottom row: lockable value. Redirect to cells 0..3 of the active page
+    // (their lockables are the EXT slot storage). Skip cell-specific scaling;
+    // EXT writes 0..254 to make the >> 1 CC emit cover the full 0..127 range.
+    index -= 4;
+    ext_value_mode = 1;
+  }
+
   uint8_t cell = page * 8 + index;
   // Touching a knob brings the cursor to it.
   cursor_ = cell;
@@ -450,9 +476,12 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     return 1;
   }
 
-  // Per-cell pot scaling.
+  // Per-cell pot scaling. EXT mode bypasses all of this and just doubles
+  // the pot value so storage byte 0..254 maps to MIDI CC 0..127.
   uint8_t mapped = value;
-  if (lockable == 1 || lockable == 5) {
+  if (ext_value_mode) {
+    mapped = value << 1;
+  } else if (lockable == 1 || lockable == 5) {
     // WAVE1 / WAVE2: skip CZ resonant variants (indices 6..14 = silence).
     mapped = MapWaveform(value);
   } else if (lockable == 27) {
@@ -505,6 +534,27 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     if (lockable >= 24 && lockable <= 27) {
       uint8_t p3_addr = pgm_read_byte(&kPage3PatchAddrs[lockable - 24]);
       multi.mutable_part(track)->SetValue(p3_addr, mapped, 0);
+    }
+  }
+
+  // Live MIDI CC emit on EXT tracks for the cells that route to MIDI:
+  //   • S5a VAMT (lockable 4) → CC 1 (Mod Wheel)
+  //   • S5a GLID (lockable 21) → Pitch Bend (14-bit)
+  //   • S5b/S5c EXT slots (this OnPot was redirected via ext_value_mode)
+  // Fires whether the user is editing a step lock or the track default so the
+  // pot sweep is audible on external gear in both cases.
+  if (multi.track_is_ext(track)) {
+    uint8_t ch = (multi.track_channel(track) - 1) & 0x0f;
+    uint8_t v7 = mapped >> 1;
+    if (ext_value_mode) {
+      uint8_t slot = (page - 1) * 4 + index;
+      uint8_t cc = multi.cc_for_slot(track, slot);
+      if (cc <= 127) midi_dispatcher.SendCc(ch, cc, v7);
+    } else if (lockable == 4) {
+      midi_dispatcher.SendCc(ch, 1, v7);
+    } else if (lockable == 21) {
+      // GLID → CC 5 (Portamento Time). Byte 0..127 → CC 0..127 directly.
+      midi_dispatcher.SendCc(ch, 5, mapped & 0x7f);
     }
   }
   return 1;
@@ -653,6 +703,66 @@ void SeqStepsPage::UpdateScreen() {
     if (ui.switch_held(s)) { held_step = 7 - s; break; }
   }
 
+  // EXT mode replaces the S5b/S5c synth-param view with a MIDI CC page:
+  // 4 vertical cells per page, CC# on line 0, lockable value on line 1.
+  // Page 1 (S5b) shows EXT slots 0..3; page 2 (S5c) shows slots 4..7.
+  // The lockable storage is shared with the INT-mode synth-param bytes —
+  // the value bytes are reinterpreted as CC values on EXT tracks.
+  if (multi.track_is_ext(track) && (page == 1 || page == 2)) {
+    static const prog_uint8_t kExtSlotLockable[8] PROGMEM = {
+      14, 1, 2, 9,    // S5b slots 0..3 (page2[6], page1[1], page1[2], page2[1])
+      24, 10, 25, 8,  // S5c slots 0..3 (page3[0], page2[2], page3[1], page2[0])
+    };
+    uint8_t slot_base = (page - 1) * 4;
+    char* line0 = display.line_buffer(0);
+    char* line1 = display.line_buffer(1);
+    // Labels follow the existing convention: lowercase by default, uppercased
+    // on the cursor cell. cursor_in_page 0..3 = CC# row, 4..7 = val row.
+    for (uint8_t k = 0; k < 4; ++k) {
+      uint8_t slot = slot_base + k;
+      uint8_t lockable = pgm_read_byte(&kExtSlotLockable[slot]);
+      char* buf0 = line0 + k * 10;
+      char* buf1 = line1 + k * 10;
+      if (k != 0) {
+        buf0[0] = kDelimiter;
+        buf1[0] = kDelimiter;
+      }
+      uint8_t cc_selected  = (cursor_in_page == k);
+      uint8_t val_selected = (cursor_in_page == k + 4);
+      buf0[1] = cc_selected ? 'C' : 'c';
+      buf0[2] = cc_selected ? 'C' : 'c';
+      buf0[3] = '#';
+      buf0[4] = ' ';
+      uint8_t cc = multi.cc_for_slot(track, slot);
+      if (cc > 127) {
+        // " off" right-justified in the 4-char value field (positions 5..8).
+        buf0[5] = ' '; buf0[6] = 'o'; buf0[7] = 'f'; buf0[8] = 'f';
+      } else {
+        UnsafeItoa<uint8_t>(cc, 4, &buf0[5]);
+        AlignRight(&buf0[5], 4);
+      }
+      buf1[1] = val_selected ? 'V' : 'v';
+      buf1[2] = val_selected ? 'A' : 'a';
+      buf1[3] = val_selected ? 'L' : 'l';
+      buf1[4] = ' ';
+      uint8_t v;
+      uint8_t lf_byte = lockable >> 3;
+      uint8_t lf_bit  = lockable & 7;
+      if (held_step != 0xff &&
+          (tr.steps[held_step].lock_flags[lf_byte] & (1 << lf_bit))) {
+        const SeqStep& s = tr.steps[held_step];
+        if (lockable < 8)       v = s.page1[lockable];
+        else if (lockable < 16) v = s.page2[lockable - 8];
+        else                    v = s.page3[lockable - 24];
+      } else {
+        v = tr.defaults[lockable];
+      }
+      UnsafeItoa<uint8_t>(v, 4, &buf1[5]);
+      AlignRight(&buf1[5], 4);
+    }
+    return;
+  }
+
   for (uint8_t i = 0; i < 8; ++i) {
     uint8_t cell_global = page * 8 + i;
     uint8_t lockable = pgm_read_byte(&kCellLockable[cell_global]);
@@ -666,10 +776,17 @@ void SeqStepsPage::UpdateScreen() {
     if (row != 0)                buffer[0]  = kDelimiter;
     if ((row + 10) != kLcdWidth) buffer[10] = kDelimiter;
 
-    // Short name — uniform 4-char label at positions 1..4.
-    uint8_t abbr_off = cell_global * 4;
+    // Short name — uniform 4-char label at positions 1..4. On EXT tracks
+    // VAMT relabels to modw (Mod Wheel / CC 1) since its meaning changes.
+    // GLID keeps its label — on EXT it maps to CC 5 (Portamento Time), which
+    // is semantically identical to the internal portamento it controls on INT.
+    const prog_char* abbr_src = kAbbr + cell_global * 4;
+    if (page == 0 && multi.track_is_ext(track) && i == 2) {
+      static const prog_char kModw[] PROGMEM = "modw";
+      abbr_src = kModw;
+    }
     for (uint8_t c = 0; c < 4; ++c) {
-      char ch = pgm_read_byte(kAbbr + abbr_off + c);
+      char ch = pgm_read_byte(abbr_src + c);
       if (i == cursor_in_page && ch >= 'a' && ch <= 'z') {
         ch -= 0x20;
       }
