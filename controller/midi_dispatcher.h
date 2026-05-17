@@ -202,21 +202,15 @@ class MidiDispatcher : public midi::MidiDevice {
   }
 
   static inline void OnStart() {
-    if (mode() == MIDI_OUT_SEQUENCER) {
-      SendNow(0xfa);
-    }
+    SendNow(0xfa);
   }
 
   static inline void OnStop() {
-    if (mode() == MIDI_OUT_SEQUENCER) {
-      SendNow(0xfc);
-    }
+    SendNow(0xfc);
   }
-  
+
   static inline void OnClock() {
-    if (mode() == MIDI_OUT_SEQUENCER) {
-      SendNow(0xf8);
-    }
+    SendNow(0xf8);
   }
   
   static inline void OnProgramLoaded(
