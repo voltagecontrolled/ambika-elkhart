@@ -55,11 +55,13 @@ uint8_t MultiPage::OnPot(uint8_t index, uint8_t value) {
     return 1;
   }
   if (index == 1) {
-    multi.SetValue(PRM_MULTI_CLOCK_GROOVE_AMOUNT, value);
+    // mrst moved from cell 2 → cell 1 after swng was dropped.
+    multi.SetValue(PRM_MULTI_MASTER_RESET, value);
     return 1;
   }
   if (index == 2) {
-    multi.SetValue(PRM_MULTI_MASTER_RESET, value);
+    // CLK 4-state: 0=INT, 1=EXT, 2=OUT, 3=THR. Snap pot to 32-wide bands.
+    multi.mutable_data()->midi_clock_mode = value >> 5;
     return 1;
   }
   return 0;
@@ -105,26 +107,35 @@ uint8_t MultiPage::OnKey(uint8_t key) {
 /* static */
 void MultiPage::UpdateScreen() {
   // Canonical 4-cells-per-row layout (cell width 10, abbr at +1, value at +5).
-  // bpm sits in cell 0 (under top1 pot); swng in cell 1 (under top2 pot).
+  // bpm cell 0 (pot0), mrst cell 1 (pot1, moved from cell 2 after swng was
+  // dropped), clk cell 2 (pot2) cycles INT/EXT/OUT/THR.
   char* buffer = display.line_buffer(0);
   memcpy_P(&buffer[1], PSTR("bpm "), 4);
   UnsafeItoa<uint8_t>(multi.data().clock_bpm, 3, &buffer[5]);
   AlignRight(&buffer[5], 3);
   buffer[10] = kDelimiter;
-  memcpy_P(&buffer[11], PSTR("swng"), 4);
-  UnsafeItoa<uint8_t>(multi.data().clock_groove_amount, 3, &buffer[15]);
-  AlignRight(&buffer[15], 3);
-  buffer[20] = kDelimiter;
-  memcpy_P(&buffer[21], PSTR("mrst"), 4);
+  memcpy_P(&buffer[11], PSTR("mrst"), 4);
   {
     uint8_t mrst = multi.data().master_reset_steps;
     if (mrst == 0) {
-      memcpy_P(&buffer[25], PSTR(" off"), 4);
+      memcpy_P(&buffer[15], PSTR(" off"), 4);
     } else {
-      buffer[25] = ' ';
-      UnsafeItoa<uint8_t>(mrst + 1, 3, &buffer[26]);
-      AlignRight(&buffer[26], 3);
+      buffer[15] = ' ';
+      UnsafeItoa<uint8_t>(mrst + 1, 3, &buffer[16]);
+      AlignRight(&buffer[16], 3);
     }
+  }
+  buffer[20] = kDelimiter;
+  memcpy_P(&buffer[21], PSTR("clk "), 4);
+  {
+    static const char kClockModeLabels[4][4] PROGMEM = {
+      {' ', 'I', 'N', 'T'},
+      {' ', 'E', 'X', 'T'},
+      {' ', 'O', 'U', 'T'},
+      {' ', 'T', 'H', 'R'},
+    };
+    uint8_t m = multi.data().midi_clock_mode & 3;
+    memcpy_P(&buffer[25], kClockModeLabels[m], 4);
   }
 
   buffer = display.line_buffer(1) + 1;
