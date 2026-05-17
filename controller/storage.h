@@ -101,41 +101,10 @@ class Storage {
 
   static uint8_t Checksum(const void* data, uint8_t size);
   
-  static void SysExSend(const StorageLocation& location) {
-    ForEachObject(location, &SysExSendObject);
-  }
-  
-  static FilesystemStatus Snapshot(const StorageLocation& location);
-  static FilesystemStatus PreviousVersion(const StorageLocation& location);
-  static FilesystemStatus NextVersion(const StorageLocation& location);
-  
-  static FilesystemStatus Copy(const StorageLocation& location) {
-    return Save(STORAGE_CLIPBOARD, location);
-  }
-  static FilesystemStatus Paste(const StorageLocation location) {
-    Snapshot(location);
-    return Load(STORAGE_CLIPBOARD, location, 1);
-  }
-  static FilesystemStatus Swap(const StorageLocation location) {
-    Snapshot(location);
-    Save(STORAGE_CLIPBOARD, location);
-    return Load(STORAGE_PREVIOUS_CLIPBOARD, location, 1);
-  }
   static FilesystemStatus Load(const StorageLocation location) {
-    if (has_user_changes(location)) {
-      Snapshot(location);
-    }
     return Load(STORAGE_BANK, location, 1);
   }
-  
-  static FilesystemStatus LoadName(const StorageLocation location) {
-    return Load(STORAGE_BANK, location, 0);
-  }
-  
-  static FilesystemStatus Save(const StorageLocation& location) {
-    return Save(STORAGE_BANK, location);
-  }
-  
+
   static FilesystemStatus Mkfs() {
     scoped_resource<SdCardSession> session;
     InvalidatePendingSysExTransfer();
@@ -173,19 +142,13 @@ class Storage {
     return version_[location.index()];
   }
 
-  static uint8_t has_user_changes(const StorageLocation& location);
-
   static void WriteMultiToEeprom();
   static uint8_t LoadMultiFromEeprom();
 
  private:
   static void InvalidatePendingSysExTransfer();
-  
+
   static void Expand(const prog_char* name, char variable);
-  
-  static FilesystemStatus Save(
-      StorageDir type,
-      const StorageLocation& location);
 
   static FilesystemStatus Load(
       StorageDir type,
@@ -202,9 +165,6 @@ class Storage {
   static void ForEachObject(const StorageLocation& source, ObjectFn object_fn);
   
   static void ReadObject(const StorageLocation& location);
-  static void SysExSendObject(const StorageLocation& location);
-  static void SysExSendRaw(uint8_t, uint8_t, const uint8_t*, uint8_t, bool);
-  static void RIFFWriteObject(const StorageLocation& location);
   static void TouchObject(const StorageLocation& location);
 
   static void SysExParseCommand();

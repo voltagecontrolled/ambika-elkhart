@@ -49,9 +49,6 @@ static const prog_uint16_t units_definitions[UNIT_LAST] PROGMEM = {
   STR_RES_PRM1,       // UNIT_MODULATION_DESTINATION
   STR_RES__OFF,       // UNIT_MODIFIER
   STR_RES_EQUAL,      // UNIT_RAGA
-  STR_RES_STEP_SEQ,   // UNIT_ARP_MODE
-  STR_RES_UP,         // UNIT_ARP_DIRECTION
-  STR_RES_MONO,       // UNIT_POLYPHONY_MODE
   0,                  // UNIT_NOTE
   0,                  // UNIT_TEMPO
   STR_RES_1_1,        // UNIT_CLOCK_RESOLUTION
@@ -701,41 +698,12 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 5,
     STR_RES_PORTAMENTO, STR_RES_PORTAMENTO, STR_RES_PART },
   
-  // 49
-  { PARAMETER_LEVEL_PART,
-    PRM_PART_ARP_MODE,
-    UNIT_ARP_MODE, 0, ARP_SEQUENCER_MODE_LAST - 1,
-    1, 0, 0xff, 102,
-    STR_RES_A_SQ, STR_RES_ARP_SEQ, STR_RES_PART },
-  
-  // 50
-  { PARAMETER_LEVEL_PART,
-    PRM_PART_ARP_DIRECTION,
-    UNIT_ARP_DIRECTION, ARPEGGIO_DIRECTION_UP, ARPEGGIO_DIRECTION_LAST - 1,
-    1, 0, 0xff, 103,
-    STR_RES_DIRECTION, STR_RES_DIRECTION, STR_RES_ARPEGGIO },
-  
-  // 51
-  { PARAMETER_LEVEL_PART,
-    PRM_PART_ARP_OCTAVE,
-    UNIT_INT8, 1, 4,
-    1, 0, 0xff, 104,
-    STR_RES_RANGE, STR_RES_RANGE, STR_RES_ARPEGGIO },
-  
-  // 52
-  { PARAMETER_LEVEL_PART,
-    PRM_PART_ARP_PATTERN,
-    UNIT_INDEX, 0, kNumArpeggiatorPatterns - 1,
-    1, 0, 0xff, 105,
-    STR_RES_PATTERN, STR_RES_PATTERN, STR_RES_ARPEGGIO },
-  
-  // 53
-  { PARAMETER_LEVEL_PART,
-    PRM_PART_ARP_RESOLUTION,
-    UNIT_CLOCK_RESOLUTION, 0, 14,
-    1, 0, 0xff, 106,
-    STR_RES_GRID, STR_RES_GRID, STR_RES_ARPEGGIO },
-    
+  // 49 (was PRM_PART_ARP_MODE — removed, arp params unused in elkhart)
+  // 50 (was PRM_PART_ARP_DIRECTION — removed)
+  // 51 (was PRM_PART_ARP_OCTAVE — removed)
+  // 52 (was PRM_PART_ARP_PATTERN — removed)
+  // 53 (was PRM_PART_ARP_RESOLUTION — removed)
+
   // 54
   { PARAMETER_LEVEL_PART,
     PRM_PART_SEQUENCE_LENGTH_1,
@@ -757,41 +725,12 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 0xff,
     STR_RES_LENP, STR_RES_PATT_LEN, STR_RES_SEQUENCER },
   
-  // 57
-  { PARAMETER_LEVEL_PART,
-    PRM_PART_POLYPHONY_MODE,
-    UNIT_POLYPHONY_MODE, MONO, POLYPHONY_MODE_LAST - 1,
-    1, 0, 0xff, 107,
-    STR_RES_MODE, STR_RES_MODE, STR_RES_PART },
-  
-  // 58
-  { PARAMETER_LEVEL_UI,
-    PRM_UI_ACTIVE_PART,
-    UNIT_INDEX, 0, 5,
-    1, 0, 0xff, 0xff,
-    STR_RES_PART, STR_RES_PART, 0 },
-  
-  // 59
-  { PARAMETER_LEVEL_MULTI,
-    PRM_MULTI_MIDI_CHANNEL,
-    UNIT_MIDI_CHANNEL, 0, 16,
-    6, 4, PRM_UI_ACTIVE_PART, 0xff,
-    STR_RES_CHANNEL, STR_RES_CHANNEL, STR_RES_PART },
-  
-  // 60
-  { PARAMETER_LEVEL_MULTI,
-    PRM_MULTI_KEYRANGE_LOW,
-    UNIT_NOTE, 0, 127,
-    6, 4, PRM_UI_ACTIVE_PART, 0xff,
-    STR_RES_LOW, STR_RES_LOW, STR_RES_PART },
-  
-  // 61
-  { PARAMETER_LEVEL_MULTI,
-    PRM_MULTI_KEYRANGE_HIGH,
-    UNIT_NOTE, 0, 127,
-    6, 4, PRM_UI_ACTIVE_PART, 0xff,
-    STR_RES_HIGH, STR_RES_HIGH, STR_RES_PART },
-  
+  // 57 (was PRM_PART_POLYPHONY_MODE — removed, elkhart is fixed 6-voice)
+  // 58 (was PRM_UI_ACTIVE_PART — removed; ui.state().active_part still live)
+  // 59 (was PRM_MULTI_MIDI_CHANNEL — removed, per-part MIDI routing unused)
+  // 60 (was PRM_MULTI_KEYRANGE_LOW — removed)
+  // 61 (was PRM_MULTI_KEYRANGE_HIGH — removed)
+
   // 62
   { PARAMETER_LEVEL_MULTI,
     PRM_MULTI_CLOCK_BPM,
@@ -813,12 +752,7 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 0xff,
     STR_RES_AMNT, STR_RES_AMOUNT, STR_RES_CLOCK },
 
-  // 65
-  { PARAMETER_LEVEL_MULTI,
-    PRM_MULTI_CLOCK_LATCH,
-    UNIT_UINT8, 0, 8,
-    1, 0, 0xff, 0xff,
-    STR_RES_LTCH, STR_RES_LATCH, STR_RES_CLOCK },
+  // 65 (was PRM_MULTI_CLOCK_LATCH — removed, unused)
 
   // 66
   { PARAMETER_LEVEL_SYSTEM,

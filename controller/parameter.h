@@ -44,9 +44,6 @@ enum Unit {
   UNIT_MODULATION_DESTINATION,
   UNIT_MODIFIER,
   UNIT_RAGA,
-  UNIT_ARP_MODE,
-  UNIT_ARP_DIRECTION,
-  UNIT_POLYPHONY_MODE,
   UNIT_NOTE,
   UNIT_TEMPO,
   UNIT_CLOCK_RESOLUTION,
@@ -118,7 +115,7 @@ struct Parameter {
   static void PrintNote(uint8_t note, char* buffer);
 };
 
-const uint8_t kNumParameters = 84;
+const uint8_t kNumParameters = 73;
 typedef Parameter PROGMEM prog_Parameter;
 
 // The parameter manager is the class who knows how to apply a parameter change

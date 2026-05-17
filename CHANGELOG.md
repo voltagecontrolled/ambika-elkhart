@@ -12,6 +12,62 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Dead-code reclaim: voice_allocator, RIFF storage, SysEx dump, edit popup (2026-05-17)
+
+**Flash:** controller 56,890 B (86.7%, -3.1 KB from previous entry).
+**RAM:** 3,809 B (93.0%, -19 B). Controller only.
+
+Pre-work for the v4.0 issue backlog: claw back flash by removing five
+categories of dead YAM-inherited code paths. No user-visible behavior
+change beyond two removed UI surfaces (see below).
+
+#### What came out
+
+- **`voice_allocator.cc/.h`** — polyphonic note-stealing allocator from
+  the original Ambika; unreferenced in elkhart's fixed-6-voice model.
+  Already linker-GC'd; deleting the source removes the noise.
+
+- **`Storage::Save` RIFF write path** — superseded by `snapshot.cc`
+  (issue #10) which writes a flat-binary file to SD. Removed `Save`,
+  `RIFFWriteObject`, `Snapshot` (history versioning), `PreviousVersion`,
+  `NextVersion`, `Copy`, `Paste`, `Swap`, `has_user_changes`, and the
+  `version_[]` static array (19 B RAM). The internal `ForEachObject`,
+  `TouchObject`, `riff_size`, `object_size`/`_data`/`mutable_object_data`
+  helpers GC'd as their last callers died.
+
+- **`UiPage::OnKey` patch-clipboard handlers (Shift+1/2/3/7)** — Copy /
+  Swap / Paste / Snapshot to RIFF clipboard and history folders. These
+  reached the now-removed `Storage::Save`. Snapshot save/load via
+  `SystemPage` (S8) is the live path.
+
+- **Outbound SysEx dump surface** — `SysExSend`, `SysExSendObject`,
+  `SysExSendRaw`, plus the `case 0x11..0x15` (object dump request)
+  and `case 0x1f` (PEEK) dispatch in `SysExAcceptCommand`. Inbound
+  SysEx (`SysExReceive` → `SysExAcceptCommand`) and MIDI Program Change
+  patch-bank loading remain intact for now.
+
+- **Orphan parameter table entries + UNIT enums** — 11 entries removed
+  from `parameters[]` (arp 49–53, polyphony 57, ui_active_part 58,
+  multi MIDI channel 59, keyrange 60/61, clock_latch 65). Backing
+  struct fields in `MultiData` / `PartData` left intact so snapshot
+  file format is unchanged. `UNIT_ARP_MODE`, `UNIT_ARP_DIRECTION`,
+  `UNIT_POLYPHONY_MODE` enum values + `units_definitions[]` rows also
+  removed.
+
+- **`ParameterEditor` half-screen edit popup** — when twisting a knob
+  on S1a/S1b/etc., the full parameter name no longer takes over the
+  row. Cell labels still uppercase to indicate the active control.
+  `Parameter::PrintObject` GC'd as a side effect. (-384 B alone.)
+
+#### Coupled fix: page registry index renumber
+
+Removing 11 entries from the middle of `parameters[]` shifted all
+downstream indices by 11. The `page_registry` in `controller/ui.cc`
+hardcodes parameter indices per cell (`{ 24, 25, 26, 27, 28, 75, 76, 77 }`
+for PAGE_ENV_LFO, etc.); rows referring to indices ≥ 66 were renumbered
+to point at the correct (shifted) entries: PAGE_ENV_LFO (S3a row 2),
+PAGE_VOICE_LFO (S3b both rows), PAGE_SYSTEM_SETTINGS (S8).
+
 ### Save/Load snapshots to SD card (2026-05-06)
 
 **Flash:** controller 60,004 B (91.6%, +3.4 KB from previous entry).

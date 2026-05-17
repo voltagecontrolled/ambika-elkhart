@@ -192,57 +192,6 @@ uint8_t* Storage::mutable_object_data(const StorageLocation& location) {
 }
 
 /* static */
-uint8_t Storage::has_user_changes(const StorageLocation& location) {
-  if (location.object == STORAGE_OBJECT_MULTI) {
-    return multi.flags() & FLAG_HAS_USER_CHANGE;
-  } else {
-    return multi.part(location.part).flags() & FLAG_HAS_USER_CHANGE;
-  }
-}
-
-/* static */
-FilesystemStatus Storage::Snapshot(const StorageLocation& location) {
-  StorageLocation l = location;
-  uint8_t version = version_[location.index()];
-  l.slot = version;
-  Save(STORAGE_HISTORY, l);
-  
-  // Create a gap in the version number sequence to prevent forwarding.
-  ++version;
-  l.slot = version;
-  char* forward_version_name = GetFileName(STORAGE_HISTORY, l);
-  {
-    scoped_resource<SdCardSession> session;
-    InvalidatePendingSysExTransfer();
-    fs_.Unlink(forward_version_name);
-  }
-  version_[location.index()] = version;
-}
-
-/* static */
-FilesystemStatus Storage::PreviousVersion(const StorageLocation& location) {
-  StorageLocation l = location;
-  uint8_t version = version_[location.index()] - 1;
-  l.slot = version;
-  FilesystemStatus status = Load(STORAGE_HISTORY, l, 1);
-  if (status == FS_OK) {
-    version_[location.index()] = version;
-  }
-  return status;
-}
-
-/* static */
-FilesystemStatus Storage::NextVersion(const StorageLocation& location) {
-  StorageLocation l = location;
-  uint8_t version = version_[location.index()] + 1;
-  l.slot = version;
-  FilesystemStatus status = Load(STORAGE_HISTORY, l, 1);
-  if (status == FS_OK) {
-    version_[location.index()] = version;
-  }
-  return status;
-}
-
 /* static */
 void Storage::ForEachObject(
     const StorageLocation& location,
@@ -302,79 +251,6 @@ void Storage::TouchObject(const StorageLocation& location) {
       break;
     default:
       break;
-  }
-}
-
-/* static */
-void Storage::SysExSendObject(const StorageLocation& location) {
-  SysExSendRaw(
-      location.object + 1,
-      location.alias,
-      object_data(location),
-      object_size(location),
-      false);
-}
-
-/* static */
-void Storage::SysExSendRaw(
-    uint8_t command,
-    uint8_t argument,
-    const uint8_t* data,
-    uint8_t size,
-    bool send_address) {
-  midi_dispatcher.Flush();
-  for (uint8_t i = 0; i < sizeof(sysex_header); ++i) {
-    midi_dispatcher.SendBlocking(pgm_read_byte(sysex_header + i));
-  }
-  midi_dispatcher.SendBlocking(command);
-  midi_dispatcher.SendBlocking(argument);
-  // Outputs the data.
-  uint8_t checksum = 0;
-  if (send_address) {
-    Word address;
-    address.value = (uint16_t)(void*)(data);
-    checksum += address.bytes[0];
-    checksum += address.bytes[1];
-    midi_dispatcher.SendBlocking(U8ShiftRight4(address.bytes[0]));
-    midi_dispatcher.SendBlocking(address.bytes[0] & 0x0f);
-    midi_dispatcher.SendBlocking(U8ShiftRight4(address.bytes[1]));
-    midi_dispatcher.SendBlocking(address.bytes[1] & 0x0f);
-  }
-  for (uint8_t i = 0; i < size; ++i) {
-    checksum += data[i];
-    midi_dispatcher.SendBlocking(U8ShiftRight4(data[i]));
-    midi_dispatcher.SendBlocking(data[i] & 0x0f);
-  }
-  // Outputs a checksum.
-  midi_dispatcher.SendBlocking(U8ShiftRight4(checksum));
-  midi_dispatcher.SendBlocking(checksum & 0x0f);
-
-  // End of SysEx block.
-  midi_dispatcher.SendBlocking(0xf7);
-  midi_dispatcher.Flush();
-}
-
-/* static */
-void Storage::RIFFWriteObject(const StorageLocation& location) {
-  const uint8_t* data = object_data(location);
-  uint8_t size = object_size(location);
-  
-  LongWord w;
-  uint16_t written;
-
-  // Write the RIFF header.
-  w.value = kObjectTag;
-  file_.Write(w.bytes, 4, &written);
-  w.value = size + 4;
-  file_.Write(w.bytes, 4, &written);
-  // Write the position words.
-  w.value = 0;
-  w.bytes[0] = location.object + 1;
-  w.bytes[1] = location.alias;
-  file_.Write(w.bytes, 4, &written);
-  
-  if (size > 0 && data) {
-    file_.Write(data, size, &written);
   }
 }
 
@@ -448,69 +324,6 @@ FilesystemStatus Storage::Load(
     ForEachObject(location, TouchObject);
   }
 
-  return FS_OK;
-}
-
-/* static */
-FilesystemStatus Storage::Save(
-    StorageDir type,
-    const StorageLocation& location) {
-  scoped_resource<SdCardSession> session;
-  
-  FilesystemStatus s;
-  char* name = GetFileName(type, location);
-
-  file_.Close();
-  InvalidatePendingSysExTransfer();
-  
-  // Create a backup of the older version.
-  if (type == STORAGE_CLIPBOARD ||
-      (type == STORAGE_BANK && system_settings.data().autobackup)) {
-    char* backup_name = tmp_buffer_ + 32;
-    strcpy(backup_name, name);
-    backup_name[strlen(backup_name) - 3] = '~';
-    
-    // Remove the old backup.
-    fs_.Unlink(backup_name);
-    
-    // Rename current version with the backup name.
-    fs_.Rename(name, backup_name);
-  }
-  
-  // Attempt to open.
-  s = file_.Open(name, FA_WRITE | FA_CREATE_ALWAYS, kFsInitTimeout);
-  if (s == FS_PATH_NOT_FOUND) {
-    fs_.Mkdirs(name);
-    s = file_.Open(name, FA_WRITE | FA_CREATE_ALWAYS, kFsInitTimeout);
-  }
-  
-  // There's nothing we can do if Open failed at this stage.
-  if (s != FS_OK) {
-    return s;
-  }
-  
-  LongWord w;
-  uint16_t written;
-  
-  // RIFF header.
-  w.value = kRiffTag;
-  file_.Write(w.bytes, 4, &written);
-  w.value = 4 + 24 + riff_size(location);
-  file_.Write(w.bytes, 4, &written);
-  w.value = kFormatTag;
-  file_.Write(w.bytes, 4, &written);
-  
-  // NAME block.
-  w.value = kNameTag;
-  file_.Write(w.bytes, 4, &written);
-  w.value = 16;
-  file_.Write(w.bytes, 4, &written);
-  file_.Write(location.name, 16, &written);
-
-  // Write subchunks.
-  ForEachObject(location, &RIFFWriteObject);
-  
-  file_.Close();
   return FS_OK;
 }
 
@@ -712,27 +525,6 @@ void Storage::SysExAcceptCommand() {
       }
       break;
 
-    case 0x11:
-    case 0x12:
-    case 0x13:
-    case 0x14:
-    case 0x15:
-      location.object = static_cast<StorageObject>(sysex_rx_command_[0] - 0x11);
-      SysExSend(location);
-      break;
-      
-    case 0x1f:
-      // PEEK
-      {
-        Word address;
-        address.bytes[0] = buffer_[0];
-        address.bytes[1] = buffer_[1];
-        uint8_t size = sysex_rx_command_[1];
-        const uint8_t* p = (const uint8_t*)(address.value);
-        SysExSendRaw(0x0f, size, p, size, true);
-      }
-      break;
-      
     default:
       success = 0;
       break;

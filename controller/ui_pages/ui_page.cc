@@ -86,34 +86,15 @@ uint8_t UiPage::OnPot(uint8_t index, uint8_t value) {
 /* static */
 uint8_t UiPage::OnKey(uint8_t key) {
   if (key >= SWITCH_SHIFT_1) {
-    StorageLocation location = { STORAGE_OBJECT_PROGRAM, 0, 0 };
-    location.part = ui.state().active_part;
-    storage.InitFilesystem();
-    switch (key) {
-      case SWITCH_SHIFT_1:
-        display.set_status('C');
-        storage.Copy(location);
-        break;
-      case SWITCH_SHIFT_2:
-        display.set_status('S');
-        storage.Swap(location);
-        break;
-      case SWITCH_SHIFT_3:
-        display.set_status('P');
-        storage.Paste(location);
-        break;
-      case SWITCH_SHIFT_7:
-        display.set_status('*');
-        storage.Snapshot(location);
-        break;
-    }
+    // Patch clipboard / history snapshot ops (YAM heritage) removed:
+    // snapshot.cc on the System page is the live save/load path.
     return 1;
   }
-  
+
   if (info_->index == PAGE_SYSTEM_SETTINGS) {
     system_settings.Save();
   }
-  
+
   return 0;
 }
 

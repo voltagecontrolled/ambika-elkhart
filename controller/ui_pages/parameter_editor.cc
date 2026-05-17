@@ -156,42 +156,9 @@ uint8_t ParameterEditor::OnPot(uint8_t index, uint8_t value) {
 /* static */
 void ParameterEditor::UpdateScreen() {
   uint8_t paramLength = 0;
-  uint8_t detailed_info_line = 2;
-  // If we are in editing mode, draw the detailed information for the edited
-  // parameter. Disable this detailed information when "help" is set to off.
-  if (edit_mode_) {
-    uint8_t parameter_id = parameter_index(active_control_);
-    // Depending on the active control, draw on first or second line.
-    uint8_t line = active_control_ < 4 ? 0 : 1;
-    // Leave one char of space for the status icon.
-    char* buffer = display.line_buffer(line) + 1;
-    const Parameter& parameter = parameter_manager.parameter(parameter_id);
-    if (parameter.level != PARAMETER_LEVEL_UI) {
-      detailed_info_line = line;
-      parameter.PrintObject(
-          // Include the part number in the name of the parameter iff the
-          // current control is a custom knob.
-          (info_->data[active_control_] & 0xf0) == 0xf0 ?
-              part_index(active_control_) : 0xff,
-          instance_index(active_control_),
-          buffer, 19);
-
-      buffer[19] = kDelimiter;
-      uint8_t value = parameter_manager.GetValue(
-          parameter,
-          part_index(active_control_),
-          instance_index(active_control_));
-      parameter.Print(value, &buffer[20], 11, 7);
-    }
-  }
-  
-  // Draw the 8 cells with parameter names and values.
   for (uint8_t i = 0; i < kNumParametersPerPage; ++i) {
     uint8_t parameter_id = parameter_index(i);
     uint8_t line = i < 4 ? 0 : 1;
-    if (line == detailed_info_line) {
-      continue;
-    }
     uint8_t row = (i & 3) * 10;
     char* buffer = display.line_buffer(line) + row;
     if (row != 0) {
@@ -207,16 +174,13 @@ void ParameterEditor::UpdateScreen() {
           part_index(i),
           instance_index(i));
       if (parameter.level == PARAMETER_LEVEL_UI) {
-        // Use up to 6 letters for page names.
         parameter.Print(value, &buffer[1], 6, 2);
         paramLength = 6;
       } else {
-        // Use up to 4 letters for ordinary parameters names.
         parameter.Print(value, &buffer[1], 4, 4);
         paramLength = 4;
       }
       if (i == active_control_) {
-        // phase57 mod: make the whole parameter name uppercase.
         for (uint8_t c = 1; c < paramLength+1 ; ++c) {
           if (buffer[c] >= 'a' && buffer[c] <= 'z') {
             buffer[c] -= 0x20;
@@ -225,13 +189,10 @@ void ParameterEditor::UpdateScreen() {
       }
     }
   }
-  
+
   for (uint8_t i = 0; i < kNumParametersPerPage; ++i) {
     uint8_t parameter_id = info_->data[i];
     uint8_t line = i < 4 ? 0 : 1;
-    if (line == detailed_info_line) {
-      continue;
-    }
     uint8_t row = (i & 3) * 10;
     char* buffer = display.line_buffer(line) + row;
     if (parameter_id == 0xff) {
