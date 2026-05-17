@@ -6,6 +6,7 @@
 
 #include "avrlib/random.h"
 #include "avrlib/string.h"
+#include "controller/midi_dispatcher.h"
 #include "controller/multi.h"
 #include "controller/voicecard_tx.h"
 #include "controller/ui_pages/seq_mixer_page.h"
@@ -285,6 +286,7 @@ void Sequencer::Clock(uint8_t ticks) {
         uint8_t slot_prev = (tr.shadow[kShdwTICK] - ticks) / sub_period;
         if (slot_now != slot_prev && slot_now > 0) {
           voicecard_tx.Release(t);
+          midi_dispatcher.SequencerNoteOff(t);
           if (tr.steps[cur].step_flags & kStepFlagOn) {
             // kStepFlagGated: gate each ratchet slot by substep_bits.
             if (!(tr.steps[cur].step_flags & kStepFlagGated) ||
@@ -311,6 +313,7 @@ void Sequencer::Clock(uint8_t ticks) {
         tr.shadow[kShdwREPT]--;
         uint8_t repeat_idx = rept_total - tr.shadow[kShdwREPT];
         voicecard_tx.Release(t);
+        midi_dispatcher.SequencerNoteOff(t);
         if (tr.shadow[kShdwPROB] && (tr.steps[last].step_flags & kStepFlagOn)) {
           int8_t ssub_l = static_cast<int8_t>(ResolveStepByte(tr, last, kSPSSUB));
           if (ssub_l != -2) {
@@ -372,6 +375,7 @@ void Sequencer::Clock(uint8_t ticks) {
           if (guard >= len) fire_now = 0;  // every step is skip — silent
 
           voicecard_tx.Release(t);
+          midi_dispatcher.SequencerNoteOff(t);
           tr.shadow[kShdwLAST] = fired;
 
           if (fire_now && (tr.steps[fired].step_flags & kStepFlagOn)) {
@@ -393,6 +397,7 @@ void Sequencer::Clock(uint8_t ticks) {
         } else {
           // PROB failed — no fire, no SMOD. Just advance normally.
           voicecard_tx.Release(t);
+          midi_dispatcher.SequencerNoteOff(t);
           tr.shadow[kShdwLAST] = fired;
           tr.shadow[kShdwREPT] = 0;
           AdvanceStep(t);
@@ -564,10 +569,39 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // last step's glid for any interleaved MIDI/keyboard notes — acceptable
   // since step playback is the dominant path here.
   uint8_t glid = ResolveStepByte(tr, step_index, kSPGLID);
-  voicecard_tx.WriteData(t, VOICECARD_DATA_PART, 6, glid);
+  uint8_t track_ext = multi.track_is_ext(t);
+  uint8_t channel = (multi.track_channel(t) - 1) & 0x0f;
 
-  voicecard_tx.TriggerWithSnapshot(
-      t, static_cast<uint16_t>(note) << 7, velocity, 0, snapshot);
+  if (!track_ext) {
+    voicecard_tx.WriteData(t, VOICECARD_DATA_PART, 6, glid);
+    voicecard_tx.TriggerWithSnapshot(
+        t, static_cast<uint16_t>(note) << 7, velocity, 0, snapshot);
+  }
+  midi_dispatcher.SequencerNoteOn(t, channel, note, velocity);
+
+  if (track_ext) {
+    // Emit resolved (lock-or-default) values every step so external gear
+    // sees the same "snap back to default on unlocked step" behavior the
+    // internal synth gets from a full snapshot push. No dedup state.
+    //
+    // VAMT (lockable 4) → CC 1 (Mod Wheel). snapshot[4] already resolved.
+    midi_dispatcher.SendVamtCc(channel, snapshot[4] >> 1);
+    // GLID (lockable 21) → CC 5 (Portamento Time). glid = ResolveStepByte above.
+    midi_dispatcher.SendGlidCc(channel, glid);
+    // EXT slots — 4 on S5b, 4 on S5c. Lockable indices match cells 0..3 of
+    // each page. snapshot already holds lock-or-default for these.
+    static const prog_uint8_t kExtSlotLockable[8] PROGMEM = {
+      14, 1, 2, 9,    // S5b slots 0..3
+      24, 10, 25, 8,  // S5c slots 0..3
+    };
+    for (uint8_t slot = 0; slot < 8; ++slot) {
+      uint8_t lockable = pgm_read_byte(&kExtSlotLockable[slot]);
+      uint8_t snap_idx = (lockable < 16) ? lockable : (lockable - 8);
+      midi_dispatcher.SendSlotCc(channel,
+                                 multi.cc_for_slot(t, slot),
+                                 snapshot[snap_idx] >> 1);
+    }
+  }
 }
 
 void Sequencer::Play() {
@@ -583,6 +617,7 @@ void Sequencer::Pause() {
     global_.transport = kSeqPaused;
     for (uint8_t t = 0; t < kNumVoices; ++t) {
       voicecard_tx.Release(t);
+      midi_dispatcher.SequencerNoteOff(t);
     }
     multi.Stop();
   } else if (global_.transport == kSeqPaused) {
@@ -594,6 +629,7 @@ void Sequencer::Pause() {
 void Sequencer::Reset() {
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     voicecard_tx.Release(t);
+    midi_dispatcher.SequencerNoteOff(t);
     tracks_[t].shadow[kShdwSTEP] = 0;
     tracks_[t].shadow[kShdwREPT] = 0;
     tracks_[t].shadow[kShdwSSUB] = 0;
@@ -622,6 +658,7 @@ void Sequencer::Stop() {
 void Sequencer::Panic() {
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     voicecard_tx.Kill(t);
+    midi_dispatcher.SequencerNoteOff(t);
   }
   global_.transport = kSeqStopped;
 }
