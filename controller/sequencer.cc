@@ -553,8 +553,10 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   }
 
   // Velocity: lock-or-default, then scale by track VOL (255 = identity).
+  // (v * (VOL+1)) >> 8 so VOL=255 produces true identity; VOL=0 still silent.
   uint8_t velocity = ResolveStepByte(tr, step_index, kSPVEL);
-  velocity = (static_cast<uint16_t>(velocity) * tr.pattern[kPatVOL]) >> 8;
+  velocity = (static_cast<uint16_t>(velocity) *
+              (tr.pattern[kPatVOL] + 1)) >> 8;
 
   // GLID: per-step portamento time. Pushed to the voicecard part struct
   // (offset 6 = portamento) before the trigger so the slide uses this
