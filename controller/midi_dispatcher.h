@@ -189,28 +189,78 @@ class MidiDispatcher : public midi::MidiDevice {
   
   
   // ------ Generation of MIDI out messages ------------------------------------
-  static inline void OnNote(Part* part, uint8_t note, uint8_t velocity) {
-    if (mode() == MIDI_OUT_SEQUENCER) {
-      Send3(0x90 | multi.part_channel(part), note, velocity);
+  // Sequencer note emission: caller supplies the wire channel (0..15) which
+  // comes from multi.track_channel(t)-1. Tracking stays per-track so EXT-mode
+  // channel changes between Trigger and Release still pair correctly. Also
+  // remembers the channel last used so the note-off lands on the same wire
+  // channel even if the user reassigned mch in between.
+  static inline void SequencerNoteOn(uint8_t track, uint8_t channel,
+                                     uint8_t note, uint8_t velocity) {
+    if (sequencer_note_[track] != 0xff) {
+      Send3(0x80 | (sequencer_channel_[track] & 0x0f),
+            sequencer_note_[track], 0);
     }
+    channel &= 0x0f;
+    note &= 0x7f;
+    Send3(0x90 | channel, note, velocity & 0x7f);
+    sequencer_note_[track] = note;
+    sequencer_channel_[track] = channel;
   }
-  
-  static inline void ForwardNote(Part* part, uint8_t note, uint8_t velocity) {
-    if (mode() == MIDI_OUT_CHAIN) {
-      Send3(0x90 | multi.part_channel(part), note, velocity);
-    }
+
+  static inline void SequencerNoteOff(uint8_t track) {
+    if (sequencer_note_[track] == 0xff) return;
+    Send3(0x80 | (sequencer_channel_[track] & 0x0f),
+          sequencer_note_[track], 0);
+    sequencer_note_[track] = 0xff;
+  }
+
+  // Live CC out for sequencer-side knob tweaks and step-lock fires on EXT
+  // tracks. Caller supplies channel and value (already in 0..127).
+  static inline void SendCc(uint8_t channel, uint8_t cc, uint8_t value7bit) {
+    Send3(0xb0 | (channel & 0x0f), cc & 0x7f, value7bit & 0x7f);
+  }
+
+  // 14-bit Pitch Bend. value14bit: 0=full down, 8192=center, 16383=full up.
+  static inline void SendPitchBend(uint8_t channel, uint16_t value14bit) {
+    Send3(0xe0 | (channel & 0x0f),
+          static_cast<uint8_t>(value14bit & 0x7f),
+          static_cast<uint8_t>((value14bit >> 7) & 0x7f));
+  }
+
+  // Fire-time EXT emit helpers. We emit the resolved value (lock-or-default)
+  // every step so external gear gets the same "snap back to default" behavior
+  // the internal synth gets from a full snapshot push. No dedup state — the
+  // 60 bytes of RAM that would buy is more valuable kept as stack headroom.
+  static inline void SendSlotCc(uint8_t channel, uint8_t cc, uint8_t value7) {
+    if (cc > 127) return;  // slot is off / unassigned
+    Send3(0xb0 | (channel & 0x0f), cc, value7 & 0x7f);
+  }
+  static inline void SendVamtCc(uint8_t channel, uint8_t value7) {
+    Send3(0xb0 | (channel & 0x0f), 1, value7 & 0x7f);
+  }
+  static inline void SendGlidCc(uint8_t channel, uint8_t native_byte) {
+    // GLID on EXT is CC 5 (Portamento Time). Byte 0..127 → CC 0..127 directly;
+    // default 0 = no glide is correct for both INT (no portamento) and EXT
+    // (no remote portamento).
+    Send3(0xb0 | (channel & 0x0f), 5, native_byte & 0x7f);
+  }
+
+  // Clock-out gate: 2=OUT, 3=THR both send. 0=INT, 1=EXT suppress.
+  static inline uint8_t clock_sends_out() {
+    uint8_t m = multi.midi_clock_mode();
+    return m == 2 || m == 3;
   }
 
   static inline void OnStart() {
-    SendNow(0xfa);
+    if (clock_sends_out()) SendNow(0xfa);
   }
 
   static inline void OnStop() {
-    SendNow(0xfc);
+    if (clock_sends_out()) SendNow(0xfc);
   }
 
   static inline void OnClock() {
-    SendNow(0xf8);
+    if (clock_sends_out()) SendNow(0xf8);
   }
   
   static inline void OnProgramLoaded(
@@ -268,6 +318,8 @@ class MidiDispatcher : public midi::MidiDevice {
   static uint8_t current_bank_;
   static uint8_t data_entry_counter_;
   static uint8_t current_parameter_address_;
+  static uint8_t sequencer_note_[kNumVoices];
+  static uint8_t sequencer_channel_[kNumVoices];
   
   DISALLOW_COPY_AND_ASSIGN(MidiDispatcher);
 };

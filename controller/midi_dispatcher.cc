@@ -29,6 +29,14 @@ uint8_t MidiDispatcher::current_bank_ = 0;
 uint8_t MidiDispatcher::current_parameter_address_ = 0xff;
 /* static */
 uint8_t MidiDispatcher::data_entry_counter_ = 0;
+/* static */
+uint8_t MidiDispatcher::sequencer_note_[kNumVoices] = {
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+};
+/* static */
+uint8_t MidiDispatcher::sequencer_channel_[kNumVoices] = {
+  0, 1, 2, 3, 4, 5
+};
 
 MidiDispatcher midi_dispatcher;
 
