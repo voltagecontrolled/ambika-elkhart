@@ -12,6 +12,31 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Cell layout: full-width values on S5/S6 pages, label renames (2026-05-17)
+
+**Flash:** controller 56,908 B (86.8%, +18 B). **RAM:** 3,809 B (93.0%,
+unchanged). Controller only.
+
+The custom sequencer / track / mixer pages (S5a/b/c, S6a, S6b) rendered
+each cell's value at `buffer[5..8]` with a wasted padding char at
+`buffer[9]`, leaving an awkward gap before the next cell divider — out
+of step with stock parameter pages (S1/S2/S3) which use the full
+`buffer[1..9]` width.
+
+- All cell value writes shifted right by one: `buffer[5]` becomes the
+  separator space, `buffer[6..9]` holds the 4-char value. Affects
+  `seq_steps_page.cc`, `seq_track_page.cc`, `seq_mixer_page.cc`.
+
+- **Label renames in `seq_steps_page` S5b row**, using the recovered
+  column on wave cells: `w1` → `wav1`, `w2` → `wav2`, `pa1` → `prm1`,
+  `pa2` → `prm2`.
+
+- **Wave-cell special layout retired.** Wave cells previously rendered
+  the abbr at 2 chars with the value field grown to 6 chars
+  (to fit names like "noise"). Now uniform 4-char value field — wave
+  names render in 4 chars matching the stock S1a pages
+  (`STR_RES_NONE+v` LoadStringResource with width 4).
+
 ### Dead-code reclaim: voice_allocator, RIFF storage, SysEx dump, edit popup (2026-05-17)
 
 **Flash:** controller 56,890 B (86.7%, -3.1 KB from previous entry).

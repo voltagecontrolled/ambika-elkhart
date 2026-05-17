@@ -82,15 +82,14 @@ static const prog_char kNoteNames[] PROGMEM =
 
 // 4-char short_name per cell (8 cells × 3 pages × 4 chars = 96 bytes).
 // Lowercase by default; UpdateScreen uppercases the cursor's slot.
-// `w1  ` / `w2  ` carry trailing spaces — wave cells render abbr at the
-// 2-char width and grow the value field to 6 chars (handled in UpdateScreen).
+// All cells render with uniform 4-char label + 4-char value layout.
 //
 // Page order (round 5a-2): step-behavior is the leftmost page so the
 // default cursor=0 lands on NOTE — the most foundational sequencer knob.
 // Voice 1 / Voice 2 follow.
 static const prog_char kAbbr[] PROGMEM =
   "notevel vamtratesubsprobglidsfx "  // page 1 = S5a (step behavior; sfx=SMOD)
-  "noisw1  pa1 tun2mix w2  pa2 fin2"  // page 2 = S5b (voice 1: osc / mix)
+  "noiswav1prm1tun2mix wav2prm2fin2"  // page 2 = S5b (voice 1: osc / mix)
   "freqfdecfamtadecpdecpamtsub wave"; // page 3 = S5c (voice 2: filter/env/sub)
 
 // Per-cell target. 0..27 = lockable param index (writes to tr.defaults[N]
@@ -665,23 +664,17 @@ void SeqStepsPage::UpdateScreen() {
     if (row != 0)                buffer[0]  = kDelimiter;
     if ((row + 10) != kLcdWidth) buffer[10] = kDelimiter;
 
-    uint8_t is_wave = IsWaveCell(lockable);
-    // Short name. Wave cells use 2-char abbr (positions 1..2) and grow the
-    // value field to 6 chars; everything else uses the standard 4/4.
+    // Short name — uniform 4-char label at positions 1..4.
     uint8_t abbr_off = cell_global * 4;
-    uint8_t abbr_len = is_wave ? 2 : 4;
-    for (uint8_t c = 0; c < abbr_len; ++c) {
+    for (uint8_t c = 0; c < 4; ++c) {
       char ch = pgm_read_byte(kAbbr + abbr_off + c);
       if (i == cursor_in_page && ch >= 'a' && ch <= 'z') {
         ch -= 0x20;
       }
       buffer[1 + c] = ch;
     }
-    // Pad position 3..4 with spaces for wave cells (value field starts at 3).
-    if (is_wave) {
-      buffer[3] = ' ';
-      buffer[4] = ' ';
-    }
+    // Separator between label and value.
+    buffer[5] = ' ';
 
     // Merged subs cell — read both kSPSSUB and kSPREPT (lock or default)
     // and render the combined glyph.
@@ -700,43 +693,40 @@ void SeqStepsPage::UpdateScreen() {
       } else {
         rept_v = tr.defaults[16 + kSPREPT];
       }
-      buffer[5] = ' ';
       buffer[6] = ' ';
       buffer[7] = ' ';
       buffer[8] = ' ';
-      if (rept_v > 0) {
-        buffer[6] = '0' + (rept_v > 9 ? 9 : rept_v);
-        buffer[8] = 'r';
-      } else if (ssub_v > 0) {
-        buffer[6] = '0' + (ssub_v > 9 ? 9 : ssub_v);
-        buffer[8] = 'x';
-      } else if (ssub_v == -2) {
-        memcpy_P(&buffer[5], PSTR(" cus"), 4);
-      } else {
-        buffer[8] = '0';
-      }
       buffer[9] = ' ';
+      if (rept_v > 0) {
+        buffer[7] = '0' + (rept_v > 9 ? 9 : rept_v);
+        buffer[9] = 'r';
+      } else if (ssub_v > 0) {
+        buffer[7] = '0' + (ssub_v > 9 ? 9 : ssub_v);
+        buffer[9] = 'x';
+      } else if (ssub_v == -2) {
+        memcpy_P(&buffer[6], PSTR(" cus"), 4);
+      } else {
+        buffer[9] = '0';
+      }
       continue;
     }
 
     // Empty cell — blank out the value field and skip rendering.
     if (lockable == 0xff && patch_addr == 0xff) {
-      for (uint8_t k = 5; k <= 9; ++k) buffer[k] = ' ';
+      for (uint8_t k = 6; k <= 9; ++k) buffer[k] = ' ';
       continue;
     }
 
     // SMOD cell — render label of held step's SMOD nibble, or "----" when
     // no step is held (no track-level default for SMOD).
     if (lockable == kSmodCellSentinel) {
-      buffer[5] = ' ';
       if (held_step != 0xff) {
         uint8_t smod = StepSmod(tr.steps[held_step]);
         if (smod >= kSmodCount) smod = 0;
-        memcpy_P(&buffer[5], kSmodLabels + smod * 4, 4);
+        memcpy_P(&buffer[6], kSmodLabels + smod * 4, 4);
       } else {
-        buffer[5] = '-'; buffer[6] = '-'; buffer[7] = '-'; buffer[8] = '-';
+        buffer[6] = '-'; buffer[7] = '-'; buffer[8] = '-'; buffer[9] = '-';
       }
-      buffer[9] = ' ';
       continue;
     }
 
@@ -759,52 +749,51 @@ void SeqStepsPage::UpdateScreen() {
     }
 
     if (lockable == 0) {
-      // NOTE — render as 3-char note name, right-aligned in the 4-char field.
-      buffer[5] = ' ';
-      WriteNoteName(&buffer[6], v);
-    } else if (is_wave) {
-      // Wave cells — 6-char value at offset 3..8.
-      for (uint8_t k = 3; k <= 8; ++k) buffer[k] = ' ';
-      ResourcesManager::LoadStringResource(STR_RES_NONE + v, &buffer[3], 6);
-      AlignRight(&buffer[3], 6);
+      // NOTE — 3-char note name, right-aligned in the 4-char field at 6..9.
+      buffer[6] = ' ';
+      WriteNoteName(&buffer[7], v);
+    } else if (IsWaveCell(lockable)) {
+      // Wave cell — 4-char wave name at 6..9.
+      for (uint8_t k = 6; k <= 9; ++k) buffer[k] = ' ';
+      ResourcesManager::LoadStringResource(STR_RES_NONE + v, &buffer[6], 4);
+      AlignRight(&buffer[6], 4);
     } else if (IsSubWaveCell(lockable)) {
       // Sub-osc waveform — 4-char text name.
-      for (uint8_t k = 5; k <= 8; ++k) buffer[k] = ' ';
-      ResourcesManager::LoadStringResource(STR_RES_SQU1 + v, &buffer[5], 4);
-      AlignRight(&buffer[5], 4);
+      for (uint8_t k = 6; k <= 9; ++k) buffer[k] = ' ';
+      ResourcesManager::LoadStringResource(STR_RES_SQU1 + v, &buffer[6], 4);
+      AlignRight(&buffer[6], 4);
     } else if (IsSignedLockable(lockable)) {
-      WriteI8Right(&buffer[5], v);
+      WriteI8Right(&buffer[6], v);
     } else if (lockable == 19) {
       // RATE per-step override. 0 = inherit track (rendered " trk");
       // 1..15 = direct rate, indexes kRateLabels[(r-1)..14].
       uint8_t r = v & 15;
       if (r == 0) {
-        memcpy_P(&buffer[5], PSTR(" trk"), 4);
+        memcpy_P(&buffer[6], PSTR(" trk"), 4);
       } else {
         uint8_t i = r - 1;
         if (i >= 15) i = 14;
-        memcpy_P(&buffer[5], kRateLabels + i * 4, 4);
+        memcpy_P(&buffer[6], kRateLabels + i * 4, 4);
       }
     } else if (lockable == 16) {
       // PROB — render as percentage. Storage 0..127 → display 0%..100%.
       uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
       if (pct > 100) pct = 100;
-      buffer[5] = ' ';
       buffer[6] = ' ';
       buffer[7] = ' ';
+      buffer[8] = ' ';
       if (pct >= 100) {
-        buffer[5] = '1'; buffer[6] = '0'; buffer[7] = '0';
+        buffer[6] = '1'; buffer[7] = '0'; buffer[8] = '0';
       } else if (pct >= 10) {
-        buffer[6] = '0' + (pct / 10);
-        buffer[7] = '0' + (pct % 10);
+        buffer[7] = '0' + (pct / 10);
+        buffer[8] = '0' + (pct % 10);
       } else {
-        buffer[7] = '0' + pct;
+        buffer[8] = '0' + pct;
       }
-      buffer[8] = '%';
+      buffer[9] = '%';
     } else {
-      WriteU8Right(&buffer[5], v);
+      WriteU8Right(&buffer[6], v);
     }
-    buffer[9] = ' ';
   }
 }
 

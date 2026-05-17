@@ -194,7 +194,7 @@ static inline void DrawCellSeparators(char* buffer, uint8_t row) {
 }
 
 static void DrawVoiceCell(char* buffer, uint8_t voice, uint8_t cursor_on) {
-  // 4-char abbr at +1 ("v1  "), value at +5 (3 chars right-aligned).
+  // 2-char abbr at +1 ("v1"), value at +6 (4 chars right-aligned).
   char tag = '1' + voice;
   buffer[1] = cursor_on ? 'V' : 'v';
   buffer[2] = tag;
@@ -202,23 +202,22 @@ static void DrawVoiceCell(char* buffer, uint8_t voice, uint8_t cursor_on) {
   buffer[4] = ' ';
   buffer[5] = ' ';
   uint8_t v = sequencer.track(voice).pattern[kPatVOL] >> 1;
-  UnsafeItoa<uint8_t>(v, 3, &buffer[6]);
-  AlignRight(&buffer[6], 3);
-  buffer[9] = ' ';
+  UnsafeItoa<uint8_t>(v, 4, &buffer[6]);
+  AlignRight(&buffer[6], 4);
 }
 
 static void DrawModeCell(char* buffer, uint8_t cursor_on) {
-  // "mode SMUT" — abbr at +1, mode label at +5 (4 chars). Mode label is
+  // "mode MT-S" — abbr at +1, mode label at +6 (4 chars). Mode label is
   // always uppercase to indicate it's the active mode.
   buffer[1] = cursor_on ? 'M' : 'm';
   buffer[2] = cursor_on ? 'O' : 'o';
   buffer[3] = cursor_on ? 'D' : 'd';
   buffer[4] = cursor_on ? 'E' : 'e';
+  buffer[5] = ' ';
   const char* label =
       (mode_ == kModeSmut) ? "MT-S" :
       (mode_ == kModeAmut) ? "MT-A" : "SOLO";
-  for (uint8_t i = 0; i < 4; ++i) buffer[5 + i] = label[i];
-  buffer[9] = ' ';
+  for (uint8_t i = 0; i < 4; ++i) buffer[6 + i] = label[i];
 }
 
 static void DrawHintCell(char* buffer, uint8_t cursor_on) {
@@ -227,11 +226,11 @@ static void DrawHintCell(char* buffer, uint8_t cursor_on) {
   buffer[2] = cursor_on ? 'L' : 'l';
   buffer[3] = cursor_on ? 'R' : 'r';
   buffer[4] = ' ';
-  buffer[5] = 'u';
-  buffer[6] = 'n';
-  buffer[7] = 'm';
-  buffer[8] = 't';
-  buffer[9] = ' ';
+  buffer[5] = ' ';
+  buffer[6] = 'u';
+  buffer[7] = 'n';
+  buffer[8] = 'm';
+  buffer[9] = 't';
 }
 
 /* static */

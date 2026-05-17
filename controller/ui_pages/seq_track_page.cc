@@ -136,9 +136,10 @@ void SeqTrackPage::UpdateScreen() {
       buffer[1 + c] = ch;
     }
 
-    // Value (4 chars) at offset 5.
+    // Value (4 chars) at offset 6, with separator space at 5.
     uint8_t v = tr.pattern[i];
-    char* val = &buffer[5];
+    buffer[5] = ' ';
+    char* val = &buffer[6];
     switch (i) {
       case 0:  // DIRN
         memcpy_P(val, kDirnLabels + (v & 3) * 4, 4);
@@ -156,15 +157,13 @@ void SeqTrackPage::UpdateScreen() {
         memcpy_P(val, kRootLabels + (v % 12) * 4, 4);
         break;
       case 6:  // BPCH retired — show ----.
-        val[0] = ' '; val[1] = '-'; val[2] = '-'; val[3] = '-';
+        val[0] = '-'; val[1] = '-'; val[2] = '-'; val[3] = '-';
         break;
       default:
-        val[0] = ' ';
-        UnsafeItoa<uint8_t>(v, 3, &val[1]);
-        AlignRight(&val[1], 3);
+        UnsafeItoa<uint8_t>(v, 4, val);
+        AlignRight(val, 4);
         break;
     }
-    buffer[9] = ' ';
   }
 }
 
