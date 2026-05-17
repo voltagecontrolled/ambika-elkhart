@@ -101,11 +101,13 @@ static const prog_char kAbbr[] PROGMEM =
 // tun2 / fin2 reclaim the dead E1REL / E2REL slots (lockable 9 / 11).
 // freq / famt / pamt / wave are now lockable (24..27) instead of config-mapped.
 static const prog_uint8_t kCellLockable[24] PROGMEM = {
-  // S5a: note, vel, vamt(cfg), rate | subs(merged), prob, glid, sfx(0xfd)
-  // vamt is config-mapped (0xff); glid is per-step lockable portamento
-  // time (replaced legato gate); sfx (a.k.a. SMOD) is the per-step
-  // modifier nibble packed into step_flags bits 2..5.
-  0,    20,   0xff, 19,
+  // S5a: note, vel, vamt, rate | subs(merged), prob, glid, sfx(0xfd)
+  // vamt now lockable at page1[4] (lock_flags[0] bit 4) so Mod Wheel can be
+  // sequenced on EXT tracks. kCellPatchAddr[2] still 85 so live-tweak on INT
+  // tracks updates patch addr 85 as before — locked value has no fire-time
+  // effect on INT today (EXT only emits CC1). glid is per-step lockable
+  // portamento time; sfx (SMOD) is packed into step_flags bits 2..5.
+  0,    20,   4,    19,
   0xfe, 16,   21,   0xfd,
   // S5b: nois, w1, pa1, tun2 | mix(blnd), w2, pa2, fin2
   14,   1,    2,    9,
