@@ -252,7 +252,10 @@ void Sequencer::Clock(uint8_t ticks) {
         static_cast<uint16_t>(mrst + 1) * kNumTicksPerStep;
     if (global_.master_tick >= threshold) {
       Reset();
-      return;
+      // Fall through: the per-track loop runs on this same tick so step 0
+      // fires inline at the cycle boundary. With TICK pre-charged to
+      // period-1, the +=1 below lands TICK == period and fires step 0 with
+      // a full-period gate window.
     }
   }
 
@@ -570,6 +573,7 @@ void Sequencer::Play() {
     Reset();
   }
   global_.transport = kSeqPlaying;
+  multi.Start();
 }
 
 void Sequencer::Pause() {
@@ -578,8 +582,10 @@ void Sequencer::Pause() {
     for (uint8_t t = 0; t < kNumVoices; ++t) {
       voicecard_tx.Release(t);
     }
+    multi.Stop();
   } else if (global_.transport == kSeqPaused) {
     global_.transport = kSeqPlaying;
+    multi.Start();
   }
 }
 
@@ -592,13 +598,15 @@ void Sequencer::Reset() {
     tracks_[t].shadow[kShdwDIR]  = 0;
     tracks_[t].shadow[kShdwLAST] = 0;
     tracks_[t].shadow[kShdwPROB] = 0;
-    // Pre-charge TICK so the first Clock() call after Play() crosses period
-    // and fires step 0 immediately. Without this, tracks with CDIV>1 wait
-    // their full period before firing and start off-grid relative to CDIV=1.
+    // Pre-charge TICK so the first Clock() call after Play()/Reset() lands
+    // TICK exactly at period and fires step 0 with a full-period gate window
+    // (matching every subsequent step). Pre-charging to period (instead of
+    // period-1) would cross the threshold by one tick on first increment and
+    // truncate step 0's gate. period >= 3 for all kRateValues entries.
     uint8_t cdiv_idx = tracks_[t].pattern[kPatCDIV];
     if (cdiv_idx >= 15) cdiv_idx = 14;
     uint8_t period = pgm_read_byte(kRateValues + cdiv_idx);
-    tracks_[t].shadow[kShdwTICK] = period;
+    tracks_[t].shadow[kShdwTICK] = period - 1;
   }
   global_.master_tick = 0;
 }
@@ -606,6 +614,7 @@ void Sequencer::Reset() {
 void Sequencer::Stop() {
   Reset();
   global_.transport = kSeqStopped;
+  multi.Stop();
 }
 
 void Sequencer::Panic() {
