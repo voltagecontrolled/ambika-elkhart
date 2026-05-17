@@ -47,8 +47,10 @@ uint8_t MultiPage::OnIncrement(int8_t increment) {
 /* static */
 uint8_t MultiPage::OnPot(uint8_t index, uint8_t value) {
   if (index == 0) {
-    uint8_t bpm = 40 + static_cast<uint8_t>(
-        (static_cast<uint16_t>(value < 127 ? value : 128) * 200) >> 7);
+    // Pot is 7-bit (128 stable positions). Map to 60..185 (126 values) so
+    // every integer BPM in range is reachable — wider ranges leave holes.
+    uint8_t bpm = 60 + static_cast<uint8_t>(
+        (static_cast<uint16_t>(value) * 126) >> 7);
     multi.SetValue(PRM_MULTI_CLOCK_BPM, bpm);
     return 1;
   }
