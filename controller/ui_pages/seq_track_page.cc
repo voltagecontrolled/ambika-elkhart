@@ -9,8 +9,10 @@
 
 #include "avrlib/string.h"
 #include "controller/display.h"
+#include "controller/multi.h"
 #include "controller/sequencer.h"
 #include "controller/ui.h"
+#include "controller/voicecard_tx.h"
 
 namespace ambika {
 
@@ -18,10 +20,11 @@ namespace ambika {
 uint8_t SeqTrackPage::cursor_ = 0;
 
 // 4-char short_name per knob (lowercase by default; uppercased on cursor).
-// `----` slot at index 6 is the retired BPCH cell (round 5: track-transpose
-// will live on the future Performance page; pot is inhibited here).
+// Cells 6 + 7 (formerly retired BPCH and now-redundant VOL — the mixer page
+// covers per-track volume) carry MIDI channel + INT/EXT mode for the active
+// track. They write to multi.data() instead of tr.pattern[].
 static const prog_char kAbbr[] PROGMEM =
-  "dirnraterotalengscalroot----vol ";
+  "dirnraterotalengscalrootmch mmod";
 
 // Rate display labels (matches sequencer.cc kRateValues): musical-notation values.
 // 4 chars × 15 entries = 60 bytes PROGMEM. Shared with seq_steps_page.cc via
@@ -102,11 +105,25 @@ uint8_t SeqTrackPage::OnPot(uint8_t index, uint8_t value) {
     case 5:  // ROOT: 0..11
       mapped = (static_cast<uint16_t>(value) * 12) >> 7;
       break;
-    case 6:  // BPCH retired — pot is inhibited; ignore writes.
-      return 0;
-    case 7:  // VOL: 0..255 — scales velocity in FireStep
-      mapped = value << 1;
-      break;
+    case 6: {  // MCH: MIDI channel 1..16 for the active track. Writes to
+               // multi.data().midi_channel[track], not tr->pattern[].
+      uint8_t ch = 1 + ((static_cast<uint16_t>(value) * 16) >> 7);
+      multi.mutable_data()->midi_channel[track] = ch;
+      return 1;
+    }
+    case 7: {  // MMOD: 0=INT, 1=EXT. EXT skips the voicecard trigger and
+               // emits configurable CCs at fire time. On INT→EXT release the
+               // voice so any sounding note is silenced cleanly.
+      uint8_t want_ext = (value >= 64) ? 1 : 0;
+      uint8_t was_ext  = multi.track_is_ext(track);
+      uint8_t mask = multi.mutable_data()->midi_only_mask;
+      mask = want_ext ? (mask | (1 << track)) : (mask & ~(1 << track));
+      multi.mutable_data()->midi_only_mask = mask;
+      if (want_ext && !was_ext) {
+        voicecard_tx.Release(track);
+      }
+      return 1;
+    }
     default:
       return 0;
   }
@@ -156,8 +173,16 @@ void SeqTrackPage::UpdateScreen() {
       case 5:  // ROOT
         memcpy_P(val, kRootLabels + (v % 12) * 4, 4);
         break;
-      case 6:  // BPCH retired — show ----.
-        val[0] = '-'; val[1] = '-'; val[2] = '-'; val[3] = '-';
+      case 6:  // MCH — MIDI channel 1..16 from multi data, not tr.pattern.
+        UnsafeItoa<uint8_t>(multi.data().midi_channel[track], 4, val);
+        AlignRight(val, 4);
+        break;
+      case 7:  // MMOD — INT/EXT from midi_only_mask bit.
+        if (multi.track_is_ext(track)) {
+          val[0] = ' '; val[1] = 'E'; val[2] = 'X'; val[3] = 'T';
+        } else {
+          val[0] = ' '; val[1] = 'I'; val[2] = 'N'; val[3] = 'T';
+        }
         break;
       default:
         UnsafeItoa<uint8_t>(v, 4, val);
