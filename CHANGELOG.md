@@ -12,6 +12,84 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### MIDI sequencing: per-track INT/EXT mode, CC out, clock coordinator (2026-05-17)
+
+**Flash:** controller 58,434 B (89.2%, +1.5 KB net). **RAM:** 3,871 B
+(94.5%, +62 B). Snapshot format bumped v1 → v2; v1 snapshots auto-migrate
+with sensible defaults on first load. Voicecard binaries unchanged.
+
+Per-track MIDI output, treating each of the six sequencer tracks as either
+an internal-voice channel (default) or a MIDI-only output lane that drives
+external gear. Saved with the snapshot, so a song carries its routing.
+
+- **Per-track INT/EXT mode** via the `mmod` cell on `S6a` (replaces the
+  now-redundant `vol` cell — per-voice volume lives on the mixer). INT is
+  current behavior (voicecard plays, sequencer notes also echo to MIDI
+  out). EXT silences the voicecard entirely and routes the track as a
+  MIDI sequencer. INT → EXT releases any sounding voice cleanly.
+
+- **Per-track MIDI channel** via the `mch` cell on `S6a` (replaces the
+  retired `BPCH` cell, slot 6). 1–16, defaults to track index. Sequencer
+  note-on / note-off and all CC emits use this channel.
+
+- **`S5b` / `S5c` repurposed on EXT** as a MIDI CC sequencer view: 4 slots
+  per page, top-row pot picks the CC# (1–127 or fully-CCW `off`), bottom-
+  row pot edits the lockable value with normal step-lock semantics. 8 CC
+  slots per track total. CC# defaults to `off` so a fresh EXT track is
+  silent until the user opts each slot in.
+
+- **VAMT and GLID on EXT** become standard MIDI controllers without
+  per-cell config: VAMT (`S5a` cell 2) → CC 1 (Mod Wheel), GLID (cell 6)
+  → CC 5 (Portamento Time). VAMT promoted from config-mapped to
+  step-lockable at lockable index 4 so Mod Wheel can be sequenced.
+
+- **Snap-back behavior** matches the internal synth: unlocked steps emit
+  the resolved default value every step (no dedup state — the 60 B of RAM
+  saved kept the stack safely clear of the LCD line buffer).
+
+- **Clock coordinator** on the transport page replaces the unused `swng`
+  cell with a 4-state `clk` (`INT` / `EXT` / `OUT` / `THR`) covering all
+  combinations of clock source × clock-out enabled. Clock source switches
+  the sequencer between internal-timer and inbound-`0xF8` advance; clock-
+  out gates whether `0xF8`/`0xFA`/`0xFC` leave the box.
+
+- **`mrst` slides** from cell 2 to cell 1 on the transport page after the
+  `swng` removal. Pot 1 now writes the master reset period.
+
+- **`system_page` line buffer clear** added at the top of `UpdateScreen`
+  so residual glyphs from a previously-rendered page don't bleed into the
+  save/load layout's unused positions.
+
+### Velocity scaling off-by-one fix (2026-05-17)
+
+`(velocity * VOL) >> 8` with `VOL = 255` returned `velocity - 1` (true
+identity needs a multiplier of 256). Replaced with
+`(velocity * (VOL + 1)) >> 8` — VOL=255 now produces exact identity,
+VOL=0 still mutes, smooth across the range. Affects audio output
+slightly and MIDI-out velocity visibly.
+
+### Transport: TICK pre-charge fix + multi.Start/Stop hooks (2026-05-17)
+
+The pre-existing TICK pre-charge used `period` (vs the corrected
+`period - 1`), which crossed the threshold by one tick on first
+increment and truncated step 0's gate window. Combined with the new
+fall-through after `Reset()` in `Clock()` and explicit `multi.Start()`
+/ `multi.Stop()` calls from `Play()`/`Pause()`/`Stop()`, the sequencer
+now fires step 0 inline at the cycle boundary with a full-period gate.
+
+### Transport: drop legacy MIDI_OUT_SEQUENCER clock-byte gate (2026-05-17)
+
+`OnStart` / `OnStop` / `OnClock` no longer check the retired
+`MIDI_OUT_SEQUENCER` mode — clock bytes always go out unconditionally
+at this layer. The new transport-page `clk` cell handles whether
+they actually transmit (see MIDI sequencing entry above).
+
+### Transport: BPM pot remap to 60..185 (2026-05-17)
+
+The BPM pot used `40 + (value * 200) >> 7` which produced a non-bijective
+mapping — many BPMs were unreachable. Remapped to `60 + (value * 126) >> 7`
+so every integer BPM in 60..185 corresponds to a stable detent.
+
 ### Cell layout: full-width values on S5/S6 pages, label renames (2026-05-17)
 
 **Flash:** controller 56,908 B (86.8%, +18 B). **RAM:** 3,809 B (93.0%,

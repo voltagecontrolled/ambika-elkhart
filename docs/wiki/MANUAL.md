@@ -301,12 +301,12 @@ rate  48 | wave tri | dest pit | dept  +32     ← LFO
 
 The `S6` group's first page configures the active voice's
 pattern-level behaviour: direction, step length, rotation, scale,
-root, and volume. Use the `S1` + encoder combo to pick which voice
-you're editing.
+root, MIDI channel, and INT/EXT mode. Use the `S1` + encoder combo
+to pick which voice you're editing.
 
 ```
 dirn fwd  | rate 16   | rota   0 | leng   8
-scal min  | root   0  | ----     | vol  255
+scal min  | root   0  | mch    1 | mmod INT
 ```
 
 | Cell   | Range / values                                                 | Notes                                                                                                            |
@@ -317,8 +317,8 @@ scal min  | root   0  | ----     | vol  255
 | `leng` | 1–8                                                            | Pattern length in steps. Combined with `rate`, drives polymetric cycle length.                                   |
 | `scal` | `chro` / `maj` / `min` / `dor` / `mix` / `pMa` / `pMi` / `blu` | Quantises every step's note into the chosen scale.                                                               |
 | `root` | 0–11                                                           | Scale root, in semitones from C.                                                                                 |
-| `----` | inert                                                          | Pot is disabled and the cell renders as `----` in this version.                                                  |
-| `vol`  | 0–255                                                          | Per-track volume. Multiplies into each step's velocity. `255` is unity; `0` mutes the track.                     |
+| `mch`  | 1–16                                                           | MIDI channel for the track's sequencer-out notes and (on EXT) MIDI CC. Defaults to the track index.              |
+| `mmod` | `INT` / `EXT`                                                  | INT (default) drives the internal voicecard. EXT silences the voicecard and routes the track to MIDI out — sequencer notes + configurable CCs only. See *MIDI sequencing* below. |
 
 ### `rate` values
 
@@ -403,20 +403,30 @@ the neighbouring page at the boundaries.
 
 ## Transport (`S7`)
 
-A single page for the master clock and transport controls.
+A single page for the master clock, MIDI clock coordinator, and
+transport controls.
 
 ```
-bpm 120 | swng   0 | mrst off
+bpm 120 | mrst off | clk OUT
 play paus rst  stop                exit
 ```
 
-| Cell   | Range / values            | Notes                                                                                                                                       |
-|--------|---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
-| `bpm`  | 40–240                    | Master tempo.                                                                                                                               |
-| `swng` | 0–127                     | Swing / groove depth. **Note:** swing handling is limited in this version and may not affect timing as expected.                            |
-| `mrst` | `off` / 2–128             | Master reset period, in undivided steps. When set, all six tracks snap back to step 0 each time the master tick counter reaches this number — useful for keeping polymetric tracks at different rates from drifting open-ended. Default `off` (free-run). |
+| Cell   | Range / values                            | Notes                                                                                                                                       |
+|--------|-------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `bpm`  | 60–185                                    | Master tempo. The pot maps every integer BPM in this range to a stable detent (no holes).                                                  |
+| `mrst` | `off` / 2–128                             | Master reset period, in undivided steps. When set, all six tracks snap back to step 0 each time the master tick counter reaches this number — useful for keeping polymetric tracks at different rates from drifting open-ended. Default `off` (free-run). |
+| `clk`  | `INT` / `EXT` / `OUT` / `THR`             | Clock source × clock-out switch. See the table below for what each mode does.                                                              |
 
-The remaining pot positions are inert.
+The remaining pot position is inert.
+
+### Clock modes
+
+| Mode  | Clock source                | Clock out                            | When to use                                                          |
+|-------|-----------------------------|--------------------------------------|----------------------------------------------------------------------|
+| `INT` | Internal (from `bpm`)       | Suppressed                           | Standalone — no MIDI clock leaves the box.                           |
+| `EXT` | External (inbound MIDI clock) | Suppressed                          | Slave to a master clock; don't echo it back out.                     |
+| `OUT` | Internal (from `bpm`)       | Sends `0xF8` stream at internal BPM  | Master to other gear.                                                |
+| `THR` | External (inbound MIDI clock) | Forwards inbound clock to MIDI out   | Pass-through — slaved to a master while re-clocking downstream gear. |
 
 ### Buttons
 
@@ -518,16 +528,18 @@ subs   0 | prob 127 | glid   0 | sfx none
 |--------|---------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `note` | 0–127, shown as note name                                                       | Step note. Quantised to the track's scale and root.                                                                                                                                    |
 | `vel`  | 0–127                                                                           | Step velocity.                                                                                                                                                                         |
-| `vamt` | 0–127                                                                           | Velocity → VCA depth. **Voice-wide** — not lockable per step (set this once for the voice).                                                                                            |
+| `vamt` | 0–127                                                                           | Velocity → VCA depth on INT tracks. **Lockable per step** so it can also drive MIDI Mod Wheel (CC 1) on EXT tracks. On INT, only the live-tweak value reaches the voicecard today — step locks are stored but don't override the voicecard amount at fire time.  |
 | `rate` | `trk` or any value from the per-track `rate` list (`32`…`2B`)                   | Per-step rate override. `trk` inherits the track rate; any other value replaces it on this step only.                                                                                  |
 | `subs` | repeats (CCW), `0` (centre), ratchets (CW)                                      | Bipolar substep cell. CCW values fire the step on subsequent periods; CW values pack multiple sub-triggers into the step's own period. The substep editor extends both modes — see the next section. |
 | `prob` | 0–127 (≈ 0–100 %)                                                               | Probability that the step fires. Also gates whether `sfx` takes effect.                                                                                                                |
-| `glid` | 0–127                                                                           | Per-step glide / portamento time. `0` = no glide.                                                                                                                                      |
+| `glid` | 0–127                                                                           | Per-step glide / portamento time. `0` = no glide. On EXT tracks, the locked value also emits as CC 5 (Portamento Time) on the track's MIDI channel.                                    |
 | `sfx`  | `none`, `skip`, `fwd`, `rev`, `dir`, `rjmp`, `jmp1`–`jmp8`                      | Per-step modifier. No track default — shows `----` when no step is held. Gated by `prob`. `skip` advances without firing; `fwd`/`rev` set track direction sticky; `dir` toggles direction; `rjmp` jumps to a random step; `jmp1`–`jmp8` jump to that absolute step. |
 
 ### Voice 1 page
 
-Oscillator-side per-step locks.
+Oscillator-side per-step locks. **On EXT tracks**, this page is
+replaced with a MIDI CC sequencer view — see *MIDI sequencing*
+below.
 
 ```
 nois  16 | w1   saw | pa1  64 | tun2 +07
@@ -547,7 +559,9 @@ mix   32 | w2   fm  | pa2  90 | fin2 -05
 
 ### Voice 2 page
 
-Filter, envelope, and sub layers per-step.
+Filter, envelope, and sub layers per-step. **On EXT tracks**, this
+page is replaced with a MIDI CC sequencer view — see *MIDI
+sequencing* below.
 
 ```
 freq  64 | fdec  72 | famt +20 | adec  64
@@ -832,37 +846,100 @@ your SD card before flashing.
 
 ## MIDI
 
-Standard 5-pin DIN MIDI in and out are on the back panel. They
-connect Elkhart to the rest of your rig.
+Standard 5-pin DIN MIDI in and out are on the back panel.
 
-### What MIDI does in this version
+### MIDI in
 
-| Direction | Behaviour                                                                                   |
-|-----------|---------------------------------------------------------------------------------------------|
-| In        | Receives MIDI clock and transport (start / continue / stop) for external sync.              |
-| In        | On channel 10, notes 36–41 trigger voices 1–6 (a fixed General-MIDI-style drum map).        |
-| Out       | Sends MIDI clock, transport messages, and note events while the sequencer is running.       |
+| Source                | Effect                                                                              |
+|-----------------------|-------------------------------------------------------------------------------------|
+| Clock (`0xF8`)        | Advances the sequencer when `clk` (transport page) is `EXT` or `THR`.               |
+| Start/Stop/Continue   | Drives transport when slaved to external clock.                                     |
+| Notes on ch 10        | Notes 36–41 trigger voices 1–6 (fixed General-MIDI-style drum map).                 |
 
-### What it doesn't do
+### MIDI out
 
-This version of Elkhart ships **without a detailed MIDI configurator**.
-There is no per-track channel selector, no CC routing UI, and no
-MIDI learn. The behaviour described above is the whole MIDI surface
-you can rely on at v4.0.
+Sequencer note events leave the box on the track's configured MIDI
+channel (set via `mch` on `S6a`). Clock and transport bytes follow
+the `clk` mode on the transport page. CC and Mod Wheel emissions
+are described under *MIDI sequencing* below.
 
-A more configurable MIDI implementation — per-voice channels, CC
-mappings, and learn — is on the roadmap for a later release. Until
-then, MIDI is best treated as a clock and transport bridge plus a
-basic drum-map note input.
+### MIDI sequencing (EXT mode)
+
+Each track has an INT/EXT mode toggle (the `mmod` cell on `S6a`).
+
+- **INT** (default): the track drives its internal voicecard as
+  usual. Sequencer notes are also echoed to MIDI out on the track's
+  channel — useful for layering external gear with the internal
+  voice.
+- **EXT**: the voicecard is bypassed entirely. The track becomes a
+  MIDI-only output: sequencer notes, plus a configurable set of
+  CC values driven by step locks. Use this when you want a track to
+  drive an external synth or drum machine instead of the local
+  voice.
+
+The track's MIDI channel (`mch`) and EXT mode (`mmod`) both live
+on `S6a` and are saved with the snapshot.
+
+#### What an EXT track sends
+
+| Source                         | MIDI message                          |
+|--------------------------------|---------------------------------------|
+| Step note + velocity           | Note On / Note Off on `mch`           |
+| `vamt` cell (S5a)              | CC 1 (Mod Wheel) on `mch`             |
+| `glid` cell (S5a)              | CC 5 (Portamento Time) on `mch`       |
+| 8 configurable slots (S5b/S5c) | User-assigned CC on `mch`             |
+
+`vamt` and `glid` are fixed-purpose on EXT — they map directly to
+the matching standard MIDI controllers so external synths reach
+them with no setup. The other eight slots are configurable: each
+slot picks its own CC number, so you can target whichever filter,
+envelope, or modulation control the receiving gear expects.
+
+#### S5b / S5c on EXT — the MIDI CC page
+
+When the active track is EXT, the `S5b` and `S5c` pages flip from
+their normal synth-param layout to a MIDI CC sequencer view. Four
+slots per page, eight per track total. Each slot occupies one
+column of the LCD, with two stacked rows:
+
+```
+CC#  20 | CC#  74 | CC#  off| CC#  16    ← top row: configurable CC#
+val 127 | val  45 | val   0 | val  90    ← bottom row: lockable value
+```
+
+- **Top row (pots 0–3): the CC number.** Twist the pot to assign a
+  CC (1–127). All the way CCW reads `off` and disables emission
+  for that slot. Default is `off` on every slot — a fresh EXT
+  track is silent on CC until you opt each slot in.
+- **Bottom row (pots 4–7): the value sent.** This is a normal
+  lockable cell: hold a step button and turn the pot to author a
+  per-step lock, or turn without a step held to set the track
+  default. Unlocked steps "snap back" to the default on every step.
+
+Step locks on these cells fire the assigned CC at step time, just
+like an INT track's synth params get locked. Channel comes from
+`mch`. Live pot moves emit the CC immediately so you can perform
+with the knob in real time.
+
+#### Switching INT ↔ EXT
+
+Flipping the `mmod` toggle silences the voicecard immediately on
+INT → EXT transitions (so any ringing voice stops cleanly). On
+EXT → INT the voicecard resumes firing on the next step. The
+stored values on the lock pages aren't cleared — they're
+interpreted as synth params on INT and as CC values on EXT, so
+toggling modes briefly mid-piece will read the same bytes through
+two different lenses.
 
 ### Connecting
 
-- **MIDI In** receives clock from a master sequencer or DAW. Send
-  start / stop / continue from the master to drive Elkhart's
-  transport.
-- **MIDI Out** sends clock and notes from Elkhart, so external
-  drum machines or synths can follow along, and so individual step
-  notes can play hardware connected downstream.
+- **MIDI In** receives clock from a master sequencer or DAW. Set
+  `clk` to `EXT` (for receive-only) or `THR` (to also forward
+  clock downstream).
+- **MIDI Out** sends note + CC events for every active track plus
+  clock when `clk` is `OUT` or `THR`. Hook external synths or
+  drum machines to their respective tracks' channels and let
+  Elkhart sequence them.
 
 ## License and credits
 
