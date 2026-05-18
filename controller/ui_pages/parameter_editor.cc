@@ -149,7 +149,8 @@ uint8_t ParameterEditor::OnPot(uint8_t index, uint8_t value) {
       part_index(active_control_),
       instance_index(active_control_),
       value);
-  edit_mode_ = EDIT_STARTED_BY_POT;
+  // Don't grab encoder focus on pot touch — the encoder should stay in
+  // navigation mode. Pot is its own input.
   return 1;
 }
 
