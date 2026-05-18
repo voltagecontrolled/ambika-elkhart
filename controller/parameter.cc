@@ -859,10 +859,10 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 0xff,
     STR_RES_CURV, STR_RES_CURV, STR_RES_ENVELOPE },
 
-  // 81 — E3 depth (virtual addr 202 → mod slot 2 amount)
+  // 81 — E3 depth (virtual addr 202 → page3 PAMT, same byte as patch addr 58)
   { PARAMETER_LEVEL_PATCH,
     202,
-    UNIT_UINT8, 0, 127,
+    UNIT_INT8, -63, 63,
     1, 0, 0xff, 0xff,
     STR_RES_PCH, STR_RES_DEPTH, STR_RES_ENVELOPE },
 

@@ -146,7 +146,7 @@ static const uint8_t kCfgFMOP  = 23;  // FM/crossmod operator mode
 static const uint8_t kCfgFUZZ  = 24;  // fuzz
 static const uint8_t kCfgE1DEPT = 25; // ENV1→VCA depth (mod slot 10 amount)
 static const uint8_t kCfgE2DEPT = 26; // ENV2→VCF depth (filter_env)
-static const uint8_t kCfgE3DEPT = 27; // ENV3→pitch depth (mod slot 2 amount)
+static const uint8_t kCfgE3DEPT = 27; // unused — ENV3→pitch depth moved to defaults[24 + kP3PAMT]
 static const uint8_t kCfgWSUB  = 28;  // sub-osc waveform shape
 
 static const uint8_t kCfgSIZE  = 29;

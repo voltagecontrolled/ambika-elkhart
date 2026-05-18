@@ -148,7 +148,8 @@ static const prog_char kSmodLabels[] PROGMEM =
 
 // Lockable indices that store an int8_t (centered at 0).
 static inline uint8_t IsSignedLockable(uint8_t lockable) {
-  return lockable == 9 || lockable == 11;   // kP2TUN2 / kP2FIN2 (8 + 1, 8 + 3)
+  // kP2TUN2 (9), kP2FIN2 (11), kP3PAMT (26 = 24 + 2)
+  return lockable == 9 || lockable == 11 || lockable == 26;
 }
 
 // Wave cells use a 2-char abbr + 6-char value layout instead of the
@@ -493,6 +494,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   } else if (lockable == 11) {
     // fin2 — Osc2 detune, UNIT_INT8 -64..+64.
     mapped = MapPotInt8(value, -64, 64);
+  } else if (lockable == 26) {
+    // pamt — ENV3→pitch depth, bipolar (matches "pitc" on Envelope page).
+    mapped = MapPotInt8(value, -63, 63);
   } else if (lockable == 3) {
     // BLND (mix) — clamp to crossfade range. Upper half (≥ 64) was reserved
     // for future linear-FM and isn't implemented; the dead range produced
@@ -502,8 +506,8 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     // RATE — per-step CDIV override; 0 = use track CDIV, 1..15 = CDIV index.
     mapped = value >> 3;  // 0..127 → 0..15
   }
-  // freq / famt / pamt pass through 0..127 (matches PAGE_FILTER pot semantics
-  // and the round-5 unipolar env-depth range).
+  // freq / famt pass through 0..127 (matches PAGE_FILTER pot semantics
+  // and the round-5 unipolar env-depth range). pamt is bipolar (handled above).
 
   // Config-mapped cells (smth, vamt) push directly to the voicecard.
   // Empty cells (lockable & patch_addr both 0xff) are no-ops.

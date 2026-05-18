@@ -78,10 +78,11 @@ static const prog_Patch init_patch PROGMEM = {
   
   LFO_WAVEFORM_TRIANGLE, 16,
   
-  // Routing — fixed: ENV3→pitch, LFO4 configurable, ENV1→VCA, VEL→VCA, pitchbend
+  // Routing — fixed: ENV3→pitch (dedicated path, row 2 skipped by matrix),
+  // LFO4 configurable, ENV1→VCA, VEL→VCA, pitchbend
   0, 0, 0,
   0, 0, 0,
-  MOD_SRC_ENV_3, MOD_DST_OSC_1_2_COARSE, 0,
+  0, 0, 0,
   0, 0, 0,
   0, 0, 0,
   0, 0, 0,
@@ -270,6 +271,9 @@ inline void Voice::LoadSources() {
 inline void Voice::ProcessModulationMatrix() {
   // Apply the modulations in the modulation matrix.
   for (uint8_t i = 0; i < kNumModulations; ++i) {
+    // Row 2 is the dedicated ENV3 → pitch path; applied directly in
+    // RenderOscillators with wider scaling than the matrix coarse-pitch bus.
+    if (i == 2) continue;
     int8_t amount = patch_.modulation[i].amount;
 
     // The rate of the last modulation is adjusted by the wheel.
@@ -365,6 +369,11 @@ inline void Voice::RenderOscillators() {
     pitch_increment_ = 0;
   }
   pitch_value_ = base_pitch;
+
+  // Dedicated ENV3 → pitch path (PAMT). Bypasses the matrix so it can sweep
+  // wide enough for kick-style pitch drops: ±63 amount × 0..255 env → ~±5 oct.
+  base_pitch += S8U8Mul(patch_.modulation[2].amount,
+                        modulation_sources_[MOD_SRC_ENV_3]) >> 1;
 
   // -4 / +4 semitones by the vibrato and pitch bend (coarse).
   // -0.5 / +0.5 semitones by the vibrato and pitch bend (fine).

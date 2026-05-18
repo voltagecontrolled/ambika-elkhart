@@ -291,7 +291,7 @@ rate  48 | wave tri | dest pit | dept  +32     ← LFO
 | `rise` | 0–127            | Env 3 attack.                                                           |
 | `fall` | 0–127            | Env 3 decay/release. Lockable per step (as `pdec`).                     |
 | `curv` | 0–127            | Env 3 fall curve blend.                                                 |
-| `pitc` | signed           | Env 3 → Osc 1 pitch depth. Lockable per step (as `pamt`). Useful for percussive pitch drops or upward "kick" attacks. |
+| `pitc` | −63..+63         | Env 3 → Osc 1 pitch depth (bipolar, default 0). Same byte as `pamt` on the voice page / step locks — edits in either place agree. Range is roughly ±5 octaves at full deflection, plenty for kick-drum pitch drops or upward chirps. |
 | `rate` | 0–127            | LFO speed. Free-running — there is no tempo sync in this version.       |
 | `wave` | sine / tri / square / ramp / S&H | LFO waveform.                                          |
 | `dest` | destination list | What the LFO modulates (pitch, cutoff, FM depth, etc.).                 |
@@ -575,7 +575,7 @@ pdec  20 | pamt +24 | sub   48 | wave squ1
 | `famt` | signed           | Filter envelope depth (the same control as `flt` / `env2`).            |
 | `adec` | 0–127            | Amp envelope (Env 1) decay rate.                                       |
 | `pdec` | 0–127            | Pitch envelope (Env 3) decay rate.                                     |
-| `pamt` | signed           | Pitch envelope depth (the same control as `pitc`).                     |
+| `pamt` | −63..+63         | Pitch envelope depth (bipolar, default 0). Same byte as `pitc` on the envelope page. ~±5 octaves at full deflection. |
 | `sub`  | 0–63             | Sub-oscillator level.                                                  |
 | `wave` | 11 shapes        | Sub-oscillator shape (`squ1`, `tri1`, `pul1`, `squ2`, `tri2`, `pul2`, `click`, `glitch`, `blow`, `metal`, `pop`). |
 

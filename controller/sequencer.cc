@@ -165,7 +165,7 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // FUZZ = no fuzz
   127,  // E1DEPT = ENV1→VCA full depth (round 5: 0..127 unipolar)
   64,   // E2DEPT = ENV2→VCF depth (round 5 mid; can push higher now)
-  0,    // E3DEPT = ENV3→pitch depth (default off)
+  0,    // E3DEPT unused — ENV3→pitch depth lives in defaults[24 + kP3PAMT]
   0,    // WSUB = WAVEFORM_SUB_OSC_SQUARE_1
 };
 
@@ -173,7 +173,7 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
 const prog_uint8_t kDefaultMod[42] PROGMEM = {
   0, 0, 0,    // slot  0: cleared
   0, 0, 0,    // slot  1: cleared
-  2, 4, 0,    // slot  2: ENV_3 → OSC_1_2_COARSE (pitch depth, amount from E3DEPT)
+  0, 0, 0,    // slot  2: cleared (ENV3→pitch is now a dedicated path on voicecard, bypasses matrix)
   0, 0, 0,    // slot  3: cleared
   0, 0, 0,    // slot  4: cleared
   0, 0, 0,    // slot  5: cleared

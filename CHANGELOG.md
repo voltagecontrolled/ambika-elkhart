@@ -12,6 +12,49 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### PAMT (ENV3 → pitch depth): dedicated wide-range path + unified storage (2026-05-17)
+
+**Flash:** voicecard +28 B, controller +36 B. **RAM:** unchanged.
+Voicecard binary changed — reflash all six voicecards.
+
+Two issues addressed together: PAMT had so little authority that kick-drum
+pitch sweeps were inaudible, and the Envelope page's `pitc` cell and the
+Voice Page 3 / step-lock `pamt` cell wrote to two different SeqTrack caches
+that drifted out of sync.
+
+- **Dedicated pitch-env path on the voicecard.** `RenderOscillators` adds
+  `S8U8Mul(modulation[2].amount, ENV_3) >> 1` directly to `base_pitch`
+  after portamento. Row 2 of the mod matrix is skipped in
+  `ProcessModulationMatrix` so PAMT no longer flows through the ±4-semi
+  `MOD_DST_OSC_1_2_COARSE` bus shared with pitch bend. Effective range:
+  roughly ±5 octaves at full deflection.
+
+- **Single source of truth.** Virtual addr 202 (`pitc`, Envelope page
+  param 81) now resolves to `defaults[24 + kP3PAMT]` — the same byte as
+  patch addr 58 (`pamt`). `kCfgE3DEPT` is marked unused. Both views always
+  agree.
+
+- **Bipolar everywhere.** Param 81 declared `UNIT_INT8, -63..+63`. The
+  step-lock view of `pamt` (`seq_steps_page` lockable 26) added to
+  `IsSignedLockable` and pot-mapped via `MapPotInt8(-63, 63)`. Default 0
+  means no modulation; negative sweeps reachable from either page.
+
+- **Latent OOB write removed.** `Part::Touch()` was syncing raw addresses
+  200 / 201 / 202 to the voicecard, which wrote past the 112-byte Patch
+  struct. The canonical addresses (22 / 58 / 82) were already in the sync
+  list, so the virtual addresses were redundant duplicates with an OOB
+  side effect. Removed from `kSyncAddresses[]`. `kDefaultMod` slot 2
+  cleared since the matrix row is no longer used.
+
+### ParameterEditor: pot edits no longer hijack the encoder (2026-05-17)
+
+`ParameterEditor::OnPot` previously set `edit_mode_ = EDIT_STARTED_BY_POT`,
+which routed encoder turns into value-edit mode on the pot's parameter
+until an idle timeout or an encoder click released it. Encoder is now
+always in navigation mode; pot edits still move the visual focus marker
+but no longer capture encoder input. Encoder click still toggles into
+encoder-edit on the focused control.
+
 ### MIDI sequencing: per-track INT/EXT mode, CC out, clock coordinator (2026-05-17)
 
 **Flash:** controller 58,434 B (89.2%, +1.5 KB net). **RAM:** 3,871 B

@@ -86,7 +86,8 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     // EG depth (virtual; indexed by active_env_lfo; 200=Amp/E1, 201=Filt/E2, 202=Pitch/E3)
     case 200: return &tr.config[kCfgE1DEPT];
     case 201: return &tr.config[kCfgE2DEPT];
-    case 202: return &tr.config[kCfgE3DEPT];
+    // ENV3→pitch depth (PAMT) lives in page3 defaults, same byte as case 58.
+    case 202: return &tr.defaults[24 + kP3PAMT];
     default: return NULL;
   }
 }
@@ -132,7 +133,6 @@ void Part::Touch() {
     48, 49,
     58, 72, 73, 82, 85,
     105,
-    200, 201, 202,
   };
   for (uint8_t i = 0; i < sizeof(kSyncAddresses); ++i) {
     uint8_t addr = kSyncAddresses[i];
