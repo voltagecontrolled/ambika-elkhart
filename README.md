@@ -20,6 +20,10 @@ the as-built record and `docs/release-notes/` for what's in each release.
   user manual: installation, controls, sequencer, parameter locks
 - **`CHANGELOG.md`** — as-built architecture and per-release history
 
+## Demo Video
+
+[![Watch the video](https://img.youtube.com/vi/jJtWyBuSV48/hq3.jpg)](https://www.youtube.com/watch?v=jJtWyBuSV48)
+
 ## Releases
 
 Tagged releases are published on the [Releases](https://github.com/voltagecontrolled/ambika-elkhart/releases)
