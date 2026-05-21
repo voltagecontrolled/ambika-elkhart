@@ -32,6 +32,10 @@ namespace ambika {
 // Rate label table, defined in seq_track_page.cc. 15 entries × 4 chars.
 extern const prog_char kRateLabels[] PROGMEM;
 
+// Preset tick table, defined in sequencer.cc. Used for raw↔preset snap on
+// the RATE cell click toggle.
+extern const prog_uint8_t kRateValues[] PROGMEM;
+
 // Scale a 0..127 pot value to 0..max (inclusive).
 static inline uint8_t ScalePot(uint8_t value, uint8_t max) {
   return (static_cast<uint16_t>(value) * (max + 1)) >> 7;
@@ -71,6 +75,9 @@ uint8_t SeqStepsPage::last_tap_step_ = 0xff;
 
 /* static */
 uint16_t SeqStepsPage::last_tap_ms_ = 0;
+
+/* static */
+uint8_t SeqStepsPage::rate_snap_pending_ = 0;
 
 // Hold ≥ this many ms = peek (no release toggle).
 static const uint16_t kStepLongPressMs = 250;
@@ -216,12 +223,67 @@ const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
 };
 
 // Encoder click: enter substep editor when on subs cell with step held;
-// exit substep editor on any second click.
+// exit substep editor on any second click. On the RATE cell (lockable==19),
+// click toggles between preset and raw-tick modes (bit 7 escape on the
+// stored byte). The inherit sentinel (v==0) is a no-op.
 /* static */
 uint8_t SeqStepsPage::OnClick() {
   if (editing_substeps_) {
     editing_substeps_ = false;
     return 1;
+  }
+  {
+    uint8_t lockable = pgm_read_byte(&kCellLockable[cursor_]);
+    if (lockable == 19) {
+      uint8_t track = ui.state().active_part;
+      SeqTrack* tr = sequencer.mutable_track(track);
+      uint8_t held_sr = 0xff;
+      for (uint8_t s = 0; s < 8; ++s) {
+        if (ui.switch_held(s)) { held_sr = s; break; }
+      }
+      // When a step is held, edits target the per-step lock slot
+      // (creating the lock from the current default if not yet locked).
+      // Otherwise edits target the track default.
+      uint8_t* slot;
+      uint8_t v;
+      if (held_sr != 0xff) {
+        uint8_t held_step = 7 - held_sr;
+        SeqStep& step = tr->steps[held_step];
+        slot = &step.steppage[kSPRATE];
+        v = (step.lock_flags[2] & (1 << kSPRATE)) ? *slot : tr->defaults[19];
+        step.lock_flags[2] |= (1 << kSPRATE);
+        step_lock_dirty_ |= (1 << held_step);
+        ui.inhibit_switch(1 << held_sr);
+      } else {
+        slot = &tr->defaults[19];
+        v = *slot;
+      }
+      if (v == 0) return 1;  // inherit sentinel — no-op
+      if (v & 0x80) {
+        // raw → preset: snap to nearest entry, store 1-based index.
+        uint8_t period = v & 0x7F;
+        uint8_t best_idx = 0;
+        uint8_t best_diff = 0xFF;
+        for (uint8_t i = 0; i < 15; ++i) {
+          uint8_t p = pgm_read_byte(kRateValues + i);
+          uint8_t diff = (p > period) ? (p - period) : (period - p);
+          if (diff < best_diff) {
+            best_diff = diff;
+            best_idx = i;
+          }
+        }
+        *slot = best_idx + 1;  // per-step bytes are 1-based
+      } else {
+        // preset → raw: resolve via 1-based index.
+        uint8_t idx = v - 1;
+        if (idx >= 15) idx = 14;
+        uint8_t period = pgm_read_byte(kRateValues + idx);
+        if (period > 96) period = 96;
+        *slot = 0x80 | period;
+      }
+      rate_snap_pending_ = 1;
+      return 1;
+    }
   }
   if (cursor_ == 4) {
     for (uint8_t s = 0; s < 8; ++s) {
@@ -306,6 +368,7 @@ uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
   }
   cursor_ = next;
   sequencer.mutable_global()->lock_page = cursor_ >> 3;
+  rate_snap_pending_ = 1;
   return 1;
 }
 
@@ -503,8 +566,32 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     // glitchy output. 0..127 pot → 0..63 crossfade only.
     mapped = value >> 1;
   } else if (lockable == 19) {
-    // RATE — per-step CDIV override; 0 = use track CDIV, 1..15 = CDIV index.
-    mapped = value >> 3;  // 0..127 → 0..15
+    // RATE — per-step CDIV override; 0 = use track CDIV, 1..15 = preset
+    // index, bit 7 set = raw tick period. Raw mode is reached via encoder
+    // click; pot in raw mode edits the period with snap-on-cross.
+    uint8_t cur;
+    if (held_sr != 0xff) {
+      uint8_t held_step = 7 - held_sr;
+      const SeqStep& step = tr->steps[held_step];
+      cur = (step.lock_flags[2] & (1 << kSPRATE))
+          ? step.steppage[kSPRATE] : tr->defaults[19];
+    } else {
+      cur = tr->defaults[19];
+    }
+    if (cur & 0x80) {
+      uint8_t new_period = 2 + ((static_cast<uint16_t>(value) * 94) >> 7);
+      if (new_period > 96) new_period = 96;
+      if (rate_snap_pending_) {
+        uint8_t cur_period = cur & 0x7F;
+        uint8_t diff = (new_period > cur_period)
+            ? (new_period - cur_period) : (cur_period - new_period);
+        if (diff > 2) return 1;
+        rate_snap_pending_ = 0;
+      }
+      mapped = 0x80 | new_period;
+    } else {
+      mapped = value >> 3;  // 0..127 → 0..15
+    }
   }
   // freq / famt pass through 0..127 (matches PAGE_FILTER pot semantics
   // and the round-5 unipolar env-depth range). pamt is bipolar (handled above).
@@ -888,13 +975,16 @@ void SeqStepsPage::UpdateScreen() {
     } else if (IsSignedLockable(lockable)) {
       WriteI8Right(&buffer[6], v);
     } else if (lockable == 19) {
-      // RATE per-step override. 0 = inherit track (rendered " trk");
-      // 1..15 = direct rate, indexes kRateLabels[(r-1)..14].
-      uint8_t r = v & 15;
-      if (r == 0) {
+      // RATE per-step override. 0 = inherit track (" trk"); 1..15 = preset
+      // (indexes kRateLabels[(r-1)..14]); bit 7 set = raw tick period.
+      if (v == 0) {
         memcpy_P(&buffer[6], PSTR(" trk"), 4);
+      } else if (v & 0x80) {
+        buffer[6] = ' '; buffer[7] = 't';
+        UnsafeItoa<uint8_t>(v & 0x7F, 2, &buffer[8]);
+        AlignRight(&buffer[8], 2);
       } else {
-        uint8_t i = r - 1;
+        uint8_t i = v - 1;
         if (i >= 15) i = 14;
         memcpy_P(&buffer[6], kRateLabels + i * 4, 4);
       }

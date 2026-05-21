@@ -12,6 +12,46 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### Raw-tick RATE editing: bit-7 escape on track and per-step CDIV (2026-05-21)
+
+**Flash:** controller +1100 B (now 90.9%, 5978 B free). **RAM:** +2 B.
+Voicecard binaries unchanged.
+
+The 15-entry `kRateValues[]` musical-division table covers `1/32` through
+`2B` but misses periods like 5, 7, 10, 11 ticks — exactly what
+tracker-style swing needs. RATE bytes now carry a bit-7 escape: bit 7
+clear = preset index (unchanged), bit 7 set = `byte & 0x7F` raw MIDI
+ticks, clamped to `[2, 96]` (96 ticks = 1 bar at 24 PPQN).
+
+- **Encoder click toggles the mode** on cursor==1 of `seq_track_page`
+  (track CDIV) and lockable==19 of `seq_steps_page` (per-step RATE).
+  Preset → raw resolves the current preset to ticks and stores
+  `0x80 | period`; raw → preset linear-scans `kRateValues[]` for the
+  nearest entry. Inherit sentinel (`v == 0`) is a no-op.
+
+- **Pot in raw mode** maps `0..127 → 2..96` ticks linearly with
+  snap-on-cross gating (per-page transient flag, reset on cursor move
+  or click toggle).
+
+- **Display** flips from preset label (`" 16 "`) to `" tNN"` via
+  existing `UnsafeItoa` + `AlignRight`. No new PROGMEM table.
+
+- **Saved patches load bit-identically** since existing preset bytes
+  have bit 7 clear. `RatePeriod()` helper in `sequencer.cc` resolves
+  both shapes; replaces the inline clamp + `pgm_read_byte` at the
+  fire-time and Reset pre-charge sites.
+
+Tracker-style swing: track CDIV at `1/16` (preset, period 6), step 0
+RATE = `t7`, step 1 RATE = `t5`, alternating → ~58% swing. Polymeter,
+direction modes, and parameter locks all compose with raw-tick rates
+since the escape lives entirely in the byte encoding.
+
+The orphaned groove/swing strip (`SeqGlobal.swing`,
+`MultiData.clock_groove_*`, 6 PROGMEM LUTs, ~10 string resources) is
+left in place for now; removing it requires a snapshot v3 migration
+and resource regeneration. See `docs/planning/edit-ticks.md` for the
+deferred plan.
+
 ### PAMT (ENV3 → pitch depth): dedicated wide-range path + unified storage (2026-05-17)
 
 **Flash:** voicecard +28 B, controller +36 B. **RAM:** unchanged.

@@ -22,9 +22,27 @@ Sequencer sequencer;
 // MIDI ticks at 24 PPQN (one Multi::Clock() = 1 tick).
 // Labels (musical notation): 32, 16t, 16, 8t, 16d, 8, 4t, 8d, 4, 2t, 4d, 2,
 //                            1, 1d, 2B.
-static const prog_uint8_t kRateValues[] PROGMEM = {
+// Bit-7 escape: if a RATE byte has bit 7 set, byte & 0x7F is a raw tick
+// period clamped to [2, 96], bypassing the preset table. Saved patches load
+// bit-identically since existing preset bytes have bit 7 clear.
+// Non-static: shared with seq_track_page.cc and seq_steps_page.cc via extern
+// for the raw↔preset snap scan on encoder-click mode toggle.
+extern const prog_uint8_t kRateValues[] PROGMEM = {
     3, 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48, 96, 144, 192
 };
+
+// Resolves a 0-based preset byte (or a 0x80|period raw byte) to a tick period.
+// Callers with 1-based per-step bytes must subtract 1 before passing.
+static inline uint8_t RatePeriod(uint8_t byte) {
+  if (byte & 0x80) {
+    uint8_t p = byte & 0x7F;
+    if (p < 2) p = 2;
+    else if (p > 96) p = 96;
+    return p;
+  }
+  if (byte >= 15) byte = 14;
+  return pgm_read_byte(kRateValues + byte);
+}
 
 // MINT chord shapes (mutation step). Value 0 = off (no walk). Values 1..12
 // index kChordOffsets / kChordSizes to slice into kChordIntervals. Each chord
@@ -264,11 +282,18 @@ void Sequencer::Clock(uint8_t ticks) {
     SeqTrack& tr = tracks_[t];
 
     // RATE: per-step rate override for the currently-playing step.
-    // 0 = inherit track; 1..15 = direct pick from kRateValues[rate-1].
+    // 0 = inherit track; 1..15 = preset (rate-1 into kRateValues); bit-7 set
+    // = raw tick period.
     uint8_t rate = ResolveStepByte(tr, tr.shadow[kShdwLAST], kSPRATE);
-    uint8_t cdiv_idx = rate ? (rate - 1) : tr.pattern[kPatCDIV];
-    if (cdiv_idx >= 15) cdiv_idx = 14;
-    uint8_t period = pgm_read_byte(kRateValues + cdiv_idx);
+    uint8_t cdiv_byte;
+    if (rate == 0) {
+      cdiv_byte = tr.pattern[kPatCDIV];
+    } else if (rate & 0x80) {
+      cdiv_byte = rate;
+    } else {
+      cdiv_byte = rate - 1;
+    }
+    uint8_t period = RatePeriod(cdiv_byte);
 
     tr.shadow[kShdwTICK] += ticks;
 
@@ -640,10 +665,9 @@ void Sequencer::Reset() {
     // TICK exactly at period and fires step 0 with a full-period gate window
     // (matching every subsequent step). Pre-charging to period (instead of
     // period-1) would cross the threshold by one tick on first increment and
-    // truncate step 0's gate. period >= 3 for all kRateValues entries.
-    uint8_t cdiv_idx = tracks_[t].pattern[kPatCDIV];
-    if (cdiv_idx >= 15) cdiv_idx = 14;
-    uint8_t period = pgm_read_byte(kRateValues + cdiv_idx);
+    // truncate step 0's gate. period >= 2 (raw escape clamps to 2; preset
+    // entries are all >= 3).
+    uint8_t period = RatePeriod(tracks_[t].pattern[kPatCDIV]);
     tracks_[t].shadow[kShdwTICK] = period - 1;
   }
   global_.master_tick = 0;

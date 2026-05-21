@@ -16,6 +16,7 @@ class SeqTrackPage : public UiPage {
   SeqTrackPage() { }
 
   static uint8_t OnIncrement(int8_t increment);
+  static uint8_t OnClick();
   static uint8_t OnPot(uint8_t index, uint8_t value);
   static void UpdateScreen();
 
@@ -24,6 +25,10 @@ class SeqTrackPage : public UiPage {
  private:
   // Highlighted knob (0..7).
   static uint8_t cursor_;
+  // Snap-on-cross gate for cursor==1 raw-tick mode. Set when entering raw
+  // mode or when the cursor lands on RATE; cleared once the pot sweeps near
+  // the stored tick value.
+  static uint8_t rate_snap_pending_;
 
   DISALLOW_COPY_AND_ASSIGN(SeqTrackPage);
 };

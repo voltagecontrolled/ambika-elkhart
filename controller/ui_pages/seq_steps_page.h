@@ -46,6 +46,11 @@ class SeqStepsPage : public UiPage {
   static uint8_t last_tap_step_;
   static uint16_t last_tap_ms_;
 
+  // Snap-on-cross gate for the RATE cell (lockable==19) in raw-tick mode.
+  // Set when entering raw mode or when cursor moves; cleared once the pot
+  // sweeps near the stored tick value.
+  static uint8_t rate_snap_pending_;
+
   DISALLOW_COPY_AND_ASSIGN(SeqStepsPage);
 };
 

@@ -18,6 +18,8 @@ namespace ambika {
 
 /* static */
 uint8_t SeqTrackPage::cursor_ = 0;
+/* static */
+uint8_t SeqTrackPage::rate_snap_pending_ = 0;
 
 // 4-char short_name per knob (lowercase by default; uppercased on cursor).
 // Cells 6 + 7 (formerly retired BPCH and now-redundant VOL — the mixer page
@@ -32,6 +34,9 @@ static const prog_char kAbbr[] PROGMEM =
 //   32, 16t, 16, 8t, 16d, 8, 4t, 8d, 4, 2t, 4d, 2, 1, 1d, 2B
 extern const prog_char kRateLabels[] PROGMEM =
   "  32 16t  16  8t 16d   8  4t  8d   4  2t  4d   2   1  1d  2B";
+
+// Defined in sequencer.cc. Used for the click-toggle raw↔preset snap scan.
+extern const prog_uint8_t kRateValues[] PROGMEM;
 
 // DIRN labels right-justified into 4-char fields.
 static const prog_char kDirnLabels[] PROGMEM = " fwd rev pendrnd ";
@@ -51,7 +56,7 @@ const prog_EventHandlers SeqTrackPage::event_handlers_ PROGMEM = {
   OnInit,
   SetActiveControl,
   OnIncrement,
-  OnClick,
+  OnClick,  // custom — toggles raw-tick mode on RATE cell
   OnPot,
   OnKey,
   NULL,
@@ -75,7 +80,42 @@ uint8_t SeqTrackPage::OnIncrement(int8_t increment) {
     return 1;
   }
   cursor_ = next;
+  rate_snap_pending_ = (cursor_ == 1) ? 1 : 0;
   return 1;
+}
+
+/* static */
+uint8_t SeqTrackPage::OnClick() {
+  if (cursor_ == 1) {
+    uint8_t track = ui.state().active_part;
+    SeqTrack* tr = sequencer.mutable_track(track);
+    uint8_t v = tr->pattern[1];
+    if (v & 0x80) {
+      // raw → preset: snap to nearest entry in kRateValues.
+      uint8_t period = v & 0x7F;
+      uint8_t best_idx = 0;
+      uint8_t best_diff = 0xFF;
+      for (uint8_t i = 0; i < 15; ++i) {
+        uint8_t p = pgm_read_byte(kRateValues + i);
+        uint8_t diff = (p > period) ? (p - period) : (period - p);
+        if (diff < best_diff) {
+          best_diff = diff;
+          best_idx = i;
+        }
+      }
+      tr->pattern[1] = best_idx;
+    } else {
+      // preset → raw: resolve to ticks, store 0x80|period.
+      uint8_t idx = v;
+      if (idx >= 15) idx = 14;
+      uint8_t period = pgm_read_byte(kRateValues + idx);
+      if (period > 96) period = 96;
+      tr->pattern[1] = 0x80 | period;
+    }
+    rate_snap_pending_ = 1;
+    return 1;
+  }
+  return UiPage::OnClick();
 }
 
 /* static */
@@ -90,9 +130,24 @@ uint8_t SeqTrackPage::OnPot(uint8_t index, uint8_t value) {
     case 0:  // DIRN: 0..3
       mapped = value >> 5;  // 0..127 → 0..3
       break;
-    case 1:  // rate (track): index 0..14
+    case 1: {  // rate (track): preset 0..14, or raw ticks if bit 7 set.
+      uint8_t cur = tr->pattern[1];
+      if (cur & 0x80) {
+        uint8_t new_period = 2 + ((static_cast<uint16_t>(value) * 94) >> 7);
+        if (new_period > 96) new_period = 96;
+        if (rate_snap_pending_) {
+          uint8_t cur_period = cur & 0x7F;
+          uint8_t diff = (new_period > cur_period)
+              ? (new_period - cur_period) : (cur_period - new_period);
+          if (diff > 2) return 1;
+          rate_snap_pending_ = 0;
+        }
+        tr->pattern[1] = 0x80 | new_period;
+        return 1;
+      }
       mapped = (static_cast<uint16_t>(value) * 15) >> 7;  // 0..127 → 0..14
       break;
+    }
     case 2:  // ROTA: 0..7
       mapped = value >> 4;
       break;
@@ -162,9 +217,15 @@ void SeqTrackPage::UpdateScreen() {
         memcpy_P(val, kDirnLabels + (v & 3) * 4, 4);
         break;
       case 1: {  // rate
-        uint8_t i = v;
-        if (i >= 15) i = 14;
-        memcpy_P(val, kRateLabels + i * 4, 4);
+        if (v & 0x80) {
+          val[0] = ' '; val[1] = 't';
+          UnsafeItoa<uint8_t>(v & 0x7F, 2, val + 2);
+          AlignRight(val + 2, 2);
+        } else {
+          uint8_t i = v;
+          if (i >= 15) i = 14;
+          memcpy_P(val, kRateLabels + i * 4, 4);
+        }
         break;
       }
       case 4:  // SCAL

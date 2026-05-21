@@ -344,6 +344,35 @@ straight, `t` = triplet, `d` = dotted, `B` = bars (in 4/4).
 | `1d`  | dotted whole        |
 | `2B`  | two bars            |
 
+### Raw-tick `rate` (tracker swing)
+
+The 15 musical-rate presets are evenly distributed but skip a few
+periods that make tracker-style swing possible — 5, 7, 10, 11 ticks
+at 24 PPQN. To reach them, the `rate` cell has a raw-tick mode.
+
+**Click the encoder on the `rate` cell** (either the track `rate` on
+`S6a`, or the per-step `rate` on the Step lock page) to toggle between
+preset and raw-tick mode. The display flips from `" 16 "` to `" t6 "`:
+the leading `t` marks raw mode, and the number is the period in MIDI
+ticks (24 PPQN, so `t6` = `1/16`, `t12` = `1/8`, etc).
+
+In raw mode the pot edits the period directly, `2..96` ticks
+(`96` = one bar). It uses snap-on-cross — sweep the pot through the
+stored value before edits commit, so cursoring onto the cell doesn't
+jump the rate. Click again to flip back to the preset table; the byte
+snaps to the nearest entry.
+
+The per-step `rate` inherit sentinel (`trk`) cannot be toggled until a
+concrete rate is set.
+
+**Recipe — tracker swing on 16ths.** Set the track `rate` to `16`
+(period 6). On the Step lock page, hold step 0 and click on its `rate`
+cell to flip to raw mode, then turn the pot to `t7`. Repeat on step 1
+with `t5`. Alternating `t7 / t5` averages back to 6 ticks but with a
+~58% swing feel. Any pair that sums to twice the underlying preset
+period stays in sync with the master clock; further-apart values
+(`t8 / t4` ≈ triplet feel) work too.
+
 ### Polymeter, briefly
 
 Two tracks at the same `rate` and `leng` lock to the same downbeat
@@ -529,7 +558,7 @@ subs   0 | prob 127 | glid   0 | sfx none
 | `note` | 0–127, shown as note name                                                       | Step note. Quantised to the track's scale and root.                                                                                                                                    |
 | `vel`  | 0–127                                                                           | Step velocity.                                                                                                                                                                         |
 | `vamt` | 0–127                                                                           | Velocity → VCA depth on INT tracks. **Lockable per step** so it can also drive MIDI Mod Wheel (CC 1) on EXT tracks. On INT, only the live-tweak value reaches the voicecard today — step locks are stored but don't override the voicecard amount at fire time.  |
-| `rate` | `trk` or any value from the per-track `rate` list (`32`…`2B`)                   | Per-step rate override. `trk` inherits the track rate; any other value replaces it on this step only.                                                                                  |
+| `rate` | `trk`, preset (`32`…`2B`), or raw-tick (`t2`…`t96`)                             | Per-step rate override. `trk` inherits the track rate. Encoder click toggles between preset and raw-tick modes — see *Raw-tick `rate` (tracker swing)* above.                          |
 | `subs` | repeats (CCW), `0` (centre), ratchets (CW)                                      | Bipolar substep cell. CCW values fire the step on subsequent periods; CW values pack multiple sub-triggers into the step's own period. The substep editor extends both modes — see the next section. |
 | `prob` | 0–127 (≈ 0–100 %)                                                               | Probability that the step fires. Also gates whether `sfx` takes effect.                                                                                                                |
 | `glid` | 0–127                                                                           | Per-step glide / portamento time. `0` = no glide. On EXT tracks, the locked value also emits as CC 5 (Portamento Time) on the track's MIDI channel.                                    |
