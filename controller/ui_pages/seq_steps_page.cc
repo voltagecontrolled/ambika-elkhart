@@ -939,8 +939,14 @@ void SeqStepsPage::UpdateScreen() {
       }
       uint8_t cc_selected  = (cursor_in_page == k);
       uint8_t val_selected = (cursor_in_page == k + 4);
-      buf0[1] = cc_selected ? 'C' : 'c';
-      buf0[2] = cc_selected ? 'C' : 'c';
+      // v4.3 #38: uppercase CC#/VAL labels also when this slot's lockable
+      // has a per-lock PROB entry for the held step.
+      uint8_t has_prob = (held_step != 0xff &&
+          sequencer.lock_prob_pool().Find(track, held_step, lockable) != 0xff);
+      uint8_t label_upper = cc_selected || has_prob;
+      uint8_t label_upper_val = val_selected || has_prob;
+      buf0[1] = label_upper ? 'C' : 'c';
+      buf0[2] = label_upper ? 'C' : 'c';
       buf0[3] = '#';
       buf0[4] = ' ';
       uint8_t cc = multi.cc_for_slot(track, slot);
@@ -951,15 +957,24 @@ void SeqStepsPage::UpdateScreen() {
         UnsafeItoa<uint8_t>(cc, 4, &buf0[5]);
         AlignRight(&buf0[5], 4);
       }
-      buf1[1] = val_selected ? 'V' : 'v';
-      buf1[2] = val_selected ? 'A' : 'a';
-      buf1[3] = val_selected ? 'L' : 'l';
+      buf1[1] = label_upper_val ? 'V' : 'v';
+      buf1[2] = label_upper_val ? 'A' : 'a';
+      buf1[3] = label_upper_val ? 'L' : 'l';
       buf1[4] = ' ';
-      uint8_t v = (held_step != 0xff)
-          ? sequencer.StepLockedValue(track, held_step, lockable)
-          : tr.defaults[lockable];
-      UnsafeItoa<uint8_t>(v, 4, &buf1[5]);
-      AlignRight(&buf1[5], 4);
+      // Drill-in: render PROB byte from LockProbPool instead of the lock
+      // value when this slot's lockable matches the drilled-in (step, lockable).
+      if (held_step != 0xff && drill_step_ == held_step &&
+          drill_lockable_ == lockable) {
+        WriteProbByte(&buf1[5],
+                      sequencer.lock_prob_pool().GetProb(
+                          track, held_step, lockable));
+      } else {
+        uint8_t v = (held_step != 0xff)
+            ? sequencer.StepLockedValue(track, held_step, lockable)
+            : tr.defaults[lockable];
+        UnsafeItoa<uint8_t>(v, 4, &buf1[5]);
+        AlignRight(&buf1[5], 4);
+      }
     }
     return;
   }
