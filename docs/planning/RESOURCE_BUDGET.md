@@ -41,7 +41,11 @@ Columns are signed byte deltas. **C-flash / C-RAM** = controller; **V-flash
 | 29  | Performance page on S7b (frame: overrides + repeat)  |        +800 |        +1500 |        +8 |        +24 |             |              |           |            | New page registry + event handler, 8 override/offset pots, S1–S6 beat-repeat (1, 1/2, 1/4, 1/8, 1/16 bar) with quantize-to-16th punch-in, encoder scrub, S7 exclude-mask, S8 exit. State: repeat rate, exclude bitmask, scrub anchor. |
 | 31  | Sub-step editor un-selects on button release         |         +20 |          +80 |           |            |             |              |           |            | Suppress the release event for the held step that opened the editor. Local fix in `seq_step_substeps_page` / step-button latch. |
 | 32  | Retire S5b/S5c; relocate EXT-track CC# editing       |        -400 |         +200 |       -48 |          0 |             |              |           |            | Removes 24-cell walk, two abbr/lockable/patch-addr table rows, EXT-mode redirect, `lock_page` cycling. Net delta depends on chosen home for EXT CC# editor: long-press on Track-page MMOD = cheapest; dedicated `PAGE_EXT_MIDI` = ~+150 B PROGMEM. RAM win if `MultiData.midi_cc_map` (48 B) shrinks to global. |
-|     | **Totals (worst case if all land)**                  |        +1920 |        +5420 |        +2 |       +140 |        +400 |        +1100 |       +24 |        +72 |       |
+| TBD | Per-track loop counter (`kShdwLOOP`)                 |         +30 |          +80 |        +6 |         +6 |             |              |           |            | Add `kShdwLOOP` to `SeqTrack.shadow[]`, increment on pattern wrap. Transient, no snapshot impact. Shared infra for chord mutation + randomness submenu. |
+| TBD | Chord mutation across pattern loops                  |        +150 |         +300 |         0 |          0 |             |              |           |            | When `SSUB=0` and chord shape set, advance chord-walk on loop wrap instead of substep. Uses `kShdwLOOP`. |
+| TBD | `kSmodSfx` skip-unless-jumped step modifier          |        +100 |         +250 |         0 |          0 |             |              |           |            | New SMOD value (slot 14 of 16). Step is skipped during normal iter, fires when a jump SMOD lands on it. |
+| TBD | Per-lock randomness submenu + `RandPool`             |        +830 |        +1370 |      +225 |       +242 |             |              |           |            | New `RandPool` (32 × 6 B entries + count byte), 8-entry walk-state pool (32 B), drill-in editor with shared `RenderPercent` path + 4-entry DIR string table, four fields per packet (`PROB`, `RND`, `DIR`, `RNGE`). Drill-in gated by `kRandomizableParams` PROGMEM bitmask (~15 of 28 lockables). Held-step label inversion: first letter for lockable cells, whole label for randomizable cells. Subsumes #6 — closes it. Snapshot bumps 0x03 → 0x04 with migration. |
+|     | **Totals (worst case if all land)**                  |        +3030 |        +7420 |      +233 |       +388 |        +400 |        +1100 |       +24 |        +72 |       |
 
 ---
 
@@ -51,23 +55,32 @@ Applying the high column against current free space:
 
 | Target           | Free now | High delta | Free after | Margin |
 |------------------|---------:|-----------:|-----------:|-------:|
-| controller flash |   8902 B |    +5420 B |     3482 B |  ~39 % of current free retained |
-| controller RAM   |    945 B |     +140 B |      805 B |  comfortable |
+| controller flash |   8902 B |    +7420 B |     1482 B |  tight — see notes |
+| controller RAM   |    945 B |     +388 B |      557 B |  comfortable |
 | voicecard flash  |   6542 B |    +1100 B |     5442 B |  comfortable |
 | voicecard RAM    |    995 B |      +72 B |      923 B |  comfortable |
 
 All targets stay inside their budgets in the worst case. The pressure
 points worth watching:
 
-- **#11 mod matrix** dominates the controller-flash growth; if the four
+- **Controller flash** is now the tightest target if every projected
+  issue lands at its high estimate. The randomness submenu (`RandPool`
+  + drill-in UI) and #29/#11 together account for most of the growth.
+  Realistic ceilings (see stub-build section) trim ~1500 B off the
+  worst case, putting actual landing closer to ~6200 B used, ~2700 B
+  free. Re-measure as each lands.
+- **#11 mod matrix** dominates among the existing issues; if the four
   slots inflate (e.g. per-step modulation lanes added later) the high
   estimate is the one most likely to be exceeded.
 - **#18 wavefolder** is the only issue that meaningfully grows voicecard
   flash. Land it with the CZ filter-sim slots still on the chopping
   block as a fallback if the build runs hot.
 - **#29 performance page** is the single largest controller-flash
-  consumer; co-landing #19 and #20 on top of it is cheap because the
-  page infrastructure is amortized.
+  consumer among the existing issues; co-landing #19 and #20 on top of
+  it is cheap because the page infrastructure is amortized.
+- **Randomness submenu** is the single largest RAM consumer in the new
+  batch (+193..210 B); its 32-entry `RandPool` capacity is the main
+  tunable if pressure shows up — drop to 16 for −96 B.
 
 ---
 
