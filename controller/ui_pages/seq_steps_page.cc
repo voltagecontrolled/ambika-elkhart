@@ -597,28 +597,30 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     return 1;
   }
 
-  // Merged subs cell — deadzone at 12 o'clock, CCW=repeats 8r..1r, CW=ratchets 1x..8x.
-  // 0..55: 8 bands of 7 → 8r..1r. 56..71: deadzone (normal). 72..127: 1x..8x.
+  // Merged SUBS cell — labels display total fires (storage + 1, v4.3):
+  //   0..55  → repeats 7r..1r (stored 7..1)
+  //   56..71 → deadzone (stored ssub=0, rept=0; displayed "1x" = just main)
+  //   72..127→ ratchets 2x..8x (stored 1..7)
+  // 7 values × 8 positions per range; storage-byte semantic unchanged.
   if (lockable == kSubsMergedSentinel) {
     int8_t  ssub_v = 0;
     uint8_t rept_v = 0;
     if (value < 56) {
-      rept_v = 8 - (value / 7);
+      rept_v = 7 - (value / 8);
       if (rept_v < 1) rept_v = 1;
     } else if (value > 71) {
-      uint8_t r = (value - 72) / 7 + 1;
-      if (r > 8) r = 8;
+      uint8_t r = (value - 72) / 8 + 1;
+      if (r > 7) r = 7;
       ssub_v = static_cast<int8_t>(r);
     }
+    // SUBS is per-step only (like SFX/SMOD — no track-level default).
+    // Pot is a no-op when no step is held.
     if (held_sr != 0xff) {
       uint8_t held_step = 7 - held_sr;
       SeqStep& step = tr->steps[held_step];
       step.subs = PackSubs(ssub_v, rept_v);
       step_lock_dirty_ |= (1 << held_step);
       ui.inhibit_switch(1 << held_sr);
-    } else {
-      tr->defaults[16 + kSPSSUB] = static_cast<uint8_t>(ssub_v);
-      tr->defaults[16 + kSPREPT] = rept_v;
     }
     return 1;
   }
@@ -1037,16 +1039,14 @@ void SeqStepsPage::UpdateScreen() {
     // Merged subs cell — render SSUB/REPT from intrinsic storage (held step)
     // or track defaults (no step held).
     if (lockable == kSubsMergedSentinel) {
-      int8_t  ssub_v;
-      uint8_t rept_v;
-      if (held_step != 0xff) {
-        const SeqStep& s = tr.steps[held_step];
-        ssub_v = SsubOf(s.subs);
-        rept_v = ReptOf(s.subs);
-      } else {
-        ssub_v = static_cast<int8_t>(tr.defaults[16 + kSPSSUB]);
-        rept_v = tr.defaults[16 + kSPREPT];
+      // Per-step only — no track default. Mirrors the SFX cell behavior.
+      if (held_step == 0xff) {
+        buffer[6] = '-'; buffer[7] = '-'; buffer[8] = '-'; buffer[9] = '-';
+        continue;
       }
+      const SeqStep& s = tr.steps[held_step];
+      int8_t  ssub_v = SsubOf(s.subs);
+      uint8_t rept_v = ReptOf(s.subs);
       buffer[6] = ' ';
       buffer[7] = ' ';
       buffer[8] = ' ';
