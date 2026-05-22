@@ -130,6 +130,17 @@ re-queried only on encoder slot-change or after a successful save.
   2 B savings isn't worth the cascade this round.
 - Expanding the lockable set beyond the existing 28 slots.
 
+### Substep editor: inhibit held-step release on entry (2026-05-22)
+
+Holding a step and clicking the encoder on the SUBS cell enters the
+substep editor with `substep_step_` set to the held step. The
+subsequent release of the held button was reaching `OnKey` with
+`editing_substeps_` already true and toggling `substep_bits ^=
+(1 << step)` — un-gating the slot that lines up with the parent
+step. Entry now calls `ui.inhibit_switch(1 << sr)` so the release
+is swallowed, matching the pattern used for lock-edit releases
+elsewhere in this page (issue #31).
+
 ### Raw-tick RATE editing: bit-7 escape on track and per-step CDIV (2026-05-21)
 
 **Flash:** controller +1100 B (now 90.9%, 5978 B free). **RAM:** +2 B.

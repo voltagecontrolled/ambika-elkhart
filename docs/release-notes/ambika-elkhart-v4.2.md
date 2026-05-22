@@ -1,9 +1,5 @@
 # ambika-elkhart v4.2
 
-> **Draft — not yet tagged.** Issues #32, #6, and #31 are gating
-> release. This file is the source-of-truth release-notes draft;
-> finalize before tagging.
-
 Major refactor on top of v4.1. The dense per-step lock storage that
 was pushing controller RAM to 94.5% is replaced by a sparse global
 lock pool, freeing ~720 B and enabling lockable patch pages. The
@@ -90,6 +86,12 @@ migrate transparently on load.
 - **`kLockableParams` bitmap removed** (placeholder from early
   v4.2 work); superseded by `ParamIdToLockIndex` LUT consulted
   by ParameterEditor.
+- **Substep editor entry no longer un-gates the parent step.**
+  Holding a step and clicking the encoder on SUBS entered the
+  editor, then the release of the held button reached `OnKey`
+  with the editor already active and toggled the matching
+  `substep_bits` slot off. Entry now inhibits the release event
+  for the held switch (#31).
 - **SD-busy icon no longer flashes on Settings pot turns.**
   `SystemPage::UpdateScreen` was calling `Snapshot::SlotOccupied`
   every redraw (opening a fresh `SdCardSession` each time).

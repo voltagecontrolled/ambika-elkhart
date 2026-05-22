@@ -315,6 +315,9 @@ uint8_t SeqStepsPage::OnClick() {
         }
         substep_pot0_entry_ = 0xff;  // arm pickup guard for count pot
         editing_substeps_ = true;
+        // Swallow the release of the held step so it doesn't toggle the
+        // matching substep_bit on the way out of the click gesture.
+        ui.inhibit_switch(1 << s);
         return 1;
       }
     }
