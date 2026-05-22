@@ -1,6 +1,6 @@
 # Elkhart — User Manual
 
-*For Elkhart firmware v4.0, running on Mutable Instruments Ambika
+*For Elkhart firmware v4.2, running on Mutable Instruments Ambika
 hardware.*
 
 Elkhart turns the Ambika into a six-voice polymetric step sequencer.
@@ -63,43 +63,57 @@ any page, including pages that have taken over the buttons.
 | Combo                        | Action                                              |
 |------------------------------|-----------------------------------------------------|
 | `S1` + turn                  | Select active voice (1–6)                           |
-| `S2` or `S8` + turn          | Jump between settings pages                         |
+| `S2` + turn                  | Step between settings pages (multi-page step)       |
+| `S4` + turn                  | Jump to Sequencer mode                              |
+| `S6` + turn                  | Jump to Per-track settings                          |
+| `S7` + turn                  | Jump to Performance mixer                           |
+| `S8` + turn                  | Jump to System page                                 |
 | `S5` + turn CW               | Play / pause                                        |
 | `S5` + turn CCW              | Stop (notes ring out per envelope release)          |
 | `S5` + turn CCW × 2 (400 ms) | Panic — hard mute on every voice                    |
-| `S7` + turn                  | Flip between Transport and Performance mixer        |
 
 ### Pages
 
-Tap the listed button to jump to its page. Tap the same button
-again to cycle to the next page in its group.
+v4.2 retires the button-equals-page model. `S1`–`S8` always
+function as step buttons (see *Step buttons* below). Page navigation
+is via the `Sn` + encoder combos listed above; `S2` + turn steps
+through the patch pages (Oscillators, Filter, Envelopes, LFOs).
 
-| Button | Page                                              |
-|--------|---------------------------------------------------|
-| `S1`   | Oscillators / Mixer (2 pages)                     |
-| `S2`   | Filter                                            |
-| `S3`   | Envelopes + LFO (2 pages: amp+filter, pitch+LFO)  |
-| `S4`   | Shares the `S3` group (no dedicated page in v4.0) |
-| `S5`   | Sequencer mode toggle                             |
-| `S6`   | Per-track settings / Performance mixer (2 pages)  |
-| `S7`   | Transport                                         |
-| `S8`   | System (snapshots, firmware, info)                |
+The active page groups are:
 
-### Buttons as page selectors vs. button takeover
+| Group                    | Reached by                                    |
+|--------------------------|-----------------------------------------------|
+| Oscillators / Mixer      | `S2` + turn until reached                     |
+| Filter                   | `S2` + turn until reached                     |
+| Envelopes + LFO          | `S2` + turn until reached                     |
+| Sequencer mode (S5a)     | `S4` + turn                                   |
+| Per-track settings       | `S6` + turn                                   |
+| Performance mixer        | `S7` + turn                                   |
+| System (snapshots, info) | `S8` + turn                                   |
 
-On most pages, `S1`–`S8` are page selectors as listed above. Two
-pages take the buttons over for their own use:
+The old Transport page (S7) is retired in v4.2 — BPM and CLK live
+on the System page top row; MRST moved to S5a in place of VAMT.
 
-| Page                        | Button role on that page                                              |
-|-----------------------------|------------------------------------------------------------------------|
-| **Sequencer mode (S5)**     | `S1`–`S8` are step triggers for the active voice                       |
-| **Performance mixer (S6b)** | `S1`–`S6` toggle voice mutes/solos; `S7` cycles modes; `S8` unmutes all|
+### Step buttons
 
-While buttons are taken over, **the combos table is the only way to
-change pages or voices**. To return to normal page selection: leave
-sequencer mode by tapping `S5` again, or leave the performance mixer
-by using a combo (typically `S7` + turn back to Transport, or any of
-the page-jump combos).
+`S1`–`S8` are step triggers for the active voice on **every page**
+except System and Performance mixer.
+
+| Gesture                                       | Effect                                                                       |
+|-----------------------------------------------|------------------------------------------------------------------------------|
+| Tap `Sn`                                      | Toggle step `n` on / off                                                     |
+| Hold `Sn`                                     | "Peek" — show that step's locked values without toggling                     |
+| Hold `Sn` + turn pot                          | Write a per-step lock for the pot's parameter (any lockable cell)            |
+| Double-tap `Sn` within 300 ms                 | Clear every lock for step `n`                                                |
+
+While holding a step button, the lower-left LCD character shows a
+fullness gauge for the per-step lock pool (192 entries max). The
+gauge updates at the moment the step is pressed; release and
+re-press to see the count after adding more locks.
+
+On the **System page** and **Performance mixer**, the buttons take
+on page-specific roles (save/load/info/exit; voice mute/solo) — see
+the respective sections.
 
 ### Encoder
 
@@ -430,55 +444,34 @@ muting the other five.
 The encoder walks an 8-cell cursor across the page and spills into
 the neighbouring page at the boundaries.
 
-## Transport (`S7`)
+## Transport (retired in v4.2)
 
-A single page for the master clock, MIDI clock coordinator, and
-transport controls.
+The dedicated Transport page has been folded into other surfaces in
+v4.2:
 
-```
-bpm 120 | mrst off | clk OUT
-play paus rst  stop                exit
-```
+- **`bpm`** — now Pot 3 on the **System page** top row (`S8` + turn).
+- **`clk`** — now Pot 4 on the System page top row (INT / EXT / OUT / THR).
+- **`mrst`** — now lives on the **Sequencer page** (`S5a`) in place
+  of the retired VAMT cell. Pot value 0 = `off`; 1–127 stores a
+  period of `N+1` undivided steps.
 
-| Cell   | Range / values                            | Notes                                                                                                                                       |
-|--------|-------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
-| `bpm`  | 60–185                                    | Master tempo. The pot maps every integer BPM in this range to a stable detent (no holes).                                                  |
-| `mrst` | `off` / 2–128                             | Master reset period, in undivided steps. When set, all six tracks snap back to step 0 each time the master tick counter reaches this number — useful for keeping polymetric tracks at different rates from drifting open-ended. Default `off` (free-run). |
-| `clk`  | `INT` / `EXT` / `OUT` / `THR`             | Clock source × clock-out switch. See the table below for what each mode does.                                                              |
+Transport gestures (play / pause / stop / panic) remain global via
+the hold-`S5` + encoder combo:
 
-The remaining pot position is inert.
+| Combo                        | Action                                              |
+|------------------------------|-----------------------------------------------------|
+| `S5` + turn CW               | Play / pause                                        |
+| `S5` + turn CCW              | Stop                                                |
+| `S5` + turn CCW × 2 (400 ms) | Panic — hard mute on every voice                    |
 
 ### Clock modes
 
-| Mode  | Clock source                | Clock out                            | When to use                                                          |
-|-------|-----------------------------|--------------------------------------|----------------------------------------------------------------------|
-| `INT` | Internal (from `bpm`)       | Suppressed                           | Standalone — no MIDI clock leaves the box.                           |
-| `EXT` | External (inbound MIDI clock) | Suppressed                          | Slave to a master clock; don't echo it back out.                     |
-| `OUT` | Internal (from `bpm`)       | Sends `0xF8` stream at internal BPM  | Master to other gear.                                                |
+| Mode  | Clock source                  | Clock out                            | When to use                                                          |
+|-------|-------------------------------|--------------------------------------|----------------------------------------------------------------------|
+| `INT` | Internal (from `BPM`)         | Suppressed                           | Standalone — no MIDI clock leaves the box.                           |
+| `EXT` | External (inbound MIDI clock) | Suppressed                           | Slave to a master clock; don't echo it back out.                     |
+| `OUT` | Internal (from `BPM`)         | Sends `0xF8` stream at internal BPM  | Master to other gear.                                                |
 | `THR` | External (inbound MIDI clock) | Forwards inbound clock to MIDI out   | Pass-through — slaved to a master while re-clocking downstream gear. |
-
-### Buttons
-
-`S1`–`S4` and `S8` are repurposed on this page for transport.
-
-| Button       | Action                                                                                       |
-|--------------|----------------------------------------------------------------------------------------------|
-| `S1`         | Play.                                                                                        |
-| `S2`         | Pause (notes ring out per the envelope release).                                             |
-| `S3`         | Reset — return every track to step 0 without changing transport state.                       |
-| `S4` tap     | Stop. Equivalent to pause + reset.                                                           |
-| `S4` double-tap (within 300 ms) | **Panic.** Pause + reset + immediate hard mute on every voice. The `S4` LED lights red while the double-tap window is open. |
-| `S8`         | Exit — return to the most recent non-system page.                                            |
-
-LED behaviour: the status LED is bright while playing, dim while
-paused. `S1` is bright while playing; `S2` is bright while paused;
-`S8` stays lit as the exit affordance.
-
-### From any other page
-
-Most transport actions are also available globally via the
-hold-`S5` + encoder combo (see *Navigation*) — play / pause, stop,
-and panic without leaving the current page.
 
 ## Sequencer mode
 
@@ -724,74 +717,52 @@ Example: `mint = maj`, `moct = 1`, `mdir = up` walks base → +M3 →
 shapes pick chord-tone positions at random instead of stepping
 through them, but stay bounded by MOCT.
 
-## Save / Load (snapshots)
+## System page (`S8`)
 
-The system page (`S8`) holds save / load. State is stored on the
-SD card as numbered slots, 0–63.
-
-The page has three modes: a top-level menu, a save-slot picker,
-and a load-slot picker.
-
-### Menu
+The System page consolidates snapshots, master clock, and OS info.
 
 ```
-system          Cur: 04
-save     load     info exit
+Cur: 04 | Next: 12*| BPM 120 | CLK OUT
+save     load     info     exit
 ```
 
-`Cur` shows the slot the running state was last loaded from or
-saved to (`--` if nothing has been loaded or saved since the unit
-was powered on).
+**Top row** (read-only / pot-edited):
 
-| Button | Action                                                          |
-|--------|-----------------------------------------------------------------|
-| `S1`   | Enter save-slot picker.                                         |
-| `S4`   | Enter load-slot picker.                                         |
-| `S7`   | Open the OS Info / firmware page.                               |
-| `S8`   | Exit back to the previous page.                                 |
+| Cell    | Source  | Notes                                                        |
+|---------|---------|--------------------------------------------------------------|
+| `Cur:`  | RAM     | Slot the running state was last loaded from / saved to.      |
+| `Next:` | Encoder | Target slot for save / load. `*` marks occupied slots.       |
+| `BPM`   | Pot 3   | Master tempo (40–240).                                       |
+| `CLK`   | Pot 4   | Clock mode: INT / EXT / OUT / THR.                           |
 
-### Save-slot picker
+**Bottom row** (hold-to-confirm buttons):
 
-```
-save  Cur: 04 | New: 12*
-                              ok   back
-```
+| Button | Action                                                                                  |
+|--------|-----------------------------------------------------------------------------------------|
+| `S1`   | **Save** to `Next` slot. Empty slot fires on tap; occupied slot requires hold.          |
+| `S3`   | **Load** from `Next` slot. Always hold-to-confirm.                                      |
+| `S5`   | **Info** — opens the OS Info / firmware page.                                           |
+| `S7`   | **Exit** — return to the previous page.                                                 |
 
-The encoder selects the target slot. `New` is the slot you're
-hovering on. A trailing `*` marks slots that already contain a
-snapshot.
+### Hold-to-confirm
 
-| Button | Action                                                          |
-|--------|-----------------------------------------------------------------|
-| `S7`   | Confirm save. If the slot is occupied, an overwrite-confirm dialog appears before the save runs. |
-| `S8`   | Back to the menu without saving.                                |
+Save (on occupied slots) and Load both use a hold-to-confirm flow:
 
-After a successful save the menu reappears with `Cur` updated to
-the newly saved slot and a brief `saved` confirmation.
+- **0 → 300 ms held**: nothing visible.
+- **300 → 900 ms held**: button LED fast-blinks ("armed"). Release at
+  this point cancels.
+- **≥ 900 ms held**: action fires. LED gives 2-blink feedback —
+  **green** on success, **red** on failure (load fail / save error).
 
-### Load-slot picker
-
-```
-load  Cur: 04 | New: 09*
-                              ok   back
-```
-
-Same layout as save — `*` marks occupied slots, encoder picks
-target.
-
-| Button | Action                                                          |
-|--------|-----------------------------------------------------------------|
-| `S7`   | Confirm load. Loading an empty slot shows an `empty slot` info dialog instead of loading. |
-| `S8`   | Back to the menu without loading.                               |
-
-After a successful load the menu reappears with `Cur` updated and
-a brief `loaded` confirmation.
+Save on an empty slot fires on tap (no hold needed). Load on an
+empty slot reports as a failure (red feedback) — there's nothing to
+load.
 
 ### What's saved
 
 A snapshot captures the full pattern-and-voice state for all six
-voices, plus the master clock settings (BPM, swing depth, master
-reset period). It does **not** include:
+voices, plus the master clock settings (BPM, CLK mode, master reset
+period) and the per-step lock pool. It does **not** include:
 
 - Performance-mixer state (mutes, solos) — these are deliberately
   transient.
@@ -800,11 +771,19 @@ reset period). It does **not** include:
 - The `Cur` slot number itself — `Cur` is RAM-only, undefined
   again at next power-on.
 
+v4.2 snapshots use file format `0x03`. Older snapshots (`0x01`,
+`0x02`) are migrated on load via a one-shot translation that
+converts the v4.1 dense lock format into the new lock pool and
+remaps the retired `kPatBPCH` slot.
+
 ### Live-use caveat
 
-Save and Load each stop the transport before touching the SD card.
-Use them between performances rather than during one — there is no
-silent "save while playing" path in this version.
+Save calls `sequencer.Stop()` before touching the SD card, gracefully
+releasing voices. Load calls `sequencer.Panic()` (instant mute),
+runs the SD I/O, pushes the new patch, then issues a final
+voice-kill so any patch-change transient doesn't leak. The current
+patch ends silently — press a key or hit play to hear the loaded
+patch.
 
 ## Firmware update
 

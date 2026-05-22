@@ -12,6 +12,124 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: `docs/planning/BOARD.md`.
 
+### v4.2 — Lock pool storage, lockable patch pages, gauge glyph (2026-05-21)
+
+**Flash:** controller 90.9% → **86.4%** (net `−2,934 B` after lock-pool
++ migration TU + dialog retirements). **RAM:** controller 94.5% →
+**76.9%** — net `−718 B` (issue #30).
+Voicecard binaries unchanged. `kSystemVersion = 0x42`. Snapshot file
+format bumps to `0x03`.
+
+The biggest single RAM consumer was the per-step lock storage in
+`SeqTrack`: a dense 32-bit lock bitfield plus 28 lockable bytes on
+every step, reserved whether or not a lock was set (1632 B across 6
+tracks).
+
+v4.2 collapses `SeqStep` to seven intrinsic bytes — `note`, `vel`,
+`prob`, `subs` (packed SSUB+REPT), `glid`, `step_flags`,
+`substep_bits` — and moves every other lockable into a global 192-entry
+sparse pool keyed by `(track, step, lock_index)`. Lookup is `O(192)`
+filtered by `(track, step)` and stays within the audio-rate budget on
+the 644p; per-track linked-list heads can be added later if profiling
+ever shows the scan is hot.
+
+`SeqStep` 34 B → 7 B. Per-track `pattern[]` also shrinks 8 → 7 (retired
+the dead `kPatBPCH` slot from round 5).
+
+**Lockable parameter set expanded.** `ParameterEditor` (the generic
+patch-page renderer) now consults a `Parameter ID → lock_index` LUT
+and routes pot writes to the lock pool when any step button is held.
+15 of the 28 lockable slots are exposed through patch pages
+(OSC1/2 shape/PWM/coarse/detune, mix balance, mix parameter,
+sub shape/level, noise, filter cutoff, filter env depth, env1 decay).
+The held-step also flips the display to show that step's locked value
+(via `Sequencer::StepLockedValue`).
+
+**Pool capacity gauge.** While any step button is held, the lower-left
+LCD character renders pool fullness as a 5×8 pixel vertical fill
+(~5 locks/pixel). Glyph is built once at the moment the step is
+pressed and pushed into CGRAM slot 0 via the same queued
+OutputBuffer the BufferedDisplay uses — no interrupts-off window,
+no busy-wait, no audio glitch. Release and re-press to refresh the
+count. Pool-full silently refuses additional writes; the gauge gives
+advance warning.
+
+**Page registry cleanup.** Dropped four all-`0xff` placeholder pages
+(`PAGE_MODULATIONS`, `PAGE_MULTI_CLOCK`, `PAGE_PERFORMANCE`,
+`PAGE_KNOB_ASSIGN`) plus the Transport page (`PAGE_MULTI`).
+Button-equals-page is retired in favor of `Sn + encoder` shortcuts:
+S4 → Sequencer, S6 → Track, S7 → Mixer, S8 → System (S2 still steps
+through the patch pages). `S1`–`S8` are step buttons on every page
+except System and Performance mixer; `UiPage::OnKey` toggles the
+active track's step on release, and `UiPage::UpdateLeds` renders
+step-on/off + playhead on every inheriting page.
+
+**MRST → Sequencer page.** Master-reset period moves from the
+retired Transport page to S5a in place of the redundant VAMT cell.
+VAMT's lock slot (lock index 4) is still reachable via the Mixer
+patch page's `PRM` cell, so EXT-track CC1 (Mod Wheel) emit
+continues to work.
+
+**BPM / CLK on System page.** Pots 3 and 4 on the System page top
+row edit `master_clock_bpm` (40–240) and `midi_clock_mode`
+(INT/EXT/OUT/THR). The four top-row cells are `Cur:` / `Next:` /
+`BPM` / `CLK`, with delimiters at column 9/19/29.
+
+**Lockable patch pages.** `ParameterEditor::OnPot` consults a
+`Parameter ID → lock_index` LUT and routes pot writes to the lock
+pool when a step button is held. `UpdateScreen` displays the
+per-step locked value instead of the patch value while a step is
+held. Inhibit fires on any pot move during a held step so the
+release doesn't toggle the step on/off.
+
+**Save/load hold-to-confirm.** `DIALOG_CONFIRM` overwrite popup
+retired along with `MODE_SAVE` / `MODE_LOAD` sub-modes. Both Save
+(S1) and Load (S3) use a hold-to-confirm flow: 300 ms arm
+(LED fast-blinks) → 900 ms fire. Empty-slot Save fires on tap.
+Result reports as a two-blink LED on the originating button —
+green for success, red for failure (load empty / disk error).
+No more info / error dialogs.
+
+Info button moved to S5, Exit to S7, so the bottom-row labels
+align uniformly with the 4-cell column layout
+(`save | load | info | exit` at col 0/10/20/30).
+
+**Migration.** v0x02 snapshot files load through the
+`controller/migration_v41.{h,cc}` translation unit, which streams the
+337 B/track v4.1 layout, extracts intrinsics directly into the new
+`SeqStep`, walks `lock_flags` to seed pool entries for every
+non-intrinsic locked byte, and remaps the retired `kPatBPCH` slot.
+Intrinsic fields (NOTE/VEL/PROB/SSUB/REPT/GLID) on unlocked v4.1
+steps are seeded from the track defaults rather than the (often
+stale) page-byte values, so pitches and other intrinsics survive
+the migration intact. Pool overflow during migration drops extra
+locks silently. v0x01 snapshots (pre-MIDI MultiData) also load
+through the same path with appended-zero MultiData defaults. The
+TU lives in its own file so it can be deleted in a future release
+once everyone has rolled forward.
+
+**Audio mute hardening on Load.** `Sequencer::Panic()` runs before
+the SD session as before, but after `multi.Touch()` pushes the new
+patch parameters to voicecards, an explicit `voicecard_tx.Kill()`
+pass on all voices silences any patch-change transients that would
+otherwise leak as a click.
+
+**SD-busy icon no longer flashes on Settings pot turns.**
+`SystemPage::UpdateScreen` used to call `Snapshot::SlotOccupied()`
+on every redraw (to decide whether to render the `*` next to
+`Next:`), opening a fresh `SdCardSession` each time. Now cached;
+re-queried only on encoder slot-change or after a successful save.
+
+**Out of scope (deferred):**
+- Retiring S5b/S5c sequencer pages (now redundant with patch-page
+  lock-edit) and finding a new home for EXT-track CC# editing —
+  tracked as issue #32.
+- Merging S1a / S1b into a single 16-cell Oscillators view.
+- Retiring `MultiData.clock_groove_*` — would shift MultiData byte
+  offsets and Parameter table IDs that downstream pages reference; the
+  2 B savings isn't worth the cascade this round.
+- Expanding the lockable set beyond the existing 28 slots.
+
 ### Raw-tick RATE editing: bit-7 escape on track and per-step CDIV (2026-05-21)
 
 **Flash:** controller +1100 B (now 90.9%, 5978 B free). **RAM:** +2 B.

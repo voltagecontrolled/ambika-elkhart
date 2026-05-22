@@ -1,10 +1,8 @@
 # Elkhart Work Board
 
-Kanban-style work tracker for **post-4.0** items. The v4.0 milestone
-backlog lives on GitHub:
-[milestone "ambika-elkhart 4.0"](https://github.com/voltagecontrolled/ambika-elkhart/milestone/1).
-Items move out of the board into `CHANGELOG.md` when shipped — that's where
-"Done" lives.
+> **Historical reference only.** Work tracking has moved to GitHub
+> issues. This file is preserved for context on items that were
+> active before the migration; do not add new entries here.
 
 The "Phase N" framing in earlier `CHANGELOG.md` entries (Phase 2 – Phase 5)
 is retired. New entries are topic-named and dated.
