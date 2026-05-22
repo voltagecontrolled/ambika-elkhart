@@ -294,9 +294,13 @@ uint8_t SeqStepsPage::OnClick() {
         SeqStep& step = tr->steps[substep_step_];
         uint8_t rept_v = ReptOf(step.subs);
         int8_t  ssub_v = SsubOf(step.subs);
-        // Only enter if step has substep activity.
-        if (ssub_v == 0 && rept_v == 0) return 1;
-        if (ssub_v > 0) {
+        if (ssub_v == 0 && rept_v == 0) {
+          // No ratchets, no repeats. v4.3 #36: still allow entry so MINT/
+          // MOCT/MDIR (chord walk per loop wrap) can be configured. Single
+          // slot represents the main-step fire only.
+          substep_count_ = 1;
+          step.step_flags &= ~kStepFlagGated;
+        } else if (ssub_v > 0) {
           // Ratchets: gate each slot via substep_bits (kStepFlagGated).
           substep_count_ = static_cast<uint8_t>(ssub_v) + 1;
           step.step_flags |= kStepFlagGated;
@@ -422,6 +426,13 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
         substep_count_ = cnt;
         step.subs = PackSubs(static_cast<int8_t>(r), 0);
         step.step_flags |= kStepFlagGated;
+      } else {
+        // Deadzone — SSUB=0, REPT=0 (no ratchets, no repeats; chord walk in
+        // #36 mode advances per pattern loop wrap when this state is in effect).
+        substep_count_ = 1;
+        step.substep_bits |= 0x01;
+        step.subs = PackSubs(0, 0);
+        step.step_flags &= ~kStepFlagGated;
       }
       return 1;
     }
