@@ -383,6 +383,8 @@ uint8_t SeqStepsPage::OnClick() {
 // to the next/prev registry page when crossing the 0..2 boundary.
 /* static */
 uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
+  // Substep editor is modal — encoder turn does not navigate away from it.
+  if (editing_substeps_) return 1;
   if (increment >= 8 || increment <= -8) {
     uint8_t lock_page = sequencer.global().lock_page;
     if (increment > 0) {
@@ -861,15 +863,20 @@ void SeqStepsPage::UpdateScreen() {
     char* line0 = display.line_buffer(0);
     char* line1 = display.line_buffer(1);
     for (uint8_t i = 0; i < kLcdWidth; ++i) { line0[i] = ' '; line1[i] = ' '; }
-    // subs cell (offset 0..9): same glyph as S5a (Nr / Nx / cus).
+    uint8_t mdir_byte = sequencer.StepLockedValue(
+        track, substep_step_, 16 + kSPMDIR);
+    // Standard 4-cell layout, matching the main step page: [delim][label 4]
+    // [space][value 4] per 10-char cell. Cell 0 has no leading delimiter.
+    // Line 0: subs / mint / mdir / moct.
+    // Line 1: prob (SUBS PROB) / / / .
     memcpy_P(&line0[1], PSTR("subs"), 4);
     {
       int8_t  ssub_s = SsubOf(step.subs);
       uint8_t rept_s = ReptOf(step.subs);
-      char* b = &line0[5];
+      char* b = &line0[6];
       // Display total fires (storage + 1): main step plus N ratchets/repeats.
-      // Storage N=1 → display "2"; N=7 → display "8". SSUB=0,REPT=0 = "1x"
-      // (single fire, no substep behavior). SSUB=-2 = custom-repeat pattern.
+      // Storage N=1 → "2"; N=7 → "8". SSUB=0,REPT=0 = "1x" (just main).
+      // SSUB=-2 = custom-repeat pattern.
       b[0] = b[1] = b[2] = b[3] = ' ';
       if (rept_s > 0) {
         uint8_t shown = (rept_s >= 8) ? 9 : (rept_s + 1);
@@ -886,45 +893,33 @@ void SeqStepsPage::UpdateScreen() {
         b[3] = 'x';
       }
     }
-    line0[9] = ' ';
-    // MINT cell (offset 10..19) — pool-backed lock_index 22.
     line0[10] = kDelimiter;
     memcpy_P(&line0[11], PSTR("mint"), 4);
     {
       uint8_t mint = sequencer.StepLockedValue(track, substep_step_, 16 + kSPMINT);
-      memcpy_P(&line0[15], kMintNames + (mint <= 13 ? mint : 13) * 4, 4);
+      memcpy_P(&line0[16], kMintNames + (mint <= 13 ? mint : 13) * 4, 4);
     }
-    line0[19] = ' ';
-    // MDIR cell (offset 20..29) — pool-backed lock_index 23 (shared byte with MOCT).
-    uint8_t mdir_byte = sequencer.StepLockedValue(
-        track, substep_step_, 16 + kSPMDIR);
     line0[20] = kDelimiter;
     memcpy_P(&line0[21], PSTR("mdir"), 4);
     {
       uint8_t mdir = MdirOf(mdir_byte);
-      memcpy_P(&line0[25], kMdirNames + mdir * 4, 4);
+      memcpy_P(&line0[26], kMdirNames + mdir * 4, 4);
     }
-    line0[29] = ' ';
-    // MOCT cell (offset 30..39)
     line0[30] = kDelimiter;
     memcpy_P(&line0[31], PSTR("moct"), 4);
     {
       uint8_t moct = MoctOf(mdir_byte);
-      line0[35] = ' ';
-      line0[36] = ' ';
-      line0[37] = ' ';
-      line0[38] = '0' + moct;
+      line0[36] = ' '; line0[37] = ' '; line0[38] = ' ';
+      line0[39] = '0' + moct;
     }
-    line0[39] = ' ';
-    // Line 1: cleared, then SUBS PROB rendered at positions 30..39. The
-    // substep-bit on/off state is shown by the S1..S8 LEDs (green = active
-    // and firing; red = active but suppressed; dark = inactive slot).
-    for (uint8_t b = 0; b < 40; ++b) line1[b] = ' ';
-    memcpy_P(&line1[30], PSTR("prob"), 4);
-    line1[34] = ' ';
-    WriteProbByte(&line1[35],
+    // Line 1 cell 0: prob (SUBS PROB). Pot 4 writes; cells 1..3 reserved.
+    memcpy_P(&line1[1], PSTR("prob"), 4);
+    WriteProbByte(&line1[6],
                   sequencer.lock_prob_pool().GetProb(
                       track, substep_step_, kProbKeySubs));
+    line1[10] = kDelimiter;
+    line1[20] = kDelimiter;
+    line1[30] = kDelimiter;
     return;
   }
 
@@ -1175,20 +1170,24 @@ void SeqStepsPage::UpdateScreen() {
 
 /* static */
 void SeqStepsPage::UpdateLeds() {
-  UiPage::UpdateLeds();
   uint8_t track = ui.state().active_part;
   const SeqTrack& tr = sequencer.track(track);
   if (editing_substeps_) {
-    // Three-state slot indicators (replaces the textual #/- row freed for
-    // the SUBS PROB display): green = active+firing, red = active+disabled,
-    // dark = inactive slot. Buttons S1..S8 toggle the bit.
+    // Substep editor owns S1..S8 entirely — don't let the parent paint
+    // sequencer step / playhead LEDs over our slot indicators. Each LED
+    // is set explicitly so inactive slots stay dark even if the sequencer
+    // is running underneath.
     uint8_t bits = tr.steps[substep_step_].substep_bits;
     for (uint8_t i = 0; i < kNumStepsPerTrack; ++i) {
-      if (i >= substep_count_) continue;
-      leds.set_pixel(LED_1 + i, (bits & (1 << i)) ? 0x0f : 0xf0);
+      uint8_t color;
+      if (i >= substep_count_)       color = 0;     // inactive
+      else if (bits & (1 << i))      color = 0x0f;  // active, firing
+      else                           color = 0xf0;  // active, disabled
+      leds.set_pixel(LED_1 + i, color);
     }
     return;
   }
+  UiPage::UpdateLeds();
   uint8_t transport = sequencer.global().transport;
   if (transport == kSeqPlaying) {
     leds.set_pixel(LED_STATUS, 0xf0);
