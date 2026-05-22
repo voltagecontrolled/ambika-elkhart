@@ -545,14 +545,17 @@ void Sequencer::AdvanceStep(uint8_t t) {
   uint8_t len  = tr.pattern[kPatLENG];
   if (len == 0) len = 1;
   uint8_t step = tr.shadow[kShdwSTEP];
+  uint8_t looped = 0;
 
   switch (tr.pattern[kPatDIRN]) {
     default:
     case kDirnFwd:
-      step = (step + 1 >= len) ? 0 : step + 1;
+      if (step + 1 >= len) { step = 0; looped = 1; }
+      else                 { step = step + 1; }
       break;
     case kDirnRev:
-      step = (step == 0) ? len - 1 : step - 1;
+      if (step == 0) { step = len - 1; looped = 1; }
+      else           { step = step - 1; }
       break;
     case kDirnPend:
       if (tr.shadow[kShdwDIR] == 0) {
@@ -565,6 +568,7 @@ void Sequencer::AdvanceStep(uint8_t t) {
         if (step == 0) {
           tr.shadow[kShdwDIR] = 0;
           step = (len > 1) ? 1 : 0;
+          looped = 1;  // full out-and-back cycle complete
         } else {
           --step;
         }
@@ -576,6 +580,7 @@ void Sequencer::AdvanceStep(uint8_t t) {
   }
 
   tr.shadow[kShdwSTEP] = step;
+  if (looped) ++tr.shadow[kShdwLOOP];
 }
 
 void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
@@ -779,6 +784,7 @@ void Sequencer::Reset() {
     tracks_[t].shadow[kShdwDIR]  = 0;
     tracks_[t].shadow[kShdwLAST] = 0;
     tracks_[t].shadow[kShdwPROB] = 0;
+    tracks_[t].shadow[kShdwLOOP] = 0;
     // Pre-charge TICK so the first Clock() call after Play()/Reset() lands
     // TICK exactly at period and fires step 0 with a full-period gate window
     // (matching every subsequent step). Pre-charging to period (instead of
