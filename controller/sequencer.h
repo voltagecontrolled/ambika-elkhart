@@ -11,6 +11,7 @@
 #include "avrlib/base.h"
 #include "controller/controller.h"
 #include "controller/lock_pool.h"
+#include "controller/lock_prob_pool.h"
 
 namespace ambika {
 
@@ -270,6 +271,9 @@ class Sequencer {
   LockPool& mutable_lock_pool() { return lock_pool_; }
   const LockPool& lock_pool() const { return lock_pool_; }
 
+  LockProbPool& mutable_lock_prob_pool() { return lock_prob_pool_; }
+  const LockProbPool& lock_prob_pool() const { return lock_prob_pool_; }
+
   // Resolve a lockable param's value at (track, step).
   // For intrinsic locks (NOTE/VEL/PROB/SSUB/REPT/GLID): reads from SeqStep.
   // For pool-backed locks: pool entry if present, else tracks_[t].defaults[lock_index].
@@ -300,9 +304,10 @@ class Sequencer {
   void AdvanceStep(uint8_t t);
   void FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx);
 
-  SeqTrack  tracks_[kNumVoices];
-  SeqGlobal global_;
-  LockPool  lock_pool_;
+  SeqTrack     tracks_[kNumVoices];
+  SeqGlobal    global_;
+  LockPool     lock_pool_;
+  LockProbPool lock_prob_pool_;
 };
 
 extern Sequencer sequencer;

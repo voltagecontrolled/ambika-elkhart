@@ -40,8 +40,10 @@ static const uint8_t kBitGlid = 0x20;
 
 /* static */
 uint8_t MigrationV41::LoadAllTracks(uint8_t* checksum) {
-  // Reset the pool — we're rebuilding it from the per-step lock_flags.
+  // Reset the pools — we're rebuilding lock_pool from per-step lock_flags;
+  // v4.1 predates the per-lock PROB pool, so it just zero-fills.
   sequencer.mutable_lock_pool().Init();
+  sequencer.mutable_lock_prob_pool().Init();
 
   // Stream-read in two scratch buffers (34 B + 65 B = 99 B max on stack).
   uint8_t step_buf[kV41StepSize];

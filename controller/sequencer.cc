@@ -324,9 +324,11 @@ void Sequencer::ClearStepLock(
       case 20: step.vel  = def; break;
       case 21: step.glid = def; break;
     }
+    lock_prob_pool_.Clear(t, s, lock_index);
     return;
   }
   lock_pool_.Clear(t, s, lock_index);
+  lock_prob_pool_.Clear(t, s, lock_index);
 }
 
 // Parameter-table id → sequencer lock_index 0..27 (0xff = not lockable).
@@ -384,6 +386,7 @@ void Sequencer::ClearAllStepLocks(uint8_t t, uint8_t s) {
   step.vel  = def[16 + kSPVEL];
   step.glid = def[16 + kSPGLID];
   lock_pool_.ClearStep(t, s);
+  lock_prob_pool_.ClearStep(t, s);
 }
 
 
@@ -399,6 +402,7 @@ static const prog_uint8_t kDefaultPattern[] PROGMEM = {
 
 void Sequencer::Init() {
   lock_pool_.Init();
+  lock_prob_pool_.Init();
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     SeqTrack& tr = tracks_[t];
     // Populate track defaults first; intrinsic steps then snapshot from them.
@@ -677,18 +681,24 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   snapshot[kP1NOTE] = step.note;
   {
     uint8_t ts = LockTsPack(t, step_index);
+    uint8_t loop = tr.shadow[kShdwLOOP];
     for (uint8_t i = 0; i < kLockPoolCapacity; ++i) {
       const LockEntry& e = lock_pool_.entry(i);
       if (e.param == kLockPoolFree || e.ts != ts) continue;
       uint8_t li = e.param;
+      // Per-lock PROB gate (v4.3, #38 slim). If a prob entry exists for
+      // this (t, step, param), roll it; on fail, skip the overlay so the
+      // snapshot retains the track default for that param this loop.
+      // Intrinsic locks bypass this — they live on SeqStep, not in the pool.
+      uint8_t pi = lock_prob_pool_.Find(t, step_index, li);
+      if (pi != 0xff) {
+        if (!ProbRoll(lock_prob_pool_.entry(pi).prob, loop)) continue;
+      }
       if (li < 16) {
         snapshot[li] = e.value;
       } else if (li >= 24 && li < 28) {
         snapshot[16 + (li - 24)] = e.value;
       }
-      // Intrinsic lock indices (16..18,20,21) don't appear in the
-      // snapshot[] range anyway; SetStepLock routes those to step
-      // fields directly, never to the pool.
     }
   }
 

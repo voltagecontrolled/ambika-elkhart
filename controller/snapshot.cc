@@ -16,11 +16,11 @@ namespace ambika {
 using namespace avrlib;
 
 static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
-// v0x03 (Elkhart v4.2): SeqTrack shrunk to intrinsic-only SeqStep, lock
-// values moved to a global LockPool serialized after the tracks. Loads of
-// older versions are refused cleanly (RAM-layout incompatible) — a v4.1 →
-// v4.2 byte-level migration TU is planned as follow-up work.
-static const uint8_t kVersion = 0x03;
+// v0x04 (Elkhart v4.3): adds a per-lock PROB pool serialized after the
+// LockPool. v0x03 loads zero-fill the prob pool (existing locks then apply
+// unconditionally, matching v4.2 behavior). v0x01 / v0x02 reach this via
+// MigrationV41 — neither carries a prob pool either.
+static const uint8_t kVersion = 0x04;
 
 // Persistent prefix = everything before shadow[]. offsetof is bulletproof
 // against any compiler-side struct alignment changes.
@@ -60,6 +60,8 @@ FilesystemStatus Snapshot::Save(uint8_t slot) {
   STATIC_ASSERT(sizeof(SeqStep) == 7);
   STATIC_ASSERT(sizeof(LockEntry) == 3);
   STATIC_ASSERT(LockPool::kRawEntriesSize == 576);
+  STATIC_ASSERT(sizeof(LockProbEntry) == 3);
+  STATIC_ASSERT(LockProbPool::kRawEntriesSize == 96);
   STATIC_ASSERT(offsetof(SeqTrack, pattern)  == 56);
   STATIC_ASSERT(offsetof(SeqTrack, defaults) == 63);
   STATIC_ASSERT(offsetof(SeqTrack, config)   == 91);
@@ -126,6 +128,24 @@ FilesystemStatus Snapshot::Save(uint8_t slot) {
     for (uint16_t i = 0; i < LockPool::kRawEntriesSize; ++i) checksum += pe[i];
   }
 
+  // Per-lock PROB pool (v0x04, #38 slim): count + entries blob.
+  {
+    const LockProbPool& pool = sequencer.lock_prob_pool();
+    uint8_t pool_count = pool.count();
+    if (Storage::file_.Write(&pool_count, 1, &written) != FS_OK || written != 1) {
+      Storage::file_.Close();
+      return FS_DISK_ERROR;
+    }
+    checksum += pool_count;
+    const uint8_t* pe = pool.raw_entries();
+    if (Storage::file_.Write(pe, LockProbPool::kRawEntriesSize, &written) != FS_OK
+        || written != LockProbPool::kRawEntriesSize) {
+      Storage::file_.Close();
+      return FS_DISK_ERROR;
+    }
+    for (uint16_t i = 0; i < LockProbPool::kRawEntriesSize; ++i) checksum += pe[i];
+  }
+
   const uint8_t* mp = multi.raw_data();
   if (Storage::file_.Write(mp, sizeof(MultiData), &written) != FS_OK
       || written != sizeof(MultiData)) {
@@ -185,9 +205,11 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
-    // v0x03 = native v4.2; v0x01 / v0x02 = v4.1-era dense-lock format
-    // (only MultiData layout differs between them) → migration TU.
-    if (header[4] != kVersion && header[4] != 0x02 && header[4] != 0x01) {
+    // v0x04 = native v4.3 (adds per-lock PROB pool); v0x03 = v4.2 native;
+    // v0x01 / v0x02 = v4.1-era dense-lock format (migration TU). Older
+    // versions zero-fill any newer subsystems they predate.
+    if (header[4] != kVersion && header[4] != 0x03 &&
+        header[4] != 0x02 && header[4] != 0x01) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
@@ -201,8 +223,8 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
         return FS_DISK_ERROR;
       }
     } else {
-      // v0x03: native layout. Track blob is the new (smaller) SeqTrack prefix
-      // followed by the LockPool count + entries.
+      // v0x03 / v0x04: native layout. Track blob is the SeqTrack prefix
+      // followed by LockPool (and v0x04+ adds the per-lock PROB pool).
       for (uint8_t t = 0; t < kNumVoices; ++t) {
         uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
         if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
@@ -227,6 +249,26 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       }
       for (uint16_t i = 0; i < LockPool::kRawEntriesSize; ++i) checksum += pe[i];
       sequencer.mutable_lock_pool().set_count(pool_count);
+
+      // Per-lock PROB pool (v0x04). v0x03 predates this subsystem — zero-fill.
+      if (snapshot_version >= 0x04) {
+        uint8_t prob_count;
+        if (Storage::file_.Read(&prob_count, 1, &got) != FS_OK || got != 1) {
+          Storage::file_.Close();
+          return FS_DISK_ERROR;
+        }
+        checksum += prob_count;
+        uint8_t* qe = sequencer.mutable_lock_prob_pool().mutable_raw_entries();
+        if (Storage::file_.Read(qe, LockProbPool::kRawEntriesSize, &got) != FS_OK
+            || got != LockProbPool::kRawEntriesSize) {
+          Storage::file_.Close();
+          return FS_DISK_ERROR;
+        }
+        for (uint16_t i = 0; i < LockProbPool::kRawEntriesSize; ++i) checksum += qe[i];
+        sequencer.mutable_lock_prob_pool().set_count(prob_count);
+      } else {
+        sequencer.mutable_lock_prob_pool().Init();
+      }
     }
 
     uint8_t* mp = multi.mutable_raw_data();
