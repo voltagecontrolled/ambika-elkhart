@@ -564,11 +564,17 @@ void Sequencer::Clock(uint8_t ticks) {
               uint8_t target = Random::GetByte() % len;
               tr.shadow[kShdwSTEP] = target;
               fired = (target + tr.pattern[kPatROTA]) % len;
+              // Jumps reseat the playhead, ending the current loop. Tick the
+              // counter so iterative PROB on a jump step alternates correctly
+              // (without this, the jump prevents the natural wrap that would
+              // otherwise advance the counter and the gate would freeze).
+              ++tr.shadow[kShdwLOOP];
             } else if (smod >= kSmodJmp1 && smod <= kSmodJmp8) {
               uint8_t target = smod - kSmodJmp1;
               if (target >= len) target = len - 1;
               tr.shadow[kShdwSTEP] = target;
               fired = (target + tr.pattern[kPatROTA]) % len;
+              ++tr.shadow[kShdwLOOP];
             }
             break;
           }
