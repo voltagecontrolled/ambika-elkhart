@@ -81,6 +81,71 @@ static const prog_uint8_t kChordSizes[] PROGMEM = {
   1, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5
 };
 
+// PROB cycle-phase slot table (v4.3, #6). Each byte: (neg << 7) | (X << 4) | N.
+// Slots 1..35 = positive iterative (X|N, fires when (loop % N) == X-1).
+// Slots 36..53 = negative iterative (!X|N, fires when (loop % N) != X-1).
+// Slots 54..55 = FILL / !FILL — gated by ProbFillActive() (stub returns 0 until
+// PERF page lands, so FILL never fires and !FILL always fires).
+// Out-of-range slot or byte 0x80 → always fire (center dead zone).
+static const prog_uint8_t kProbCyclePhase[55] PROGMEM = {
+  0x12, 0x22,
+  0x13, 0x23, 0x33,
+  0x14, 0x24, 0x34, 0x44,
+  0x15, 0x25, 0x35, 0x45, 0x55,
+  0x16, 0x26, 0x36, 0x46, 0x56, 0x66,
+  0x17, 0x27, 0x37, 0x47, 0x57, 0x67, 0x77,
+  0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88,
+  0x93, 0xA3, 0xB3,
+  0x94, 0xA4, 0xB4, 0xC4,
+  0x95, 0xA5, 0xB5, 0xC5, 0xD5,
+  0x96, 0xA6, 0xB6, 0xC6, 0xD6, 0xE6,
+  0x0F, 0x8F
+};
+
+// Global FILL state. Stubbed at 0 until PERF page provides the toggling
+// gesture; FILL slots evaluate to "not firing" and !FILL slots to "always
+// firing" in the meantime.
+static uint8_t g_fill_active = 0;
+
+uint8_t ProbRoll(uint8_t prob_byte, uint8_t loop_count) {
+  if (!(prob_byte & 0x80)) {
+    return ((Random::GetByte() & 0x7F) <= prob_byte) ? 1 : 0;
+  }
+  uint8_t slot = prob_byte & 0x7F;
+  if (slot == 0 || slot > kProbCyclePhaseCount) return 1;  // always
+  uint8_t entry = pgm_read_byte(&kProbCyclePhase[slot - 1]);
+  uint8_t neg = entry & 0x80;
+  uint8_t X = (entry >> 4) & 0x07;
+  uint8_t N = entry & 0x0F;
+  uint8_t fires;
+  if (N == 15) {
+    // FILL marker (X=0, N=15) / !FILL marker (X=0|0x80, N=15).
+    fires = g_fill_active;
+  } else if (N == 0) {
+    fires = 1;  // defensive: malformed entry, treat as always fire
+  } else {
+    fires = ((loop_count % N) == (X - 1)) ? 1 : 0;
+  }
+  return neg ? (fires ? 0 : 1) : fires;
+}
+
+uint8_t ProbCyclePhaseEntry(uint8_t slot) {
+  if (slot == 0 || slot > kProbCyclePhaseCount) return 0;
+  return pgm_read_byte(&kProbCyclePhase[slot - 1]);
+}
+
+uint8_t ProbEncodePot(uint8_t pot) {
+  // Pot 0..62 → % bytes 0..124 (linear, top ≈ 98%).
+  // Pot 63..64 → 0x80 (center dead zone, always fire).
+  // Pot 65..119 → cycle-phase slots 1..55 (bytes 0x81..0xB7).
+  // Pot 120..127 → clamp to last slot (0xB7 = !FILL).
+  if (pot <= 62) return pot << 1;
+  if (pot <= 64) return kProbAlways;
+  uint8_t slot = pot - 64;          // 1..63
+  if (slot > kProbCyclePhaseCount) slot = kProbCyclePhaseCount;
+  return 0x80 | slot;
+}
+
 // 12-bit scale masks (bit i = semitone i above ROOT is allowed).
 //   chro = chromatic (all 12)
 //   maj  = ionian       0,2,4,5,7,9,11
@@ -467,9 +532,8 @@ void Sequencer::Clock(uint8_t ticks) {
 
         // PROB roll first — gates both fire AND SMOD. Ratchets/repeats
         // downstream inherit this decision via kShdwPROB.
-        uint8_t prob = tr.steps[fired].prob;
         tr.shadow[kShdwPROB] =
-            ((Random::GetByte() & 0x7F) <= prob) ? 1 : 0;
+            ProbRoll(tr.steps[fired].prob, tr.shadow[kShdwLOOP]);
 
         if (tr.shadow[kShdwPROB]) {
           // SMOD dispatch. skip = bounded re-advance loop; fwd/rev/dir

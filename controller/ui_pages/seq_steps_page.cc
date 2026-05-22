@@ -559,6 +559,11 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   } else if (lockable == 11) {
     // fin2 — Osc2 detune, UNIT_INT8 -64..+64.
     mapped = MapPotInt8(value, -64, 64);
+  } else if (lockable == 16) {
+    // PROB — bipolar pot mapping: CCW = % roll, center = always fire,
+    // CW = cycle-phase / FILL. Encoded byte stored in step.prob; eval at
+    // fire time via ProbRoll(). See sequencer.h for encoding.
+    mapped = ProbEncodePot(value);
   } else if (lockable == 26) {
     // pamt — ENV3→pitch depth, bipolar (matches "pitc" on Envelope page).
     mapped = MapPotInt8(value, -63, 63);
@@ -984,21 +989,37 @@ void SeqStepsPage::UpdateScreen() {
         memcpy_P(&buffer[6], kRateLabels + i * 4, 4);
       }
     } else if (lockable == 16) {
-      // PROB — render as percentage. Storage 0..127 → display 0%..100%.
-      uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
-      if (pct > 100) pct = 100;
-      buffer[6] = ' ';
-      buffer[7] = ' ';
-      buffer[8] = ' ';
-      if (pct >= 100) {
-        buffer[6] = '1'; buffer[7] = '0'; buffer[8] = '0';
-      } else if (pct >= 10) {
-        buffer[7] = '0' + (pct / 10);
-        buffer[8] = '0' + (pct % 10);
+      // PROB — bipolar render. Bit 7 clear: NN% roll. Bit 7 set: cycle-phase
+      // slot index, with byte 0x80 (slot 0) = "100" (always fire / center).
+      buffer[6] = ' '; buffer[7] = ' '; buffer[8] = ' '; buffer[9] = ' ';
+      if (!(v & 0x80)) {
+        uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
+        if (pct > 100) pct = 100;
+        if (pct >= 100) { buffer[6] = '1'; buffer[7] = '0'; buffer[8] = '0'; }
+        else if (pct >= 10) { buffer[7] = '0' + (pct / 10); buffer[8] = '0' + (pct % 10); }
+        else { buffer[8] = '0' + pct; }
+        buffer[9] = '%';
       } else {
-        buffer[8] = '0' + pct;
+        uint8_t entry = ProbCyclePhaseEntry(v & 0x7F);
+        if (entry == 0) {
+          buffer[6] = ' '; buffer[7] = '1'; buffer[8] = '0'; buffer[9] = '0';
+        } else {
+          uint8_t neg = entry & 0x80;
+          uint8_t X = (entry >> 4) & 0x07;
+          uint8_t N = entry & 0x0F;
+          if (N == 15) {
+            // FILL / !FILL marker
+            if (neg) { buffer[6] = '!'; buffer[7] = 'F'; buffer[8] = 'I'; buffer[9] = 'L'; }
+            else     { buffer[6] = 'F'; buffer[7] = 'I'; buffer[8] = 'L'; buffer[9] = 'L'; }
+          } else {
+            uint8_t col = 6;
+            if (neg) buffer[col++] = '!';
+            buffer[col++] = '0' + X;
+            buffer[col++] = ':';
+            buffer[col++] = '0' + N;
+          }
+        }
       }
-      buffer[9] = '%';
     } else {
       WriteU8Right(&buffer[6], v);
     }

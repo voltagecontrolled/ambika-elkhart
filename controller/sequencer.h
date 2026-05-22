@@ -84,6 +84,24 @@ static const uint8_t kSmodJmp8 = 13;
 static const uint8_t kSmodSfx  = 14;  // skip on normal iter; fire when summoned by a jump SMOD
 static const uint8_t kSmodCount = 15;
 
+// PROB byte encoding (v4.3, bipolar).
+//   bit 7 clear : low 7 bits = % roll, 0..127 → 0..100% (v4.2-compatible).
+//   bit 7 set   : low 7 bits = slot index into kProbCyclePhase[] (1..55),
+//                 with slot 0 (byte 0x80) and any out-of-range slot meaning
+//                 "always fire" (center dead zone).
+static const uint8_t kProbAlways = 0x80;
+static const uint8_t kProbCyclePhaseCount = 55;
+
+// Evaluate a PROB byte against the per-track loop counter. Returns 0/1.
+uint8_t ProbRoll(uint8_t prob_byte, uint8_t loop_count);
+
+// Encode a 0..127 pot value into a PROB byte using the bipolar pot layout.
+uint8_t ProbEncodePot(uint8_t pot);
+
+// Decode a cycle-phase slot index (1..kProbCyclePhaseCount) to its packed
+// entry byte ((neg << 7) | (X << 4) | N). Returns 0 for out-of-range slot.
+uint8_t ProbCyclePhaseEntry(uint8_t slot);
+
 // SeqStep — 7 bytes (v4.2). Holds intrinsic per-step fields only.
 // Non-intrinsic locks live in the global LockPool keyed by (track, step,
 // lock_index).
