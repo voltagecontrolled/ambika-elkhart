@@ -132,7 +132,7 @@ static const prog_uint8_t kDefaultPage2[] PROGMEM = {
   40,   // E2DEC
   0,    // FIN2  = OSC2 detune (int8, 0 = no detune)
   40,   // E3DEC
-  0,    // E3REL = dead slot
+  0,    // page2[5] = reserved (was E3REL)
   0,    // NOIS  = no noise
   0,    // SUB   = no sub-osc
 };
@@ -266,8 +266,8 @@ void Sequencer::ClearStepLock(
 
 // Parameter-table id → sequencer lock_index 0..27 (0xff = not lockable).
 // Only the patch params with an existing lock slot are mapped here;
-// expanding the lockable set requires claiming the dead E3REL slot or
-// extending the 28-lock namespace (out of scope for v4.2 step 5).
+// expanding the lockable set requires claiming the reserved page2[5]
+// slot or extending the 28-lock namespace.
 static const prog_uint8_t kParamLockMap[] PROGMEM = {
   /* 0  OSC1_SHAPE   */ 1,
   /* 1  OSC1_PWM     */ 2,

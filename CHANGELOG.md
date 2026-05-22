@@ -10,7 +10,7 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 
 > Going forward, entries are topic-named and dated; the "Phase N" framing
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
-> work tracker: `docs/planning/BOARD.md`.
+> work tracker: GitHub issues.
 
 ### v4.2 — Lock pool storage, lockable patch pages, gauge glyph (2026-05-21)
 

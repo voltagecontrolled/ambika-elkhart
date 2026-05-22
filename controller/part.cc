@@ -66,11 +66,6 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 26: return &tr.config[kCfgE1CRV];
     case 34: return &tr.config[kCfgE2CRV];
     case 42: return &tr.config[kCfgE3CRV];
-    // Envelope releases — voicecard ignores these bytes (release_mod was
-    // removed in 0x21). Only addr 43 still resolves so SetValue(43,…) has
-    // a place to land for legacy MIDI/CC paths; the resolved byte is the
-    // dead E3REL slot in defaults.page2.
-    case 43: return &tr.defaults[8 + kP2E3REL];
     // LFO4 (voice_lfo on voicecard)
     case 48: return &tr.config[kCfgLSHP];          // voice_lfo_shape
     case 49: return &tr.config[kCfgLFOS];          // voice_lfo_rate

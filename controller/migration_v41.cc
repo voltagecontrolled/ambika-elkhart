@@ -9,7 +9,7 @@ namespace ambika {
 
 // v4.1 byte offsets within a single 34-byte SeqStep blob:
 //   page1[0..7]    src[0..7]   — NOTE, WAVE1, PARA1, BLND, RTIO, WAVE2, PARA2, FINE
-//   page2[0..7]    src[8..15]  — E1DEC, TUN2, E2DEC, FIN2, E3DEC, E3REL, NOIS, SUB
+//   page2[0..7]    src[8..15]  — E1DEC, TUN2, E2DEC, FIN2, E3DEC, _resv_, NOIS, SUB
 //   steppage[0..7] src[16..23] — PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR
 //   page3[0..3]    src[24..27] — FREQ, FAMT, PAMT, WAVE
 //   lock_flags[4]  src[28..31]

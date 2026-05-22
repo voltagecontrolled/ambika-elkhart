@@ -86,13 +86,10 @@ The active page groups are:
 | Oscillators / Mixer      | `S2` + turn until reached                     |
 | Filter                   | `S2` + turn until reached                     |
 | Envelopes + LFO          | `S2` + turn until reached                     |
-| Sequencer mode (S5a)     | `S4` + turn                                   |
+| Sequencer mode           | `S4` + turn                                   |
 | Per-track settings       | `S6` + turn                                   |
 | Performance mixer        | `S7` + turn                                   |
 | System (snapshots, info) | `S8` + turn                                   |
-
-The old Transport page (S7) is retired in v4.2 — BPM and CLK live
-on the System page top row; MRST moved to S5a in place of VAMT.
 
 ### Step buttons
 
@@ -128,6 +125,73 @@ the respective sections.
 The eight pots always edit the eight parameters currently displayed
 on screen, addressed left-to-right within each row. Pots that
 correspond to inactive cells on the current page are inert.
+
+## Page map
+
+Every page reachable from the front panel, with the combo that gets
+you there and the LCD cells visible on it. Detail on each cell lives
+in the per-page sections below.
+
+| Page                         | Reached by                                     | Cells (top row / bottom row)                                                  |
+|------------------------------|------------------------------------------------|-------------------------------------------------------------------------------|
+| Oscillators                  | `S2` + turn (Osc/Mixer group, page 1)          | `wave para rang tune` / `wave para rang tune`                                 |
+| Mixer                        | `S2` + turn (Osc/Mixer group, page 2)          | `mix nois sub wave` / `xmod amnt fuzz crsh`                                   |
+| Filter                       | `S2` + turn (Filter group)                     | `freq reso — mode` / `env2 — — —`                                             |
+| Amp + Filter envelopes       | `S2` + turn (Envelopes group, page 1) / `S3`   | `rise fall curv amp` / `rise fall curv flt`                                   |
+| Pitch envelope + voice LFO   | `S2` + turn (Envelopes group, page 2) / `S4`*  | `rise fall curv pitc` / `rate wave dest dept`                                 |
+| Sequencer Step page          | `S4` + turn (Sequencer mode, lock page 1)      | `note vel vamt rate` / `subs prob glid sfx`                                   |
+| Sequencer Voice 1 page       | encoder past Step page (lock page 2; INT only) | `nois w1 pa1 tun2` / `mix w2 pa2 fin2`                                        |
+| Sequencer Voice 2 page       | encoder past Voice 1 page (lock page 3)        | `freq fdec famt adec` / `pdec pamt sub wave`                                  |
+| MIDI CC page (EXT tracks)    | encoder past Step page when track is EXT       | `CC# CC# CC# CC#` / `val val val val` (slides through 8 slots)                |
+| Per-track settings           | `S6` + turn                                    | `dirn rate rota leng` / `scal root mch mmod`                                  |
+| Performance mixer            | `S7` + turn                                    | `v1 v2 v3 mode` / `v4 v5 v6 clr`                                              |
+| System                       | `S8` + turn                                    | `Cur: Next: BPM CLK` / `save load info exit`                                  |
+
+\* `S4` is shared with the Sequencer mode entry combo. Tapping `S4`
+toggles sequencer mode; `S4` + turn (held) walks through Envelope
+pages.
+
+Lock-vs-default behaviour:
+
+- **Patch pages** (Oscillators / Mixer / Filter / Envelopes): turning a
+  pot writes the **track default**. Holding any step button while
+  turning writes a **per-step lock** for the parameter under that pot,
+  if the cell is lockable.
+- **Sequencer Step / Voice 1 / Voice 2 pages**: every cell is per-step
+  lockable. Without a step held, the pot writes the track default;
+  with a step held, it writes a per-step lock.
+- **Per-track settings**: track-wide. No per-step locks; values fire
+  for every step on that voice.
+- **Performance mixer + System**: page-local state; no track defaults
+  or step locks involved.
+
+### LCD mockups
+
+```
+Oscillators                       Mixer
+wave saw  | para  64 | rang  +0 | tune   +0     mix   32 | nois  16 | sub   48 | wave  squ1
+wave fm   | para  90 | rang +12 | tune  -05     xmod env | amnt  20 | fuzz  18 | crsh   4
+
+Filter                            Amp + Filter envelopes
+freq  64 | reso  18 | --       | mode  LP       rise   2 | fall  64 | curv  90 | amp  127
+env2  20 | --       | --       | --             rise   8 | fall  72 | curv  40 | flt   48
+
+Pitch envelope + voice LFO        Per-track settings
+rise   0 | fall  20 | curv 100 | pitc  +24      dirn fwd  | rate 16   | rota   0 | leng   8
+rate  48 | wave tri | dest pit | dept  +32      scal min  | root   0  | mch    1 | mmod INT
+
+Sequencer Step page               Sequencer Voice 1 page (INT tracks)
+note C 3 | vel  100 | vamt  64 | rate trk       nois  16 | w1   saw | pa1  64 | tun2 +07
+subs   0 | prob 127 | glid   0 | sfx none       mix   32 | w2   fm  | pa2  90 | fin2 -05
+
+Sequencer Voice 2 page            Performance mixer
+freq  64 | fdec  72 | famt +20 | adec  64       v1 192 | v2 220 | v3 180 | mode MT-A
+pdec  20 | pamt +24 | sub   48 | wave squ1      v4 255 | v5 200 | v6 128 | clr  unmt
+
+MIDI CC page (EXT tracks)         System
+CC#  20 | CC#  74 | CC#  off| CC#  16          Cur: 04 | Next: 12*| BPM 120 | CLK OUT
+val 127 | val  45 | val   0 | val  90          save     load     info     exit
+```
 
 ## Oscillators and Mixer (`S1`)
 
@@ -311,7 +375,7 @@ rate  48 | wave tri | dest pit | dept  +32     ← LFO
 | `dest` | destination list | What the LFO modulates (pitch, cutoff, FM depth, etc.).                 |
 | `dept` | −63..+63         | LFO depth, signed — negative values invert the modulation.              |
 
-## Per-track settings (`S6a`)
+## Per-track settings (`S6`)
 
 The `S6` group's first page configures the active voice's
 pattern-level behaviour: direction, step length, rotation, scale,
@@ -365,7 +429,7 @@ periods that make tracker-style swing possible — 5, 7, 10, 11 ticks
 at 24 PPQN. To reach them, the `rate` cell has a raw-tick mode.
 
 **Click the encoder on the `rate` cell** (either the track `rate` on
-`S6a`, or the per-step `rate` on the Step lock page) to toggle between
+`S6`, or the per-step `rate` on the Step lock page) to toggle between
 preset and raw-tick mode. The display flips from `" 16 "` to `" t6 "`:
 the leading `t` marks raw mode, and the number is the period in MIDI
 ticks (24 PPQN, so `t6` = `1/16`, `t12` = `1/8`, etc).
@@ -395,7 +459,7 @@ values, and they cycle at different absolute lengths — drifting in
 and out of phase. Eight short patterns at six different rates is
 the core gesture of this instrument.
 
-## Performance mixer (`S6b`)
+## Performance mixer (`S7`)
 
 A single-page live mixer for the six voices: per-voice volume,
 mute, audio-mute, and solo, all reachable from the panel without
@@ -443,35 +507,6 @@ muting the other five.
 
 The encoder walks an 8-cell cursor across the page and spills into
 the neighbouring page at the boundaries.
-
-## Transport (retired in v4.2)
-
-The dedicated Transport page has been folded into other surfaces in
-v4.2:
-
-- **`bpm`** — now Pot 3 on the **System page** top row (`S8` + turn).
-- **`clk`** — now Pot 4 on the System page top row (INT / EXT / OUT / THR).
-- **`mrst`** — now lives on the **Sequencer page** (`S5a`) in place
-  of the retired VAMT cell. Pot value 0 = `off`; 1–127 stores a
-  period of `N+1` undivided steps.
-
-Transport gestures (play / pause / stop / panic) remain global via
-the hold-`S5` + encoder combo:
-
-| Combo                        | Action                                              |
-|------------------------------|-----------------------------------------------------|
-| `S5` + turn CW               | Play / pause                                        |
-| `S5` + turn CCW              | Stop                                                |
-| `S5` + turn CCW × 2 (400 ms) | Panic — hard mute on every voice                    |
-
-### Clock modes
-
-| Mode  | Clock source                  | Clock out                            | When to use                                                          |
-|-------|-------------------------------|--------------------------------------|----------------------------------------------------------------------|
-| `INT` | Internal (from `BPM`)         | Suppressed                           | Standalone — no MIDI clock leaves the box.                           |
-| `EXT` | External (inbound MIDI clock) | Suppressed                           | Slave to a master clock; don't echo it back out.                     |
-| `OUT` | Internal (from `BPM`)         | Sends `0xF8` stream at internal BPM  | Master to other gear.                                                |
-| `THR` | External (inbound MIDI clock) | Forwards inbound clock to MIDI out   | Pass-through — slaved to a master while re-clocking downstream gear. |
 
 ## Sequencer mode
 
@@ -744,6 +779,15 @@ save     load     info     exit
 | `S5`   | **Info** — opens the OS Info / firmware page.                                           |
 | `S7`   | **Exit** — return to the previous page.                                                 |
 
+### Clock modes
+
+| Mode  | Clock source                  | Clock out                            | When to use                                                          |
+|-------|-------------------------------|--------------------------------------|----------------------------------------------------------------------|
+| `INT` | Internal (from `BPM`)         | Suppressed                           | Standalone — no MIDI clock leaves the box.                           |
+| `EXT` | External (inbound MIDI clock) | Suppressed                           | Slave to a master clock; don't echo it back out.                     |
+| `OUT` | Internal (from `BPM`)         | Sends `0xF8` stream at internal BPM  | Master to other gear.                                                |
+| `THR` | External (inbound MIDI clock) | Forwards inbound clock to MIDI out   | Pass-through — slaved to a master while re-clocking downstream gear. |
+
 ### Hold-to-confirm
 
 Save (on occupied slots) and Load both use a hold-to-confirm flow:
@@ -778,12 +822,8 @@ remaps the retired `kPatBPCH` slot.
 
 ### Live-use caveat
 
-Save calls `sequencer.Stop()` before touching the SD card, gracefully
-releasing voices. Load calls `sequencer.Panic()` (instant mute),
-runs the SD I/O, pushes the new patch, then issues a final
-voice-kill so any patch-change transient doesn't leak. The current
-patch ends silently — press a key or hit play to hear the loaded
-patch.
+Save and Load both interrupt sounding voices. After Load, transport is
+stopped and voices are silent — press play to hear the loaded patch.
 
 ## Firmware update
 
@@ -860,20 +900,20 @@ Standard 5-pin DIN MIDI in and out are on the back panel.
 
 | Source                | Effect                                                                              |
 |-----------------------|-------------------------------------------------------------------------------------|
-| Clock (`0xF8`)        | Advances the sequencer when `clk` (transport page) is `EXT` or `THR`.               |
+| Clock (`0xF8`)        | Advances the sequencer when `clk` (System page) is `EXT` or `THR`.                  |
 | Start/Stop/Continue   | Drives transport when slaved to external clock.                                     |
 | Notes on ch 10        | Notes 36–41 trigger voices 1–6 (fixed General-MIDI-style drum map).                 |
 
 ### MIDI out
 
 Sequencer note events leave the box on the track's configured MIDI
-channel (set via `mch` on `S6a`). Clock and transport bytes follow
-the `clk` mode on the transport page. CC and Mod Wheel emissions
+channel (set via `mch` on the Per-track settings page). Clock and transport bytes follow
+the `clk` mode on the System page. CC and Mod Wheel emissions
 are described under *MIDI sequencing* below.
 
 ### MIDI sequencing (EXT mode)
 
-Each track has an INT/EXT mode toggle (the `mmod` cell on `S6a`).
+Each track has an INT/EXT mode toggle (the `mmod` cell on the Per-track settings page).
 
 - **INT** (default): the track drives its internal voicecard as
   usual. Sequencer notes are also echoed to MIDI out on the track's
@@ -886,16 +926,16 @@ Each track has an INT/EXT mode toggle (the `mmod` cell on `S6a`).
   voice.
 
 The track's MIDI channel (`mch`) and EXT mode (`mmod`) both live
-on `S6a` and are saved with the snapshot.
+on the Per-track settings page and are saved with the snapshot.
 
 #### What an EXT track sends
 
 | Source                         | MIDI message                          |
 |--------------------------------|---------------------------------------|
 | Step note + velocity           | Note On / Note Off on `mch`           |
-| `vamt` cell (S5a)              | CC 1 (Mod Wheel) on `mch`             |
-| `glid` cell (S5a)              | CC 5 (Portamento Time) on `mch`       |
-| 8 configurable slots (S5b/S5c) | User-assigned CC on `mch`             |
+| `vamt` cell (Step page)        | CC 1 (Mod Wheel) on `mch`             |
+| `glid` cell (Step page)        | CC 5 (Portamento Time) on `mch`       |
+| 8 configurable slots           | User-assigned CC on `mch`             |
 
 `vamt` and `glid` are fixed-purpose on EXT — they map directly to
 the matching standard MIDI controllers so external synths reach
@@ -903,12 +943,12 @@ them with no setup. The other eight slots are configurable: each
 slot picks its own CC number, so you can target whichever filter,
 envelope, or modulation control the receiving gear expects.
 
-#### S5b / S5c on EXT — the MIDI CC page
+#### MIDI CC page (EXT tracks)
 
-When the active track is EXT, the `S5b` and `S5c` pages flip from
-their normal synth-param layout to a MIDI CC sequencer view. Four
-slots per page, eight per track total. Each slot occupies one
-column of the LCD, with two stacked rows:
+When the active track is EXT, the Voice 1 and Voice 2 lock pages flip
+from their normal synth-param layout to a MIDI CC sequencer view. Four
+slots per page, eight per track total. Each slot occupies one column
+of the LCD, with two stacked rows:
 
 ```
 CC#  20 | CC#  74 | CC#  off| CC#  16    ← top row: configurable CC#
@@ -931,13 +971,8 @@ with the knob in real time.
 
 #### Switching INT ↔ EXT
 
-Flipping the `mmod` toggle silences the voicecard immediately on
-INT → EXT transitions (so any ringing voice stops cleanly). On
-EXT → INT the voicecard resumes firing on the next step. The
-stored values on the lock pages aren't cleared — they're
-interpreted as synth params on INT and as CC values on EXT, so
-toggling modes briefly mid-piece will read the same bytes through
-two different lenses.
+Flipping `mmod` silences the voicecard immediately on INT → EXT;
+EXT → INT resumes firing on the next step.
 
 ### Connecting
 

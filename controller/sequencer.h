@@ -26,13 +26,13 @@ static const uint8_t kP1FINE  = 7;
 
 // ---- page2[] indices ----
 // Slots 1 / 3 reclaimed from the dead E1REL / E2REL bytes for lockable
-// OSC2 coarse / detune. Slot 5 (E3REL) remains dead pending future use.
+// OSC2 coarse / detune. Slot 5 is anonymous reserved space (originally
+// E3REL; release_mod was dropped voicecard-side at protocol 0x21).
 static const uint8_t kP2E1DEC = 0;
 static const uint8_t kP2TUN2  = 1;   // OSC2 coarse pitch (patch addr 6, int8)
 static const uint8_t kP2E2DEC = 2;
 static const uint8_t kP2FIN2  = 3;   // OSC2 detune       (patch addr 7, int8)
 static const uint8_t kP2E3DEC = 4;
-static const uint8_t kP2E3REL = 5;   // dead
 static const uint8_t kP2NOIS  = 6;
 static const uint8_t kP2SUB   = 7;
 
@@ -202,7 +202,7 @@ static const uint8_t kShdwSIZE = 7;
 // SeqTrack — v4.2: 56 + 8 + 28 + kCfgSIZE + kShdwSIZE = 128 bytes/track.
 // defaults[N]: fallback value for lockable param N when no pool entry exists.
 //   defaults[0..7]   = page1 (NOTE..FINE)        — defaults[0] (NOTE) unused; NOTE is intrinsic
-//   defaults[8..15]  = page2 (E1DEC, TUN2, E2DEC, FIN2, E3DEC, E3REL(dead), NOIS, SUB)
+//   defaults[8..15]  = page2 (E1DEC, TUN2, E2DEC, FIN2, E3DEC, _reserved_, NOIS, SUB)
 //   defaults[16..23] = steppage (PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR)
 //                      defaults[16,17,18,20,21] (PROB/SSUB/REPT/VEL/GLID) unused — intrinsic
 //   defaults[24..27] = page3 (FREQ, FAMT, PAMT, WAVE)
