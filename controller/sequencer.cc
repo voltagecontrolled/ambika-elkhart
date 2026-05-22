@@ -205,15 +205,122 @@ const prog_uint8_t kDefaultMod[42] PROGMEM = {
   0, 0, 0,    // slot 13: cleared
 };
 
-// Resolve a step-page (steppage[]) byte: lock if set, otherwise track default.
-// step_param is a kSP* index in [0..7].
-static inline uint8_t ResolveStepByte(
-    const SeqTrack& tr, uint8_t step_index, uint8_t step_param) {
-  const SeqStep& step = tr.steps[step_index];
-  return (step.lock_flags[2] & (1 << step_param))
-      ? step.steppage[step_param]
-      : tr.defaults[16 + step_param];
+// Read the intrinsic-storage byte for an intrinsic lock_index.
+static inline uint8_t ReadIntrinsic(const SeqStep& step, uint8_t lock_index) {
+  switch (lock_index) {
+    case 0:  return step.note;
+    case 16: return step.prob;
+    case 17: return static_cast<uint8_t>(SsubOf(step.subs));
+    case 18: return ReptOf(step.subs);
+    case 20: return step.vel;
+    case 21: return step.glid;
+    default: return 0;
+  }
 }
+
+uint8_t Sequencer::StepLockedValue(
+    uint8_t t, uint8_t s, uint8_t lock_index) const {
+  if (IsIntrinsicLock(lock_index)) {
+    return ReadIntrinsic(tracks_[t].steps[s], lock_index);
+  }
+  return lock_pool_.Get(t, s, lock_index, tracks_[t].defaults[lock_index]);
+}
+
+uint8_t Sequencer::StepIsLocked(
+    uint8_t t, uint8_t s, uint8_t lock_index) const {
+  if (IsIntrinsicLock(lock_index)) return 1;
+  return (lock_pool_.Find(t, s, lock_index) != 0xff) ? 1 : 0;
+}
+
+uint8_t Sequencer::SetStepLock(
+    uint8_t t, uint8_t s, uint8_t lock_index, uint8_t value) {
+  SeqStep& step = tracks_[t].steps[s];
+  switch (lock_index) {
+    case 0:  step.note = value;                       return 1;
+    case 16: step.prob = value;                       return 1;
+    case 17: step.subs = SetSsub(step.subs, static_cast<int8_t>(value)); return 1;
+    case 18: step.subs = SetRept(step.subs, value);   return 1;
+    case 20: step.vel  = value;                       return 1;
+    case 21: step.glid = value;                       return 1;
+    default: return lock_pool_.Set(t, s, lock_index, value);
+  }
+}
+
+void Sequencer::ClearStepLock(
+    uint8_t t, uint8_t s, uint8_t lock_index) {
+  if (IsIntrinsicLock(lock_index)) {
+    SeqStep& step = tracks_[t].steps[s];
+    uint8_t def = tracks_[t].defaults[lock_index];
+    switch (lock_index) {
+      case 0:  step.note = def; break;
+      case 16: step.prob = def; break;
+      case 17: step.subs = SetSsub(step.subs, static_cast<int8_t>(def)); break;
+      case 18: step.subs = SetRept(step.subs, def); break;
+      case 20: step.vel  = def; break;
+      case 21: step.glid = def; break;
+    }
+    return;
+  }
+  lock_pool_.Clear(t, s, lock_index);
+}
+
+// Parameter-table id → sequencer lock_index 0..27 (0xff = not lockable).
+// Only the patch params with an existing lock slot are mapped here;
+// expanding the lockable set requires claiming the dead E3REL slot or
+// extending the 28-lock namespace (out of scope for v4.2 step 5).
+static const prog_uint8_t kParamLockMap[] PROGMEM = {
+  /* 0  OSC1_SHAPE   */ 1,
+  /* 1  OSC1_PWM     */ 2,
+  /* 2  OSC1_RANGE   */ 0xff,
+  /* 3  OSC1_DETUNE  */ 7,
+  /* 4  OSC2_SHAPE   */ 5,
+  /* 5  OSC2_PWM     */ 6,
+  /* 6  OSC2_RANGE   */ 9,
+  /* 7  OSC2_DETUNE  */ 11,
+  /* 8  MIX_BALANCE  */ 3,
+  /* 9  MIX_OPERATOR */ 0xff,
+  /* 10 MIX_PARAMETER*/ 4,
+  /* 11 MIX_SUB_SHAPE*/ 27,
+  /* 12 MIX_SUB_LEVEL*/ 15,
+  /* 13 MIX_NOISE_LV */ 14,
+  /* 14 MIX_FUZZ     */ 0xff,
+  /* 15 MIX_CRUSH    */ 0xff,
+  /* 16 FILTER1_CUT  */ 24,
+  /* 17 FILTER1_RES  */ 0xff,
+  /* 18 FILTER1_MODE */ 0xff,
+  /* 19 FILTER2_CUT  */ 0xff,
+  /* 20 FILTER2_RES  */ 0xff,
+  /* 21 FILTER2_MODE */ 0xff,
+  /* 22 FILTER1_ENV  */ 25,
+  /* 23 FILTER1_LFO  */ 0xff,
+  /* 24 E1 rise      */ 0xff,
+  /* 25 E1 fall      */ 8,
+  /* 26 E1 curv      */ 0xff,
+  /* 27 E1 depth     */ 0xff,
+  /* 28 E2 rise      */ 0xff,
+  // Params 29..72 are LFO/mod/part/multi/system — none lockable today.
+};
+static const uint8_t kParamLockMapSize =
+    sizeof(kParamLockMap) / sizeof(kParamLockMap[0]);
+
+uint8_t ParamIdToLockIndex(uint8_t param_id, uint8_t /*instance*/) {
+  if (param_id >= kParamLockMapSize) return 0xff;
+  return pgm_read_byte(&kParamLockMap[param_id]);
+}
+
+void Sequencer::ClearAllStepLocks(uint8_t t, uint8_t s) {
+  SeqStep& step = tracks_[t].steps[s];
+  const uint8_t* def = tracks_[t].defaults;
+  step.note = def[0];
+  step.prob = def[16 + kSPPROB];
+  step.subs = PackSubs(
+      static_cast<int8_t>(def[16 + kSPSSUB]),
+      def[16 + kSPREPT]);
+  step.vel  = def[16 + kSPVEL];
+  step.glid = def[16 + kSPGLID];
+  lock_pool_.ClearStep(t, s);
+}
+
 
 static const prog_uint8_t kDefaultPattern[] PROGMEM = {
   kDirnFwd,  // DIRN = forward
@@ -222,33 +329,34 @@ static const prog_uint8_t kDefaultPattern[] PROGMEM = {
   8,          // LENG = 8 steps
   0,          // SCAL = chromatic
   0,          // ROOT = C
-  60,         // BPCH = middle C
-  255,        // OLEV = full output level
+  255,        // VOL = full velocity scale
 };
 
 void Sequencer::Init() {
+  lock_pool_.Init();
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     SeqTrack& tr = tracks_[t];
-    for (uint8_t s = 0; s < kNumStepsPerTrack; ++s) {
-      SeqStep& step = tr.steps[s];
-      memcpy_P(step.page1,    kDefaultPage1,    8);
-      memcpy_P(step.page2,    kDefaultPage2,    8);
-      memcpy_P(step.steppage, kDefaultStepPage, 8);
-      memcpy_P(step.page3,    kDefaultPage3,    4);
-      step.lock_flags[0] = 0;
-      step.lock_flags[1] = 0;
-      step.lock_flags[2] = 0;
-      step.lock_flags[3] = 0;
-      step.step_flags    = 0;
-      step.substep_bits  = 0;
-    }
-    memcpy_P(tr.pattern,       kDefaultPattern,  8);
+    // Populate track defaults first; intrinsic steps then snapshot from them.
+    memcpy_P(tr.pattern,       kDefaultPattern,  7);
     memcpy_P(&tr.defaults[0],  kDefaultPage1,    8);
     memcpy_P(&tr.defaults[8],  kDefaultPage2,    8);
     memcpy_P(&tr.defaults[16], kDefaultStepPage, 8);
     memcpy_P(&tr.defaults[24], kDefaultPage3,    4);
     memcpy_P(tr.config,        kDefaultConfig,   kCfgSIZE);
     memset(tr.shadow, 0, kShdwSIZE);
+
+    for (uint8_t s = 0; s < kNumStepsPerTrack; ++s) {
+      SeqStep& step = tr.steps[s];
+      step.note         = tr.defaults[0];                  // NOTE  (kP1NOTE)
+      step.vel          = tr.defaults[16 + kSPVEL];
+      step.prob         = tr.defaults[16 + kSPPROB];
+      step.subs         = PackSubs(
+          static_cast<int8_t>(tr.defaults[16 + kSPSSUB]),
+          tr.defaults[16 + kSPREPT]);
+      step.glid         = tr.defaults[16 + kSPGLID];
+      step.step_flags   = 0;
+      step.substep_bits = 0;
+    }
   }
   global_.transport    = kSeqStopped;
   global_.hold_mode    = 0;
@@ -284,7 +392,7 @@ void Sequencer::Clock(uint8_t ticks) {
     // RATE: per-step rate override for the currently-playing step.
     // 0 = inherit track; 1..15 = preset (rate-1 into kRateValues); bit-7 set
     // = raw tick period.
-    uint8_t rate = ResolveStepByte(tr, tr.shadow[kShdwLAST], kSPRATE);
+    uint8_t rate = StepLockedValue(t, tr.shadow[kShdwLAST], 16 + kSPRATE);
     uint8_t cdiv_byte;
     if (rate == 0) {
       cdiv_byte = tr.pattern[kPatCDIV];
@@ -301,7 +409,7 @@ void Sequencer::Clock(uint8_t ticks) {
     // Only active when a step has been fired (kShdwLAST is valid post-reset).
     // Gate on kShdwPROB so substeps follow the main-step probability decision.
     uint8_t cur = tr.shadow[kShdwLAST];
-    int8_t ssub = static_cast<int8_t>(ResolveStepByte(tr, cur, kSPSSUB));
+    int8_t ssub = SsubOf(tr.steps[cur].subs);
     if (tr.shadow[kShdwTICK] < period) {
       if (ssub > 0 && tr.shadow[kShdwPROB]) {
         // Ratchets: N+1 evenly-spaced fires per period. Slot 0 = main fire.
@@ -334,13 +442,13 @@ void Sequencer::Clock(uint8_t ticks) {
         // REPT: re-fire the last-fired step, no advance.
         // PROB decision is carried from the main fire (kShdwPROB).
         uint8_t last = tr.shadow[kShdwLAST];
-        uint8_t rept_total = ResolveStepByte(tr, last, kSPREPT);
+        uint8_t rept_total = ReptOf(tr.steps[last].subs);
         tr.shadow[kShdwREPT]--;
         uint8_t repeat_idx = rept_total - tr.shadow[kShdwREPT];
         voicecard_tx.Release(t);
         midi_dispatcher.SequencerNoteOff(t);
         if (tr.shadow[kShdwPROB] && (tr.steps[last].step_flags & kStepFlagOn)) {
-          int8_t ssub_l = static_cast<int8_t>(ResolveStepByte(tr, last, kSPSSUB));
+          int8_t ssub_l = SsubOf(tr.steps[last].subs);
           if (ssub_l != -2) {
             FireStep(t, last, repeat_idx);
           } else {
@@ -359,7 +467,7 @@ void Sequencer::Clock(uint8_t ticks) {
 
         // PROB roll first — gates both fire AND SMOD. Ratchets/repeats
         // downstream inherit this decision via kShdwPROB.
-        uint8_t prob = ResolveStepByte(tr, fired, kSPPROB);
+        uint8_t prob = tr.steps[fired].prob;
         tr.shadow[kShdwPROB] =
             ((Random::GetByte() & 0x7F) <= prob) ? 1 : 0;
 
@@ -404,14 +512,14 @@ void Sequencer::Clock(uint8_t ticks) {
           tr.shadow[kShdwLAST] = fired;
 
           if (fire_now && (tr.steps[fired].step_flags & kStepFlagOn)) {
-            int8_t ssub_f = static_cast<int8_t>(ResolveStepByte(tr, fired, kSPSSUB));
+            int8_t ssub_f = SsubOf(tr.steps[fired].subs);
             // SSUB=-2: gate initial fire on bit 0 of substep_bits.
             if (ssub_f != -2 || (tr.steps[fired].substep_bits & 0x01)) {
               FireStep(t, fired, 0);
             }
           }
           if (fire_now) {
-            uint8_t rept = ResolveStepByte(tr, fired, kSPREPT);
+            uint8_t rept = ReptOf(tr.steps[fired].subs);
             tr.shadow[kShdwREPT] = rept;
             if (rept == 0) {
               AdvanceStep(t);
@@ -482,21 +590,31 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // has already been made and we always fire.
 
   // Resolve 20-byte snapshot: page1[8] || page2[8] || page3[4].
+  // Seed with track defaults, overlay intrinsic NOTE, then iterate the
+  // lock pool ONCE and overlay any pool entries matching (t, step_index).
+  // This replaces 19× O(192) scans with a single O(192) sweep.
   uint8_t snapshot[20];
-  for (uint8_t i = 0; i < 16; ++i) {
-    uint8_t locked = step.lock_flags[i >> 3] & (1 << (i & 7));
-    const uint8_t* src = locked
-        ? (i < 8 ? &step.page1[i] : &step.page2[i - 8])
-        : &tr.defaults[i];
-    snapshot[i] = *src;
-  }
-  for (uint8_t i = 0; i < 4; ++i) {
-    snapshot[16 + i] = (step.lock_flags[3] & (1 << i))
-        ? step.page3[i]
-        : tr.defaults[24 + i];
+  for (uint8_t i = 0; i < 16; ++i) snapshot[i]      = tr.defaults[i];
+  for (uint8_t i = 0; i <  4; ++i) snapshot[16 + i] = tr.defaults[24 + i];
+  snapshot[kP1NOTE] = step.note;
+  {
+    uint8_t ts = LockTsPack(t, step_index);
+    for (uint8_t i = 0; i < kLockPoolCapacity; ++i) {
+      const LockEntry& e = lock_pool_.entry(i);
+      if (e.param == kLockPoolFree || e.ts != ts) continue;
+      uint8_t li = e.param;
+      if (li < 16) {
+        snapshot[li] = e.value;
+      } else if (li >= 24 && li < 28) {
+        snapshot[16 + (li - 24)] = e.value;
+      }
+      // Intrinsic lock indices (16..18,20,21) don't appear in the
+      // snapshot[] range anyway; SetStepLock routes those to step
+      // fields directly, never to the pool.
+    }
   }
 
-  // Note: lock-or-default at kP1NOTE, then quantize by track scale + root.
+  // Note: intrinsic from step, then quantize by track scale + root.
   uint8_t note = snapshot[kP1NOTE];
   note = QuantizeToScale(note, tr.pattern[kPatSCAL] & 7, tr.pattern[kPatROOT]);
 
@@ -509,9 +627,9 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // The walk visits chord tones in interval order, climbing by 12 semitones
   // each time it cycles through the chord, capped at MOCT octaves above/below.
   if (sub_idx > 0) {
-    uint8_t mint = ResolveStepByte(tr, step_index, kSPMINT);
+    uint8_t mint = StepLockedValue(t, step_index, 16 + kSPMINT);
     if (mint > 0 && mint <= 12) {
-      uint8_t mdir_byte = ResolveStepByte(tr, step_index, kSPMDIR);
+      uint8_t mdir_byte = StepLockedValue(t, step_index, 16 + kSPMDIR);
       uint8_t mdir = MdirOf(mdir_byte);
       uint8_t moct = MoctOf(mdir_byte);
       uint8_t chord_idx = mint - 1;
@@ -584,7 +702,7 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
 
   // Velocity: lock-or-default, then scale by track VOL (255 = identity).
   // (v * (VOL+1)) >> 8 so VOL=255 produces true identity; VOL=0 still silent.
-  uint8_t velocity = ResolveStepByte(tr, step_index, kSPVEL);
+  uint8_t velocity = tr.steps[step_index].vel;
   velocity = (static_cast<uint16_t>(velocity) *
               (tr.pattern[kPatVOL] + 1)) >> 8;
 
@@ -593,7 +711,7 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // step's value. Note: this leaves the voicecard's portamento at the
   // last step's glid for any interleaved MIDI/keyboard notes — acceptable
   // since step playback is the dominant path here.
-  uint8_t glid = ResolveStepByte(tr, step_index, kSPGLID);
+  uint8_t glid = tr.steps[step_index].glid;
   uint8_t track_ext = multi.track_is_ext(t);
   uint8_t channel = (multi.track_channel(t) - 1) & 0x0f;
 
@@ -611,7 +729,7 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
     //
     // VAMT (lockable 4) → CC 1 (Mod Wheel). snapshot[4] already resolved.
     midi_dispatcher.SendVamtCc(channel, snapshot[4] >> 1);
-    // GLID (lockable 21) → CC 5 (Portamento Time). glid = ResolveStepByte above.
+    // GLID (lockable 21) → CC 5 (Portamento Time). Intrinsic, read above.
     midi_dispatcher.SendGlidCc(channel, glid);
     // EXT slots — 4 on S5b, 4 on S5c. Lockable indices match cells 0..3 of
     // each page. snapshot already holds lock-or-default for these.

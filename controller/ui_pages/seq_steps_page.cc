@@ -96,7 +96,7 @@ static const prog_char kNoteNames[] PROGMEM =
 // default cursor=0 lands on NOTE — the most foundational sequencer knob.
 // Voice 1 / Voice 2 follow.
 static const prog_char kAbbr[] PROGMEM =
-  "notevel vamtratesubsprobglidsfx "  // page 1 = S5a (step behavior; sfx=SMOD)
+  "notevel mrstratesubsprobglidsfx "  // page 1 = S5a (step behavior; sfx=SMOD)
   "noiswav1prm1tun2mix wav2prm2fin2"  // page 2 = S5b (voice 1: osc / mix)
   "freqfdecfamtadecpdecpamtsub wave"; // page 3 = S5c (voice 2: filter/env/sub)
 
@@ -109,13 +109,13 @@ static const prog_char kAbbr[] PROGMEM =
 // tun2 / fin2 reclaim the dead E1REL / E2REL slots (lockable 9 / 11).
 // freq / famt / pamt / wave are now lockable (24..27) instead of config-mapped.
 static const prog_uint8_t kCellLockable[24] PROGMEM = {
-  // S5a: note, vel, vamt, rate | subs(merged), prob, glid, sfx(0xfd)
-  // vamt now lockable at page1[4] (lock_flags[0] bit 4) so Mod Wheel can be
-  // sequenced on EXT tracks. kCellPatchAddr[2] still 85 so live-tweak on INT
-  // tracks updates patch addr 85 as before — locked value has no fire-time
-  // effect on INT today (EXT only emits CC1). glid is per-step lockable
-  // portamento time; sfx (SMOD) is packed into step_flags bits 2..5.
-  0,    20,   4,    19,
+  // S5a: note, vel, mrst, rate | subs(merged), prob, glid, sfx(0xfd)
+  // VAMT (was lock 4 here) retired from S5a in v4.2 — the Mixer patch page
+  // already exposes the same lock via the "PRM" cell (Param 10 → lock 4),
+  // and EXT-track CC1 (Mod Wheel) emit still pulls from lock index 4.
+  // mrst (0xfb) is a Multi-level cell that writes
+  // multi.data().master_reset_steps; it is NOT per-step lockable.
+  0,    20,   0xfb, 19,
   0xfe, 16,   21,   0xfd,
   // S5b: nois, w1, pa1, tun2 | mix(blnd), w2, pa2, fin2
   14,   1,    2,    9,
@@ -126,12 +126,11 @@ static const prog_uint8_t kCellLockable[24] PROGMEM = {
 };
 
 // Patch address for config-mapped cells (0xff for lockable cells).
-// vamt = vel→VCA amount  → patch addr 85 (mod slot 11 amount)
 // S5a bot4 (cell 7) is the empty/reserved slot — both lockable and patch
 // addr are 0xff so OnPot/UpdateScreen treat it as a no-op cell.
 // Page3 cells use kPage3PatchAddrs for their live-feedback path.
 static const prog_uint8_t kCellPatchAddr[24] PROGMEM = {
-  0xff, 0xff, 85,   0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 };
@@ -147,6 +146,11 @@ static const uint8_t kSubsMergedSentinel = 0xfe;
 // Sentinel for the SMOD cell on S5a bot4. Value lives in step_flags bits
 // 2..5 (per-step only — no defaults entry, no lock_flags bit).
 static const uint8_t kSmodCellSentinel = 0xfd;
+
+// Sentinel for the MRST cell on S5a (replaces VAMT). Writes to
+// multi.mutable_data()->master_reset_steps. Multi-level value, not
+// per-step lockable; held-step gestures are ignored on this cell.
+static const uint8_t kMrstCellSentinel = 0xfb;
 
 // 4-char display labels for SMOD values 0..13. Order matches kSmod*.
 static const prog_char kSmodLabels[] PROGMEM =
@@ -241,24 +245,14 @@ uint8_t SeqStepsPage::OnClick() {
       for (uint8_t s = 0; s < 8; ++s) {
         if (ui.switch_held(s)) { held_sr = s; break; }
       }
-      // When a step is held, edits target the per-step lock slot
-      // (creating the lock from the current default if not yet locked).
-      // Otherwise edits target the track default.
-      uint8_t* slot;
-      uint8_t v;
-      if (held_sr != 0xff) {
-        uint8_t held_step = 7 - held_sr;
-        SeqStep& step = tr->steps[held_step];
-        slot = &step.steppage[kSPRATE];
-        v = (step.lock_flags[2] & (1 << kSPRATE)) ? *slot : tr->defaults[19];
-        step.lock_flags[2] |= (1 << kSPRATE);
-        step_lock_dirty_ |= (1 << held_step);
-        ui.inhibit_switch(1 << held_sr);
-      } else {
-        slot = &tr->defaults[19];
-        v = *slot;
-      }
+      // When a step is held, edits target the per-step lock (intrinsic for
+      // RATE? no — RATE is lockable index 19 in the steppage, pool-backed).
+      uint8_t held_step = (held_sr != 0xff) ? (7 - held_sr) : 0xff;
+      uint8_t v = (held_step != 0xff)
+          ? sequencer.StepLockedValue(track, held_step, 19)
+          : tr->defaults[19];
       if (v == 0) return 1;  // inherit sentinel — no-op
+      uint8_t new_val;
       if (v & 0x80) {
         // raw → preset: snap to nearest entry, store 1-based index.
         uint8_t period = v & 0x7F;
@@ -272,14 +266,21 @@ uint8_t SeqStepsPage::OnClick() {
             best_idx = i;
           }
         }
-        *slot = best_idx + 1;  // per-step bytes are 1-based
+        new_val = best_idx + 1;  // per-step bytes are 1-based
       } else {
         // preset → raw: resolve via 1-based index.
         uint8_t idx = v - 1;
         if (idx >= 15) idx = 14;
         uint8_t period = pgm_read_byte(kRateValues + idx);
         if (period > 96) period = 96;
-        *slot = 0x80 | period;
+        new_val = 0x80 | period;
+      }
+      if (held_step != 0xff) {
+        sequencer.SetStepLock(track, held_step, 19, new_val);
+        step_lock_dirty_ |= (1 << held_step);
+        ui.inhibit_switch(1 << held_sr);
+      } else {
+        tr->defaults[19] = new_val;
       }
       rate_snap_pending_ = 1;
       return 1;
@@ -291,12 +292,8 @@ uint8_t SeqStepsPage::OnClick() {
         substep_step_ = 7 - s;
         SeqTrack* tr = sequencer.mutable_track(ui.state().active_part);
         SeqStep& step = tr->steps[substep_step_];
-        uint8_t rept_v = (step.lock_flags[2] & (1 << kSPREPT))
-            ? step.steppage[kSPREPT]
-            : tr->defaults[16 + kSPREPT];
-        int8_t ssub_v = static_cast<int8_t>((step.lock_flags[2] & (1 << kSPSSUB))
-            ? step.steppage[kSPSSUB]
-            : tr->defaults[16 + kSPSSUB]);
+        uint8_t rept_v = ReptOf(step.subs);
+        int8_t  ssub_v = SsubOf(step.subs);
         // Only enter if step has substep activity.
         if (ssub_v == 0 && rept_v == 0) return 1;
         if (ssub_v > 0) {
@@ -305,8 +302,7 @@ uint8_t SeqStepsPage::OnClick() {
           step.step_flags |= kStepFlagGated;
         } else {
           // Repeats (SSUB=0+REPT, or already SSUB=-2): enter gated-repeat mode.
-          step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
-          step.lock_flags[2] |= (1 << kSPSSUB);
+          step.subs = SetSsub(step.subs, -2);
           substep_count_ = (rept_v > 0) ? rept_v + 1 : 8;
           step.step_flags &= ~kStepFlagGated;
         }
@@ -409,9 +405,7 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
           if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
         }
         substep_count_ = cnt;
-        step.steppage[kSPSSUB] = static_cast<uint8_t>(static_cast<int8_t>(-2));
-        step.steppage[kSPREPT] = rept_v;
-        step.lock_flags[2] |= (1 << kSPSSUB) | (1 << kSPREPT);
+        step.subs = PackSubs(-2, rept_v);
         step.step_flags &= ~kStepFlagGated;
       } else if (value > 71) {
         uint8_t r = (value - 72) / 7 + 1;
@@ -423,34 +417,33 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
           if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
         }
         substep_count_ = cnt;
-        step.steppage[kSPSSUB] = r;
-        step.steppage[kSPREPT] = 0;
-        step.lock_flags[2] |= (1 << kSPSSUB) | (1 << kSPREPT);
+        step.subs = PackSubs(static_cast<int8_t>(r), 0);
         step.step_flags |= kStepFlagGated;
       }
       return 1;
     }
     if (index == 1) {
-      // MINT — chord shape, 0..12 (0 = off).
-      step.steppage[kSPMINT] = ScalePot(value, 12);
-      step.lock_flags[2] |= (1 << kSPMINT);
+      // MINT — chord shape, 0..12 (0 = off). Pool-backed (lock_index 22).
+      sequencer.SetStepLock(track, substep_step_, 16 + kSPMINT,
+                            ScalePot(value, 12));
       return 1;
     }
     if (index == 2) {
       // MDIR — wave shape, 0..7. Preserve packed MOCT bits in the same byte.
       uint8_t mapped = ScalePot(value, 7);
-      uint8_t cur = step.steppage[kSPMDIR];
-      step.steppage[kSPMDIR] = (cur & 0x18) | (mapped & 0x07);
-      step.lock_flags[2] |= (1 << kSPMDIR);
+      uint8_t cur = sequencer.StepLockedValue(
+          track, substep_step_, 16 + kSPMDIR);
+      sequencer.SetStepLock(track, substep_step_, 16 + kSPMDIR,
+                            (cur & 0x18) | (mapped & 0x07));
       return 1;
     }
     if (index == 3) {
       // MOCT — range cap in octaves, displayed 1..4 (stored 0..3 in bits 3..4).
-      // Preserve packed MDIR bits in the same byte.
       uint8_t mapped = ScalePot(value, 3);
-      uint8_t cur = step.steppage[kSPMDIR];
-      step.steppage[kSPMDIR] = (cur & 0x07) | ((mapped & 0x03) << 3);
-      step.lock_flags[2] |= (1 << kSPMDIR);
+      uint8_t cur = sequencer.StepLockedValue(
+          track, substep_step_, 16 + kSPMDIR);
+      sequencer.SetStepLock(track, substep_step_, 16 + kSPMDIR,
+                            (cur & 0x07) | ((mapped & 0x03) << 3));
       return 1;
     }
     return 0;
@@ -498,6 +491,15 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     if (ui.switch_held(s)) { held_sr = s; break; }
   }
 
+  // MRST cell — Multi-level master-reset period. Pot 0..127 writes
+  // multi.master_reset_steps directly (0 = off; N>0 = reset every N+1
+  // undivided steps). Held-step gestures are ignored — there's no
+  // per-step or per-track concept for this value.
+  if (lockable == kMrstCellSentinel) {
+    multi.SetValue(PRM_MULTI_MASTER_RESET, value);
+    return 1;
+  }
+
   // SMOD cell — per-step only (no track default). Pot 0..127 → 0..13
   // value space; written into step_flags bits 2..5 of the held step.
   if (lockable == kSmodCellSentinel) {
@@ -524,17 +526,14 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
       if (r > 8) r = 8;
       ssub_v = static_cast<int8_t>(r);
     }
-    uint8_t ssub_byte = static_cast<uint8_t>(ssub_v);
     if (held_sr != 0xff) {
       uint8_t held_step = 7 - held_sr;
       SeqStep& step = tr->steps[held_step];
-      step.steppage[kSPSSUB] = ssub_byte;
-      step.steppage[kSPREPT] = rept_v;
-      step.lock_flags[2] |= (1 << kSPSSUB) | (1 << kSPREPT);
+      step.subs = PackSubs(ssub_v, rept_v);
       step_lock_dirty_ |= (1 << held_step);
       ui.inhibit_switch(1 << held_sr);
     } else {
-      tr->defaults[16 + kSPSSUB] = ssub_byte;
+      tr->defaults[16 + kSPSSUB] = static_cast<uint8_t>(ssub_v);
       tr->defaults[16 + kSPREPT] = rept_v;
     }
     return 1;
@@ -569,15 +568,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     // RATE — per-step CDIV override; 0 = use track CDIV, 1..15 = preset
     // index, bit 7 set = raw tick period. Raw mode is reached via encoder
     // click; pot in raw mode edits the period with snap-on-cross.
-    uint8_t cur;
-    if (held_sr != 0xff) {
-      uint8_t held_step = 7 - held_sr;
-      const SeqStep& step = tr->steps[held_step];
-      cur = (step.lock_flags[2] & (1 << kSPRATE))
-          ? step.steppage[kSPRATE] : tr->defaults[19];
-    } else {
-      cur = tr->defaults[19];
-    }
+    uint8_t cur = (held_sr != 0xff)
+        ? sequencer.StepLockedValue(track, 7 - held_sr, 19)
+        : tr->defaults[19];
     if (cur & 0x80) {
       uint8_t new_period = 2 + ((static_cast<uint16_t>(value) * 94) >> 7);
       if (new_period > 96) new_period = 96;
@@ -607,19 +600,27 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
 
   if (held_sr != 0xff) {
     uint8_t held_step = 7 - held_sr;
-    SeqStep& step = tr->steps[held_step];
-    uint8_t buf_page = lockable >> 3;
-    uint8_t buf_idx  = lockable & 7;
-    uint8_t* slot = (buf_page == 0) ? &step.page1[buf_idx]
-                  : (buf_page == 1) ? &step.page2[buf_idx]
-                  : (buf_page == 2) ? &step.steppage[buf_idx]
-                                    : &step.page3[buf_idx];
-    *slot = mapped;
-    step.lock_flags[lockable >> 3] |= (1 << (lockable & 7));
+    sequencer.SetStepLock(track, held_step, lockable, mapped);
     step_lock_dirty_ |= (1 << held_step);
     ui.inhibit_switch(1 << held_sr);
   } else {
     tr->defaults[lockable] = mapped;
+    // Intrinsic defaults broadcast to every step so unlocked steps update
+    // immediately (in v4.2 intrinsic fields are always per-step and don't
+    // re-read defaults at fire time).
+    if (IsIntrinsicLock(lockable)) {
+      for (uint8_t s = 0; s < 8; ++s) {
+        SeqStep& st = tr->steps[s];
+        switch (lockable) {
+          case 0:  st.note = mapped; break;
+          case 16: st.prob = mapped; break;
+          case 17: st.subs = SetSsub(st.subs, static_cast<int8_t>(mapped)); break;
+          case 18: st.subs = SetRept(st.subs, mapped); break;
+          case 20: st.vel  = mapped; break;
+          case 21: st.glid = mapped; break;
+        }
+      }
+    }
     // Page3 lockables also push live to the voicecard so filter/wave respond
     // immediately when adjusting the default (same as config-mapped cells did).
     if (lockable >= 24 && lockable <= 27) {
@@ -679,7 +680,7 @@ uint8_t SeqStepsPage::OnKey(uint8_t key) {
   uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
   SeqStep& s = sequencer.mutable_track(track)->steps[key];
   if (last_tap_step_ == key && (now - last_tap_ms_) < kStepDoubleTapMs) {
-    s.lock_flags[0] = s.lock_flags[1] = s.lock_flags[2] = s.lock_flags[3] = 0;
+    sequencer.ClearAllStepLocks(track, key);
     s.step_flags ^= kStepFlagOn;
     last_tap_step_ = 0xff;
     return 1;
@@ -727,8 +728,8 @@ void SeqStepsPage::UpdateScreen() {
     // subs cell (offset 0..9): same glyph as S5a (Nr / Nx / cus).
     memcpy_P(&line0[1], PSTR("subs"), 4);
     {
-      int8_t ssub_s = static_cast<int8_t>(step.steppage[kSPSSUB]);
-      uint8_t rept_s = step.steppage[kSPREPT];
+      int8_t  ssub_s = SsubOf(step.subs);
+      uint8_t rept_s = ReptOf(step.subs);
       char* b = &line0[5];
       b[0] = b[1] = b[2] = b[3] = ' ';
       if (rept_s > 0) {
@@ -744,19 +745,21 @@ void SeqStepsPage::UpdateScreen() {
       }
     }
     line0[9] = ' ';
-    // MINT cell (offset 10..19)
+    // MINT cell (offset 10..19) — pool-backed lock_index 22.
     line0[10] = kDelimiter;
     memcpy_P(&line0[11], PSTR("mint"), 4);
     {
-      uint8_t mint = step.steppage[kSPMINT];
+      uint8_t mint = sequencer.StepLockedValue(track, substep_step_, 16 + kSPMINT);
       memcpy_P(&line0[15], kMintNames + (mint <= 12 ? mint : 12) * 4, 4);
     }
     line0[19] = ' ';
-    // MDIR cell (offset 20..29)
+    // MDIR cell (offset 20..29) — pool-backed lock_index 23 (shared byte with MOCT).
+    uint8_t mdir_byte = sequencer.StepLockedValue(
+        track, substep_step_, 16 + kSPMDIR);
     line0[20] = kDelimiter;
     memcpy_P(&line0[21], PSTR("mdir"), 4);
     {
-      uint8_t mdir = MdirOf(step.steppage[kSPMDIR]);
+      uint8_t mdir = MdirOf(mdir_byte);
       memcpy_P(&line0[25], kMdirNames + mdir * 4, 4);
     }
     line0[29] = ' ';
@@ -764,7 +767,7 @@ void SeqStepsPage::UpdateScreen() {
     line0[30] = kDelimiter;
     memcpy_P(&line0[31], PSTR("moct"), 4);
     {
-      uint8_t moct = MoctOf(step.steppage[kSPMDIR]);
+      uint8_t moct = MoctOf(mdir_byte);
       line0[35] = ' ';
       line0[36] = ' ';
       line0[37] = ' ';
@@ -836,18 +839,9 @@ void SeqStepsPage::UpdateScreen() {
       buf1[2] = val_selected ? 'A' : 'a';
       buf1[3] = val_selected ? 'L' : 'l';
       buf1[4] = ' ';
-      uint8_t v;
-      uint8_t lf_byte = lockable >> 3;
-      uint8_t lf_bit  = lockable & 7;
-      if (held_step != 0xff &&
-          (tr.steps[held_step].lock_flags[lf_byte] & (1 << lf_bit))) {
-        const SeqStep& s = tr.steps[held_step];
-        if (lockable < 8)       v = s.page1[lockable];
-        else if (lockable < 16) v = s.page2[lockable - 8];
-        else                    v = s.page3[lockable - 24];
-      } else {
-        v = tr.defaults[lockable];
-      }
+      uint8_t v = (held_step != 0xff)
+          ? sequencer.StepLockedValue(track, held_step, lockable)
+          : tr.defaults[lockable];
       UnsafeItoa<uint8_t>(v, 4, &buf1[5]);
       AlignRight(&buf1[5], 4);
     }
@@ -867,15 +861,10 @@ void SeqStepsPage::UpdateScreen() {
     if (row != 0)                buffer[0]  = kDelimiter;
     if ((row + 10) != kLcdWidth) buffer[10] = kDelimiter;
 
-    // Short name — uniform 4-char label at positions 1..4. On EXT tracks
-    // VAMT relabels to modw (Mod Wheel / CC 1) since its meaning changes.
-    // GLID keeps its label — on EXT it maps to CC 5 (Portamento Time), which
-    // is semantically identical to the internal portamento it controls on INT.
+    // Short name — uniform 4-char label at positions 1..4. GLID keeps its
+    // label on EXT tracks — on EXT it maps to CC 5 (Portamento Time), which
+    // is semantically identical to the internal portamento on INT.
     const prog_char* abbr_src = kAbbr + cell_global * 4;
-    if (page == 0 && multi.track_is_ext(track) && i == 2) {
-      static const prog_char kModw[] PROGMEM = "modw";
-      abbr_src = kModw;
-    }
     for (uint8_t c = 0; c < 4; ++c) {
       char ch = pgm_read_byte(abbr_src + c);
       if (i == cursor_in_page && ch >= 'a' && ch <= 'z') {
@@ -886,21 +875,17 @@ void SeqStepsPage::UpdateScreen() {
     // Separator between label and value.
     buffer[5] = ' ';
 
-    // Merged subs cell — read both kSPSSUB and kSPREPT (lock or default)
-    // and render the combined glyph.
+    // Merged subs cell — render SSUB/REPT from intrinsic storage (held step)
+    // or track defaults (no step held).
     if (lockable == kSubsMergedSentinel) {
       int8_t  ssub_v;
       uint8_t rept_v;
-      if (held_step != 0xff &&
-          (tr.steps[held_step].lock_flags[2] & (1 << kSPSSUB))) {
-        ssub_v = static_cast<int8_t>(tr.steps[held_step].steppage[kSPSSUB]);
+      if (held_step != 0xff) {
+        const SeqStep& s = tr.steps[held_step];
+        ssub_v = SsubOf(s.subs);
+        rept_v = ReptOf(s.subs);
       } else {
         ssub_v = static_cast<int8_t>(tr.defaults[16 + kSPSSUB]);
-      }
-      if (held_step != 0xff &&
-          (tr.steps[held_step].lock_flags[2] & (1 << kSPREPT))) {
-        rept_v = tr.steps[held_step].steppage[kSPREPT];
-      } else {
         rept_v = tr.defaults[16 + kSPREPT];
       }
       buffer[6] = ' ';
@@ -927,6 +912,20 @@ void SeqStepsPage::UpdateScreen() {
       continue;
     }
 
+    // MRST cell — display the Multi-level master-reset period.
+    // Stored 0 → " off"; stored N>0 → period N+1 undivided steps.
+    if (lockable == kMrstCellSentinel) {
+      uint8_t mrst = multi.data().master_reset_steps;
+      if (mrst == 0) {
+        memcpy_P(&buffer[6], PSTR(" off"), 4);
+      } else {
+        buffer[6] = ' ';
+        UnsafeItoa<uint8_t>(mrst + 1, 3, &buffer[7]);
+        AlignRight(&buffer[7], 3);
+      }
+      continue;
+    }
+
     // SMOD cell — render label of held step's SMOD nibble, or "----" when
     // no step is held (no track-level default for SMOD).
     if (lockable == kSmodCellSentinel) {
@@ -945,15 +944,8 @@ void SeqStepsPage::UpdateScreen() {
     if (lockable == 0xff) {
       // Config-mapped cell: read live value from config via GetValue.
       v = multi.part(track).GetValue(patch_addr);
-    } else if (held_step != 0xff &&
-        (tr.steps[held_step].lock_flags[lockable >> 3] & (1 << (lockable & 7)))) {
-      const SeqStep& step = tr.steps[held_step];
-      uint8_t buf_page = lockable >> 3;
-      uint8_t buf_idx  = lockable & 7;
-      v = (buf_page == 0) ? step.page1[buf_idx]
-        : (buf_page == 1) ? step.page2[buf_idx]
-        : (buf_page == 2) ? step.steppage[buf_idx]
-                          : step.page3[buf_idx];
+    } else if (held_step != 0xff) {
+      v = sequencer.StepLockedValue(track, held_step, lockable);
     } else {
       v = tr.defaults[lockable];
     }

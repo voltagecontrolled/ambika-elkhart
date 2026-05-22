@@ -6,6 +6,7 @@
 #include "avrlib/op.h"
 #include "avrlib/resources_manager.h"
 
+#include "controller/migration_v41.h"
 #include "controller/multi.h"
 #include "controller/sequencer.h"
 #include "controller/storage.h"
@@ -15,11 +16,11 @@ namespace ambika {
 using namespace avrlib;
 
 static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
-static const uint8_t kVersion = 0x02;
-// v1 layout had a 5-byte MultiData (bpm, groove_template, groove_amount,
-// clock_latch, master_reset_steps). v2 appends MIDI per-track config. Load
-// path falls back to v1 reads + defaults if the file is older.
-static const uint16_t kMultiDataV1Size = 5;
+// v0x03 (Elkhart v4.2): SeqTrack shrunk to intrinsic-only SeqStep, lock
+// values moved to a global LockPool serialized after the tracks. Loads of
+// older versions are refused cleanly (RAM-layout incompatible) — a v4.1 →
+// v4.2 byte-level migration TU is planned as follow-up work.
+static const uint8_t kVersion = 0x03;
 
 // Persistent prefix = everything before shadow[]. offsetof is bulletproof
 // against any compiler-side struct alignment changes.
@@ -55,11 +56,14 @@ uint8_t Snapshot::SlotOccupied(uint8_t slot) {
 
 /* static */
 FilesystemStatus Snapshot::Save(uint8_t slot) {
-  STATIC_ASSERT(sizeof(SeqStep) == 34);
-  STATIC_ASSERT(offsetof(SeqTrack, pattern)  == 272);
-  STATIC_ASSERT(offsetof(SeqTrack, defaults) == 280);
-  STATIC_ASSERT(offsetof(SeqTrack, config)   == 308);
-  STATIC_ASSERT(offsetof(SeqTrack, shadow)   == 337);
+  // v4.2 layout guards. Any drift here breaks the save/load round-trip.
+  STATIC_ASSERT(sizeof(SeqStep) == 7);
+  STATIC_ASSERT(sizeof(LockEntry) == 3);
+  STATIC_ASSERT(LockPool::kRawEntriesSize == 576);
+  STATIC_ASSERT(offsetof(SeqTrack, pattern)  == 56);
+  STATIC_ASSERT(offsetof(SeqTrack, defaults) == 63);
+  STATIC_ASSERT(offsetof(SeqTrack, config)   == 91);
+  STATIC_ASSERT(offsetof(SeqTrack, shadow)   == 120);
   STATIC_ASSERT(sizeof(MultiData) == 61);
 
   // Stop transport so no step-fires queue voicecard SPI traffic during the
@@ -102,6 +106,24 @@ FilesystemStatus Snapshot::Save(uint8_t slot) {
       return FS_DISK_ERROR;
     }
     for (uint16_t i = 0; i < kTrackPersistentSize; ++i) checksum += tp[i];
+  }
+
+  // Lock pool: count byte + entries blob (issue #30 v4.2).
+  {
+    const LockPool& pool = sequencer.lock_pool();
+    uint8_t pool_count = pool.count();
+    if (Storage::file_.Write(&pool_count, 1, &written) != FS_OK || written != 1) {
+      Storage::file_.Close();
+      return FS_DISK_ERROR;
+    }
+    checksum += pool_count;
+    const uint8_t* pe = pool.raw_entries();
+    if (Storage::file_.Write(pe, LockPool::kRawEntriesSize, &written) != FS_OK
+        || written != LockPool::kRawEntriesSize) {
+      Storage::file_.Close();
+      return FS_DISK_ERROR;
+    }
+    for (uint16_t i = 0; i < LockPool::kRawEntriesSize; ++i) checksum += pe[i];
   }
 
   const uint8_t* mp = multi.raw_data();
@@ -163,25 +185,54 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
-    // Accept v1 and v2. v1 has a 5-byte MultiData; v2 appends MIDI fields.
-    if (header[4] != kVersion && header[4] != 0x01) {
+    // v0x03 = native v4.2; v0x01 / v0x02 = v4.1-era dense-lock format
+    // (only MultiData layout differs between them) → migration TU.
+    if (header[4] != kVersion && header[4] != 0x02 && header[4] != 0x01) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
     snapshot_version = header[4];
     for (uint8_t i = 0; i < 5; ++i) checksum += header[i];
 
-    for (uint8_t t = 0; t < kNumVoices; ++t) {
-      uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
-      if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
-          || got != kTrackPersistentSize) {
+    if (snapshot_version == 0x01 || snapshot_version == 0x02) {
+      // v4.1-era file: parse 337-byte SeqTrack blobs through migration TU.
+      if (!MigrationV41::LoadAllTracks(&checksum)) {
         Storage::file_.Close();
         return FS_DISK_ERROR;
       }
-      for (uint16_t i = 0; i < kTrackPersistentSize; ++i) checksum += tp[i];
+    } else {
+      // v0x03: native layout. Track blob is the new (smaller) SeqTrack prefix
+      // followed by the LockPool count + entries.
+      for (uint8_t t = 0; t < kNumVoices; ++t) {
+        uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
+        if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
+            || got != kTrackPersistentSize) {
+          Storage::file_.Close();
+          return FS_DISK_ERROR;
+        }
+        for (uint16_t i = 0; i < kTrackPersistentSize; ++i) checksum += tp[i];
+      }
+      // Lock pool: count + entries.
+      uint8_t pool_count;
+      if (Storage::file_.Read(&pool_count, 1, &got) != FS_OK || got != 1) {
+        Storage::file_.Close();
+        return FS_DISK_ERROR;
+      }
+      checksum += pool_count;
+      uint8_t* pe = sequencer.mutable_lock_pool().mutable_raw_entries();
+      if (Storage::file_.Read(pe, LockPool::kRawEntriesSize, &got) != FS_OK
+          || got != LockPool::kRawEntriesSize) {
+        Storage::file_.Close();
+        return FS_DISK_ERROR;
+      }
+      for (uint16_t i = 0; i < LockPool::kRawEntriesSize; ++i) checksum += pe[i];
+      sequencer.mutable_lock_pool().set_count(pool_count);
     }
 
     uint8_t* mp = multi.mutable_raw_data();
+    // v0x01 had a 5-byte MultiData (no MIDI fields). Read that much,
+    // zero the rest, and we'll fill MIDI defaults after the SD session.
+    const uint16_t kMultiDataV1Size = 5;
     uint16_t multi_read_size = (snapshot_version == 0x01)
         ? kMultiDataV1Size : sizeof(MultiData);
     if (Storage::file_.Read(mp, multi_read_size, &got) != FS_OK
@@ -191,12 +242,7 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
     }
     for (uint16_t i = 0; i < multi_read_size; ++i) checksum += mp[i];
     if (snapshot_version == 0x01) {
-      // v1 file: zero the appended MIDI region; populate defaults below if
-      // checksum validates. v2 defaults come from InitSettings on first re-save.
-      uint8_t* tail = mp + kMultiDataV1Size;
-      for (uint16_t i = 0; i < sizeof(MultiData) - kMultiDataV1Size; ++i) {
-        tail[i] = 0;
-      }
+      for (uint16_t i = kMultiDataV1Size; i < sizeof(MultiData); ++i) mp[i] = 0;
     }
 
     uint8_t expected;
@@ -233,6 +279,13 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
   sequencer.Reset();
   // Recompute BPM tick duration and re-push all voice params to voicecards.
   multi.Touch();
+  // After the patch is pushed, kill voices one more time so any audio
+  // transient from voicecard parameter changes (filter resets, env state
+  // re-evaluation) doesn't leak as a click. User must press a key / hit
+  // Play to hear the new patch.
+  for (uint8_t v = 0; v < kNumVoices; ++v) {
+    voicecard_tx.Kill(v);
+  }
   return FS_OK;
 }
 

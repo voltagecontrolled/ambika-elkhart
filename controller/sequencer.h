@@ -1,13 +1,16 @@
 // Copyright 2011 Emilie Gillet.
 //
-// Round 5b: Sequencer data structures.
-// SeqStep (34B), SeqTrack (343B × 6 = 2,058B), SeqGlobal (32B).
+// v4.2 (issue #30): sparse lock-pool storage.
+// SeqStep shrinks to 7 B intrinsic fields; lockable params not in the
+// intrinsic set live in the global LockPool keyed by (track, step,
+// lock_index).
 
 #ifndef CONTROLLER_SEQUENCER_H_
 #define CONTROLLER_SEQUENCER_H_
 
 #include "avrlib/base.h"
 #include "controller/controller.h"
+#include "controller/lock_pool.h"
 
 namespace ambika {
 
@@ -80,20 +83,54 @@ static const uint8_t kSmodJmp1 = 6;   // jump to step 1..8 (kSmodJmp1+N-1)
 static const uint8_t kSmodJmp8 = 13;
 static const uint8_t kSmodCount = 14;
 
-// SeqStep — 34 bytes.
-// lock_flags bit N: lockable param N is overridden for this step.
-//   N = page_index*8 + param_index:
-//     page_index 0=page1 (N 0..7), 1=page2 (N 8..15), 2=steppage (N 16..23), 3=page3 (N 24..27).
-// SSUB: uint8_t, interpreted as int8_t. -2=Edit, -1=Custom, 0=normal, +1..+8=ratchets.
+// SeqStep — 7 bytes (v4.2). Holds intrinsic per-step fields only.
+// Non-intrinsic locks live in the global LockPool keyed by (track, step,
+// lock_index).
+//
+// Intrinsic lock indices (always allocated, no pool entry needed):
+//   0  NOTE   → step.note
+//   16 PROB   → step.prob
+//   17 SSUB   → SsubOf(step.subs)   — packed in low nibble (signed, -2..+8 stored as +0..+10)
+//   18 REPT   → ReptOf(step.subs)   — packed in high nibble (0..15)
+//   20 VEL    → step.vel
+//   21 GLID   → step.glid
 struct SeqStep {
-  uint8_t page1[8];       // NOTE, WAVE1, PARA1, BLND, RTIO, WAVE2, PARA2, FINE
-  uint8_t page2[8];       // E1DEC, TUN2, E2DEC, FIN2, E3DEC, E3REL(dead), NOIS, SUB
-  uint8_t steppage[8];    // PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR
-  uint8_t page3[4];       // FREQ, FAMT, PAMT, WAVE (lock indices 24..27)
-  uint8_t lock_flags[4];  // 32-bit lock bitfield (one bit per lockable param, bits 28..31 reserved)
+  uint8_t note;
+  uint8_t vel;
+  uint8_t prob;
+  uint8_t subs;           // packed SSUB(low nibble + 2) | REPT(high nibble)
+  uint8_t glid;
   uint8_t step_flags;     // bit 0=on, bit 1=gated, bits 2..5=SMOD nibble
   uint8_t substep_bits;   // 8-bit sub-step bitfield (SSUB = -1 or -2)
 };
+
+// SUBS packing — SSUB is signed -2..+8, REPT is 0..15.
+inline int8_t SsubOf(uint8_t subs) {
+  return static_cast<int8_t>(subs & 0x0f) - 2;
+}
+inline uint8_t ReptOf(uint8_t subs) {
+  return (subs >> 4) & 0x0f;
+}
+inline uint8_t PackSubs(int8_t ssub, uint8_t rept) {
+  uint8_t lo = static_cast<uint8_t>((ssub + 2) & 0x0f);
+  return lo | ((rept & 0x0f) << 4);
+}
+inline uint8_t SetSsub(uint8_t subs, int8_t ssub) {
+  return (subs & 0xf0) | static_cast<uint8_t>((ssub + 2) & 0x0f);
+}
+inline uint8_t SetRept(uint8_t subs, uint8_t rept) {
+  return (subs & 0x0f) | ((rept & 0x0f) << 4);
+}
+
+// Intrinsic-lock predicate. Returns 1 if lock_index has dedicated storage in
+// SeqStep; returns 0 if it lives in the LockPool.
+inline uint8_t IsIntrinsicLock(uint8_t lock_index) {
+  // bits 0, 16, 17, 18, 20, 21 — see SeqStep doc above.
+  // 0x00370001 = (1<<0)|(1<<16)|(1<<17)|(1<<18)|(1<<20)|(1<<21)
+  return (lock_index < 32)
+      ? static_cast<uint8_t>((0x00370001UL >> lock_index) & 1UL)
+      : 0;
+}
 
 inline uint8_t StepSmod(const SeqStep& s) {
   return (s.step_flags >> 2) & 0x0f;
@@ -103,14 +140,15 @@ inline void SetStepSmod(SeqStep& s, uint8_t v) {
 }
 
 // ---- pattern[] indices ----
+// v4.2: kPatBPCH slot retired (was index 6 in v4.1, unused since round 5).
+// pattern[] shrinks from 8 to 7 bytes; kPatVOL moves from 7 → 6.
 static const uint8_t kPatDIRN = 0;
 static const uint8_t kPatCDIV = 1;
 static const uint8_t kPatROTA = 2;
 static const uint8_t kPatLENG = 3;
 static const uint8_t kPatSCAL = 4;
 static const uint8_t kPatROOT = 5;
-static const uint8_t kPatBPCH = 6;   // retired (round 5); slot reserved
-static const uint8_t kPatVOL  = 7;   // track velocity scale (round 5; was OLEV)
+static const uint8_t kPatVOL  = 6;   // track velocity scale
 
 // DIRN values
 static const uint8_t kDirnFwd  = 0;
@@ -161,18 +199,19 @@ static const uint8_t kShdwLAST = 5;  // most-recently-fired step (for chaselight
 static const uint8_t kShdwPROB = 6;  // PROB roll outcome for current main step (1=fire-allowed)
 static const uint8_t kShdwSIZE = 7;
 
-// SeqTrack — 272+8+28+kCfgSIZE+6 bytes = 343 bytes per track.
-// defaults[N]: default value for lockable param N.
-//   defaults[0..7]   = page1 (NOTE..FINE)
+// SeqTrack — v4.2: 56 + 8 + 28 + kCfgSIZE + kShdwSIZE = 128 bytes/track.
+// defaults[N]: fallback value for lockable param N when no pool entry exists.
+//   defaults[0..7]   = page1 (NOTE..FINE)        — defaults[0] (NOTE) unused; NOTE is intrinsic
 //   defaults[8..15]  = page2 (E1DEC, TUN2, E2DEC, FIN2, E3DEC, E3REL(dead), NOIS, SUB)
 //   defaults[16..23] = steppage (PROB, SSUB, REPT, RATE, VEL, GLID, MINT, MDIR)
+//                      defaults[16,17,18,20,21] (PROB/SSUB/REPT/VEL/GLID) unused — intrinsic
 //   defaults[24..27] = page3 (FREQ, FAMT, PAMT, WAVE)
 // config[kCfgSIZE]: remaining voice config (filter, LFO4, env ATK/CRV, osc, mixer).
 //   Note: FREQ/FAMT/PAMT/WAVE moved out of config to defaults[24..27] in round 5b.
-// shadow[6]: transient playhead; zeroed on Reset.
+// shadow[]: transient playhead; zeroed on Reset.
 struct SeqTrack {
-  SeqStep steps[8];          // 272 bytes (8 × 34)
-  uint8_t pattern[8];        // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, BPCH, VOL
+  SeqStep steps[8];          // 56 bytes (8 × 7)
+  uint8_t pattern[7];        // DIRN, CDIV, ROTA, LENG, SCAL, ROOT, VOL
   uint8_t defaults[28];      // default value per lockable param (28 params)
   uint8_t config[kCfgSIZE];  // voice config
   uint8_t shadow[kShdwSIZE]; // transient playhead state
@@ -208,16 +247,51 @@ class Sequencer {
   SeqGlobal* mutable_global() { return &global_; }
   const SeqGlobal& global() const { return global_; }
 
+  LockPool& mutable_lock_pool() { return lock_pool_; }
+  const LockPool& lock_pool() const { return lock_pool_; }
+
+  // Resolve a lockable param's value at (track, step).
+  // For intrinsic locks (NOTE/VEL/PROB/SSUB/REPT/GLID): reads from SeqStep.
+  // For pool-backed locks: pool entry if present, else tracks_[t].defaults[lock_index].
+  uint8_t StepLockedValue(
+      uint8_t track, uint8_t step, uint8_t lock_index) const;
+
+  // Returns 1 if (track, step, lock_index) has a non-default value held.
+  // Intrinsic locks: always "held" (storage is dedicated). Pool: 1 if entry exists.
+  uint8_t StepIsLocked(
+      uint8_t track, uint8_t step, uint8_t lock_index) const;
+
+  // Write a per-step lock value. Intrinsic locks always write to SeqStep.
+  // Pool-backed locks: allocate/update a pool entry. Returns 1 on success,
+  // 0 on pool-full (the caller should flash POOL FULL).
+  uint8_t SetStepLock(
+      uint8_t track, uint8_t step, uint8_t lock_index, uint8_t value);
+
+  // Clear a per-step lock. For intrinsic locks: resets the field to the track
+  // default (defaults[lock_index]). For pool-backed: removes the pool entry.
+  void ClearStepLock(uint8_t track, uint8_t step, uint8_t lock_index);
+
+  // Clear every per-step lock for (track, step). Resets intrinsic fields to
+  // their track defaults and removes every pool entry for the (track, step)
+  // pair. Used by the double-tap-clear UX.
+  void ClearAllStepLocks(uint8_t track, uint8_t step);
+
  private:
   void AdvanceStep(uint8_t t);
   void FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx);
 
-  SeqTrack  tracks_[kNumVoices];  // 6 × 297 = 1,782 bytes
-  SeqGlobal global_;               // 32 bytes
+  SeqTrack  tracks_[kNumVoices];
+  SeqGlobal global_;
+  LockPool  lock_pool_;
 };
 
 extern Sequencer sequencer;
 extern const uint8_t kDefaultMod[42];
+
+// Map a (Parameter table id, instance_index) to a sequencer lock_index 0..27.
+// Returns 0xff if the parameter is not lockable. `instance` is used only for
+// per-EG envelope parameters (PATCH_ENV_DECAY across env 0/1/2 → locks 8/10/12).
+uint8_t ParamIdToLockIndex(uint8_t param_id, uint8_t instance);
 
 }  // namespace ambika
 
