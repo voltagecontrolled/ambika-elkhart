@@ -578,19 +578,19 @@ Per-step performance and timing controls.
 
 ```
 note C 3 | vel  100 | vamt  64 | rate trk
-subs   0 | prob 127 | glid   0 | sfx none
+subs  1x | prob 100 | glid   0 | sfx none
 ```
 
 | Cell   | Range / values                                                                  | Notes                                                                                                                                                                                  |
 |--------|---------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `note` | 0–127, shown as note name                                                       | Step note. Quantised to the track's scale and root.                                                                                                                                    |
-| `vel`  | 0–127                                                                           | Step velocity.                                                                                                                                                                         |
+| `vel`  | 0–127                                                                           | Step velocity. Supports per-lock probability — see below.                                                                                                                              |
 | `vamt` | 0–127                                                                           | Velocity → VCA depth on INT tracks. **Lockable per step** so it can also drive MIDI Mod Wheel (CC 1) on EXT tracks. On INT, only the live-tweak value reaches the voicecard today — step locks are stored but don't override the voicecard amount at fire time.  |
 | `rate` | `trk`, preset (`32`…`2B`), or raw-tick (`t2`…`t96`)                             | Per-step rate override. `trk` inherits the track rate. Encoder click toggles between preset and raw-tick modes — see *Raw-tick `rate` (tracker swing)* above.                          |
-| `subs` | repeats (CCW), `0` (centre), ratchets (CW)                                      | Bipolar substep cell. CCW values fire the step on subsequent periods; CW values pack multiple sub-triggers into the step's own period. The substep editor extends both modes — see the next section. |
-| `prob` | 0–127 (≈ 0–100 %)                                                               | Probability that the step fires. Also gates whether `sfx` takes effect.                                                                                                                |
-| `glid` | 0–127                                                                           | Per-step glide / portamento time. `0` = no glide. On EXT tracks, the locked value also emits as CC 5 (Portamento Time) on the track's MIDI channel.                                    |
-| `sfx`  | `none`, `skip`, `fwd`, `rev`, `dir`, `rjmp`, `jmp1`–`jmp8`                      | Per-step modifier. No track default — shows `----` when no step is held. Gated by `prob`. `skip` advances without firing; `fwd`/`rev` set track direction sticky; `dir` toggles direction; `rjmp` jumps to a random step; `jmp1`–`jmp8` jump to that absolute step. |
+| `subs` | `1x..8x` (ratchets), centre `1x` (no substeps), `1r..8r` (repeats)              | Bipolar substep cell. Displayed as total fires. `1x` = main step only. CW values pack multiple sub-triggers into the step's own period (e.g. `4x` = main + 3 ratchets = 4 fires). CCW values re-fire the step on successive pattern periods (`4r` = main + 3 re-fires = 4 fires). Per-step only — shows `----` when no step is held. The substep editor extends both modes — see the next section. |
+| `prob` | bipolar: `0..99%` (CCW), `100` (centre), `1:2..8:8`, `!1:3..!6:6`, `FILL`, `!FIL` (CW) | Probability that the step fires. **Centre (`100`)** = always fires. **CCW** = random roll, dialled in as a percentage. **CW** = iterative cycle-phase. `X:N` fires on loop X of every N pattern wraps (e.g. `2:4` = fires every 4th loop, on loop 2 of 4); `!X:N` fires every loop except X of N. `FILL` / `!FIL` are reserved for a forthcoming fill button. Each track maintains its own loop counter. PROB also gates whether `sfx` takes effect. |
+| `glid` | 0–127                                                                           | Per-step glide / portamento time. `0` = no glide. On EXT tracks, the locked value also emits as CC 5 (Portamento Time) on the track's MIDI channel. Supports per-lock probability — see below. |
+| `sfx`  | `none`, `skip`, `fwd`, `rev`, `dir`, `rjmp`, `jmp1`–`jmp8`, `eskp`              | Per-step modifier. No track default — shows `----` when no step is held. Gated by `prob`. `skip` advances without firing; `fwd`/`rev` set track direction sticky; `dir` toggles direction; `rjmp` jumps to a random step; `jmp1`–`jmp8` jump to that absolute step; `eskp` (explicit-skip) is skipped during normal play and only fires when another step's jump SMOD lands on it. Supports per-lock probability — see below. |
 
 ### Voice 1 page
 
@@ -636,6 +636,33 @@ pdec  20 | pamt +24 | sub   48 | wave squ1
 | `sub`  | 0–63             | Sub-oscillator level.                                                  |
 | `wave` | 11 shapes        | Sub-oscillator shape (`squ1`, `tri1`, `pul1`, `squ2`, `tri2`, `pul2`, `click`, `glitch`, `blow`, `metal`, `pop`). |
 
+### Per-lock probability
+
+Any per-step lock can carry its own probability gate. When the gate passes the lock applies; when it fails, the step plays through with that parameter's track default for the loop. Each gate uses the same bipolar PROB encoding as the step's main `prob` cell — random % roll on the CCW side, "always" at centre, or iterative `X:N` / `!X:N` patterns on the CW side. Gates roll independently of step PROB, so a step can fire on every other loop *and* have its FREQ override apply on every third loop.
+
+#### How to set a per-lock PROB
+
+1. Turn the encoder so the cursor sits on the cell whose lock you want to gate.
+2. Hold the step button.
+3. Click the encoder. The cell flips from its normal value display to a PROB readout.
+4. Turn that cell's pot to dial the PROB (`50%`, `1:3`, `!2:4`, etc.).
+5. Release the step (or click again) to exit PROB-edit mode.
+
+The cell's label renders **UPPERCASE** any time that step has a non-default PROB attached, as a "this lock is gated" indicator.
+
+**Order matters.** Cursor first, then hold the step. Holding the step first and turning the encoder doesn't move the cursor — step buttons act as encoder modifiers for shortcut handling, so the turn is consumed elsewhere.
+
+#### What can be gated
+
+| Where | What gets gated on roll fail |
+|-------|------------------------------|
+| Step page cells: `vel`, `glid`, `sfx`        | Intrinsic field reverts to the track default. `sfx` becomes `none` (step fires normally, no jump / no skip / no direction change). |
+| Voice 1 / Voice 2 page cells (synth params)  | Parameter override doesn't apply; the synth uses the track default. |
+| EXT-track CC slots (S5b / S5c)               | Locked CC value doesn't send; the track default CC value sends instead. |
+| Substep editor — see next section            | Ratchets / repeats / chord walk all suppressed for that loop; main step still fires (subject to step PROB). |
+
+Cells that **don't** support per-lock PROB: `note` (intrinsic with no overlay path), `rate` (encoder click is reserved for raw-tick toggle), `prob` (it's already the gate), `subs` (gated separately inside the substep editor). The four cells excluded above don't get drill-in mode — click is a no-op for them.
+
 ## Sequencer mode — substep editor
 
 The `subs` cell on the Step page sets a coarse repeat or ratchet
@@ -653,67 +680,56 @@ mutate the pitch of each fire through a chord shape.
 while the cursor is somewhere else can trip a shortcut on a
 neighbouring cell.)
 
-The editor opens only if the held step has a non-zero `subs` value
-(either side of centre). With the cursor anywhere else, or with
-`subs` at `0`, the click is ignored.
+The editor opens for any held step. Steps without ratchets or repeats (`subs = 1x`) open the editor in a single-slot view so you can still reach the chord-walk controls and the SUBS PROB cell.
 
-Click the encoder again to exit.
+Click the encoder again, or release the step, to exit. The encoder is modal inside the editor — turning it doesn't navigate away.
 
 ### Two modes — repeats vs. ratchets
 
-Which mode the editor opens in is determined by which side of the
-`subs` deadzone the step is currently on:
+Which mode the editor is in follows the step's current `subs` value:
 
-- **Repeats** (CCW side, `Nr`). Gates each fire on successive
-  pattern periods. Slot 1 is the original step; slots 2..N are
-  the subsequent period re-fires.
-- **Ratchets** (CW side, `Nx`). Gates each sub-trigger packed
-  inside the step's own period. Slots 1..N are the ratchet hits
-  in order, on the timing grid.
+- **Ratchets** (CW side, `Nx`). Sub-triggers packed inside the step's own period. `4x` = main hit + 3 ratchets = 4 fires total, evenly spaced.
+- **Repeats** (CCW side, `Nr`). Re-fires on successive pattern periods. `4r` = main hit + 3 re-fires across the next 3 periods = 4 fires total.
+- **Centre (`1x`)**. No substep behaviour — single fire per visit. Chord-walk (`mint`) still works in this mode; it advances once per pattern loop instead of per sub-trigger.
 
-You can flip modes from inside the editor by sweeping pot 1 across
-the centre deadzone (see *Editor controls* below).
+You can flip modes from inside the editor by sweeping pot 1 across its centre deadzone.
 
 ### LCD layout
 
 ```
-subs  4r | mint maj | mdir  up | moct  2
-# # - # # # - -
+ subs  4x | mint  maj | mdir   up | moct   2
+ prob  50 |           |           |
 ```
 
-Top row: the four editor controls. Bottom row: one slot per active
-fire position, `#` if that fire is enabled and `-` if muted. The
-`S1`–`S8` LEDs mirror the bottom row; buttons above the active
-count are dark and inert.
+`S1`–`S8` LEDs show the substep slot state:
+
+- **Green** — slot is active and firing.
+- **Red** — slot is active but currently disabled.
+- **Dark** — slot is inactive (above the active count).
+
+Press a button to toggle its slot between green and red.
 
 ### Editor controls
 
-While the editor is active, only the first four pots are live. The
-remaining pots are inert.
-
 | Pot | Cell label | Function                                                                                                  |
 |-----|------------|-----------------------------------------------------------------------------------------------------------|
-| 1   | `subs`     | Count + mode. Mirrors the Step-page `subs` knob; sweeping across the centre deadzone toggles between repeats and ratchets. |
-| 2   | `mint`     | **MINT** — mutation chord shape (see table below).                                                        |
-| 3   | `mdir`     | **MDIR** — mutation walk shape (see table below).                                                         |
-| 4   | `moct`     | **MOCT** — octave cap on the mutation walk, 1–4.                                                          |
-| 5–8 | —          | Inert.                                                                                                    |
+| 1   | `subs`     | Count + mode. Same encoding as the Step-page `subs` knob; sweeping across centre toggles between repeats, off, and ratchets. |
+| 2   | `mint`     | **MINT** — chord-walk shape (see table below).                                                            |
+| 3   | `mdir`     | **MDIR** — chord-walk direction (see table below).                                                        |
+| 4   | `moct`     | **MOCT** — octave cap on the chord walk, 1–4.                                                             |
+| 5   | `prob`     | **SUBS PROB** — bipolar PROB (`50%`, `1:3`, `!2:4`, etc.). On roll fail, ratchets / repeats / chord walk are suppressed for that loop; the main step still fires. |
+| 6–8 | —          | Inert.                                                                                                    |
 
-`S1`–`S8` toggle the gate on each active fire slot. Buttons above
-the active count are inert.
-
-When the editor opens, gates that fall outside the new active count
-are cleared. If no gates remain, every active slot is re-enabled so
-the step still fires.
+When the editor opens, slot gates above the active count are cleared. If no gates remain, every active slot is re-enabled so the step still fires.
 
 ### Mutation (MINT + MDIR + MOCT)
 
-When MINT is set to anything but `off`, every fire after the first
-walks the step's pitch through the tones of the chosen chord. Each
-time the walk cycles through the chord, it climbs by an octave;
-MOCT caps the maximum distance from the base note. MDIR sets the
-shape of the walk. The final pitch is clamped to MIDI range and
-re-quantised to the track's scale.
+When MINT is set to anything but `off`, the step's pitch walks through the tones of the chosen chord. The walk timing depends on the step's `subs` mode:
+
+- **Ratchets / repeats (`Nx` / `Nr`)**: each sub-fire after the main hit advances one step through the walk.
+- **No substeps (`1x`)**: the walk advances **once per pattern loop** — each time this track wraps around, the step plays the next chord tone.
+
+Each time the walk cycles through the chord, it climbs by an octave; MOCT caps the maximum distance from the base note. MDIR sets the shape of the walk. The final pitch is clamped to MIDI range and re-quantised to the track's scale.
 
 #### MINT — chord shapes
 
@@ -732,6 +748,7 @@ re-quantised to the track's scale.
 | `M7`   | {0, 4, 7, 11}        | major 7            |
 | `7sus` | {0, 5, 7, 10}        | 7sus4              |
 | `pent` | {0, 3, 5, 7, 10}     | minor pentatonic   |
+| `chr`  | {0..11}              | chromatic (all 12 semitones) |
 
 #### MDIR — walk shapes
 

@@ -12,6 +12,42 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: GitHub issues.
 
+### v4.3 — Probability everywhere: bipolar PROB, per-lock gates, chord walk on loop, SUBS rework (2026-05-22)
+
+**Flash:** controller 86.4% → **90.3%** (`+2,572 B` over v4.2). **RAM:** controller 76.9% → **79.6%** (`+103 B`: 96 B per-lock PROB pool + 1 count + 6 B per-track loop counter + 6 B per-track substep gate). Controller `kSystemVersion = 0x43`. Voicecard untouched (still `0x42`). Snapshot file format bumps to `0x04`; v4.2 (`0x03`) snapshots load with the new per-lock PROB pool zero-filled.
+
+The single theme of v4.3 is **probability as a first-class field** — every lockable param, every intrinsic step field, every step modifier (SMOD), and the substep machinery itself can carry an independent PROB gate, each evaluated against a per-track loop counter or a random roll. Step PROB itself becomes bipolar so a single byte can mean either "fire 65% of the time" or "fire on loop 2 of every 4." Composition is multiplicative: a step can fire on alternating loops, jump to a different step every third loop, and have its FREQ override apply on a fourth independent cycle.
+
+**Per-track loop counter (#35).** `tr.shadow[kShdwLOOP]` increments at every natural pattern wrap and on every `Jmp` / `Rjmp` SMOD (jumps reseat the playhead, ending the current loop). All iterative PROB evaluations read this counter.
+
+**Bipolar PROB encoding (#6).** The PROB cell's single byte now encodes three regions: CCW = % roll (0..100% via the existing `Random::GetByte() <= prob` path); center = always fire (`100` displayed); CW = cycle-phase iterative — `1:2`, `2:2`, `1:3`..`8:8`, `!1:3`..`!6:6`, `FILL`, `!FIL`. The 55-slot table lives in PROGMEM (`kProbCyclePhase`); each entry packs `(neg, X-1, N-1, fill_marker)` into a byte. v4.2 PROB bytes (high bit clear) continue to read as % roll unchanged. `FILL` / `!FIL` stub through a `ProbFillActive()` returning 0 until the PERF page lands.
+
+**Chord walk on loop wrap (#36).** When a step's `SSUB=0` (no substep behavior) and `MINT>0`, the chord-walk eval now advances its position by `tr.shadow[kShdwLOOP]` instead of by `sub_idx`. Each pattern loop walks the chord one tone further. Octave-walk (`MOCT`) and direction (`MDIR`) behavior preserved. `SSUB>0` ratchet/repeat behavior unchanged.
+
+**`eskp` SMOD value (#37).** New SMOD slot 14, labeled `eskp` (explicit-skip). Steps with `SMOD=eskp` are skipped during normal iteration but fire when another step's `Jmp[N]` or `Rjmp` SMOD lands on them. Used to hide "variation hits" that only play when explicitly summoned.
+
+**Per-lock PROB pool + drill-in (#38, slim).** New parallel pool `LockProbPool` storing one bipolar PROB byte per `(track, step, param)` lock. 32 entries, 96 B RAM. At fire time, every overlaid lock-pool entry consults the prob pool; on roll fail, the snapshot slot reverts to the track default and the override doesn't apply that loop. Intrinsic fields (`VEL`, `GLID`) are gated by inline lookups at their read sites; SMOD and SUBS use synthetic prob-pool keys (`kProbKeySmod = 28`, `kProbKeySubs = 29`) and are gated at their respective dispatch points. PROB byte uses the same bipolar encoding as step PROB — composition with step PROB is independent (each gate rolls separately, both must pass for the override to apply that loop). The four-field randomness model from the original #38 scope (RND/DIR/RNGE/WALK across 15 params) is deferred — beat-synced S&H LFO via the v4.4 mod matrix covers continuous-param drift better than a per-step UI for it.
+
+**Drill-in UX on the step page.** Hold a step, turn the encoder to put the cursor on a pool-backed cell, then click the encoder. The cell flips to PROB-edit mode; the matching pot now writes the bipolar PROB byte. Release the step or click again to exit. Cells with a non-default PROB entry render their label uppercase as an indicator. Works for every pool-backed lockable (page 1/2/3 cells), the SFX (SMOD) cell, and the intrinsic VEL and GLID cells. EXT-track CC view (S5b/S5c) renders drill-in and label inversion on the `CC#` / `VAL` rows. PROB also gates outbound CC sends since EXT dispatch reads the same fire-time snapshot.
+
+**Gesture order (documentation only).** Cursor first, then hold step. Step switches double as encoder modifiers, so the obvious "hold-then-turn" path is consumed by shortcut handling.
+
+**SUBS PROB in the substep editor.** Pot 4 (top-left of the bottom pot row) writes a bipolar PROB byte under `kProbKeySubs`. On roll fail at fire time, ratchets / repeats / chord walk / `substep_bits[0]` gating are all suppressed for that loop — the step still fires (subject to step PROB) but as if `SSUB=0`. Rolled once per main fire and stashed in `tr.shadow[kShdwSubs]`.
+
+**`chr` chord shape.** New `MINT=13` walks all 12 chromatic semitones — `{0,1,2,3,4,5,6,7,8,9,10,11}`. Useful as the chord-walk source for melodic patterns where any scale tone is fair game.
+
+**SUBS labeling: total fires.** `SSUB=0, REPT=0` now displays `1x` (1 fire = main step only). `SSUB=1` displays `2x` (main + 1 ratchet = 2 fires). Range `1x..8x` for ratchets, `1x..8r` for repeats. Pot caps stored ssub/rept at 7 so the substep editor's 8 slot indicators always match the actual fire count. Storage byte semantic is unchanged — v4.2 patterns with `SSUB=8` still play their 9 fires; the pot just doesn't reach `9x` anymore, and the editor's 9th slot remains invisible (same constraint as v4.2).
+
+**Substep editor rework.** Standard 4-cell layout with delimiters flush to cell edges (matches the main step page) — line 0: `subs / mint / mdir / moct`; line 1: `prob / / /`. PROB lives physically over pot 4 (the pot that writes it). Substep on/off state moved entirely to the S1..S8 LEDs (three-state: green = active+firing, red = active+suppressed, dark = inactive slot); the textual `#/-` row is gone. Encoder is modal — turning it inside the editor is a no-op so the user can't accidentally navigate away. SSUB editor can be entered for `SSUB=0, REPT=0` steps so MINT / MOCT / MDIR / SUBS PROB are reachable for chord-walk-only configuration. Pot 0's dead zone explicitly writes `SSUB=0, REPT=0` so the editor can return to the no-substep state.
+
+**Substep `bit 0` correctly gates the main fire.** When in ratchet mode (`kStepFlagGated`) or repeat mode (`SSUB=-2`), bit 0 of `substep_bits` now gates whether the main fire happens. Previously only the `SSUB=-2` path honored it; ratchets fired the main hit unconditionally regardless of the slot 0 LED state. Toggling the first slot off in the editor now visibly suppresses the main fire.
+
+**SUBS cell behavior aligned with SFX.** No track-level default — pot is a no-op when no step is held and the cell renders `----`. Matches SMOD's per-step-only semantics.
+
+**Jump SMOD loop counter timing.** `kShdwLOOP` increments after `FireStep` returns rather than during the SMOD dispatch. This keeps step PROB and per-lock PROB on the same iteration reading the same loop count — important when stacking iterative gates on a step that also jumps.
+
+---
+
 ### v4.2 — Lock pool storage, lockable patch pages, gauge glyph (2026-05-21)
 
 **Flash:** controller 90.9% → **86.4%** (net `−2,934 B` after lock-pool

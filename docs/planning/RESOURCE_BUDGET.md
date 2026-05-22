@@ -11,15 +11,36 @@ after each landed issue and update both this table and the baseline.
 
 ---
 
-## Baseline (v4.2, 2026-05-22)
+## Baseline (v4.3, 2026-05-22)
+
+| Target     | Flash used | Flash free | RAM used | RAM free |
+|------------|-----------:|-----------:|---------:|---------:|
+| controller |    59152 B |     6384 B |   3262 B |    834 B |
+| voicecard  |    26226 B |     6542 B |   1053 B |    995 B |
+
+Controller flash now **90.3 %**, RAM **79.6 %**. Voicecard untouched
+in v4.3 (still 80 % flash).
+
+### v4.3 delta from v4.2
+
+| Target     |   Δ Flash |  Δ RAM |
+|------------|----------:|-------:|
+| controller |  +2518 B  | +111 B |
+| voicecard  |        0  |     0  |
+
+RAM: 96 B per-lock PROB pool + 1 B count + 6 B per-track loop
+counter (`kShdwLOOP`) + 6 B per-track SUBS gate (`kShdwSubs`) +
+~2 B drill-in UI state. Flash: bipolar PROB table + eval; per-lock
+PROB pool struct + serdes; drill-in UI on step page + EXT-track
+CC view; SUBS PROB plumbing; substep editor layout rework; MINT
+`chr` chord; snapshot `0x03` → `0x04` migration scaffolding.
+
+### Previous baseline (v4.2, 2026-05-21)
 
 | Target     | Flash used | Flash free | RAM used | RAM free |
 |------------|-----------:|-----------:|---------:|---------:|
 | controller |    56634 B |     8902 B |   3151 B |    945 B |
 | voicecard  |    26226 B |     6542 B |   1053 B |    995 B |
-
-Voicecard flash is the tightest budget (80 % full); controller RAM
-is the next-tightest (76 % full).
 
 ---
 
