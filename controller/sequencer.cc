@@ -822,7 +822,16 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
 
   // Velocity: lock-or-default, then scale by track VOL (255 = identity).
   // (v * (VOL+1)) >> 8 so VOL=255 produces true identity; VOL=0 still silent.
+  // Per-lock PROB gate (v4.3, #38): on roll fail, revert to track default
+  // so per-step VEL only applies probabilistically.
   uint8_t velocity = tr.steps[step_index].vel;
+  {
+    uint8_t pi = lock_prob_pool_.Find(t, step_index, 20);
+    if (pi != 0xff &&
+        !ProbRoll(lock_prob_pool_.entry(pi).prob, tr.shadow[kShdwLOOP])) {
+      velocity = tr.defaults[16 + kSPVEL];
+    }
+  }
   velocity = (static_cast<uint16_t>(velocity) *
               (tr.pattern[kPatVOL] + 1)) >> 8;
 
@@ -831,7 +840,15 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // step's value. Note: this leaves the voicecard's portamento at the
   // last step's glid for any interleaved MIDI/keyboard notes — acceptable
   // since step playback is the dominant path here.
+  // Per-lock PROB gate (v4.3, #38): on roll fail, revert to track default.
   uint8_t glid = tr.steps[step_index].glid;
+  {
+    uint8_t pi = lock_prob_pool_.Find(t, step_index, 21);
+    if (pi != 0xff &&
+        !ProbRoll(lock_prob_pool_.entry(pi).prob, tr.shadow[kShdwLOOP])) {
+      glid = tr.defaults[16 + kSPGLID];
+    }
+  }
   uint8_t track_ext = multi.track_is_ext(t);
   uint8_t channel = (multi.track_channel(t) - 1) & 0x0f;
 

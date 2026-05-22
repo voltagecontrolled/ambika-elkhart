@@ -337,15 +337,17 @@ uint8_t SeqStepsPage::OnClick() {
   // LockProbPool; release of the step exits drill-in.
   {
     uint8_t lockable = pgm_read_byte(&kCellLockable[cursor_]);
-    // Drill-in admission: pool-backed lockables (1..15, 24..27) plus the
-    // SMOD sentinel cell (gates the SMOD effect at fire time, prob stored
-    // under synthetic key kProbKeySmod). NOTE (0) and RATE (19) are excluded
-    // — NOTE is intrinsic, RATE's click already toggles raw-tick mode.
+    // Drill-in admission: pool-backed lockables (1..15, 24..27), intrinsic
+    // VEL (20) and GLID (21), and the SMOD sentinel cell (key kProbKeySmod).
+    // Excluded: NOTE (0), PROB (16), SSUB (17), REPT (18), RATE (19) — NOTE
+    // has no overlay path; PROB is itself the step gate (#6); SSUB/REPT
+    // belong to the substep editor; RATE's click already toggles raw mode.
     uint8_t drill_key = 0xff;
     if (lockable == kSmodCellSentinel) {
       drill_key = kProbKeySmod;
     } else if (lockable != 0xff && lockable != 0 && lockable != 19 &&
-               (lockable < 16 || (lockable >= 24 && lockable < 28))) {
+               (lockable < 16 || lockable == 20 || lockable == 21 ||
+                (lockable >= 24 && lockable < 28))) {
       drill_key = lockable;
     }
     if (drill_key != 0xff) {
