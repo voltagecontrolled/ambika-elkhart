@@ -23,6 +23,13 @@ namespace ambika {
 static const uint8_t kLockProbPoolCapacity = 32;
 static const uint8_t kLockProbPoolFree     = 0xff;  // param sentinel = empty slot
 
+// Synthetic prob-pool keys for intrinsic fields that aren't in the regular
+// Parameter table. These reuse the (track, step, param) addressing of the
+// pool to attach a PROB byte to non-pool-backed step state.
+//   28 = SMOD nibble (in step_flags). Drill-in via the SFX cell on the
+//        step page; fire-time gate suppresses the SMOD effect on roll fail.
+static const uint8_t kProbKeySmod = 28;
+
 struct LockProbEntry {
   uint8_t ts;     // track in bits 0..2, step in bits 3..5 (LockTsPack-compatible)
   uint8_t param;  // Parameter table index; 0xff = free slot

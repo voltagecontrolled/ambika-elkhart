@@ -337,20 +337,30 @@ uint8_t SeqStepsPage::OnClick() {
   // LockProbPool; release of the step exits drill-in.
   {
     uint8_t lockable = pgm_read_byte(&kCellLockable[cursor_]);
-    if (lockable != 0xff && lockable != 19 &&
-        (lockable < 16 || (lockable >= 24 && lockable < 28))) {
+    // Drill-in admission: pool-backed lockables (1..15, 24..27) plus the
+    // SMOD sentinel cell (gates the SMOD effect at fire time, prob stored
+    // under synthetic key kProbKeySmod). NOTE (0) and RATE (19) are excluded
+    // — NOTE is intrinsic, RATE's click already toggles raw-tick mode.
+    uint8_t drill_key = 0xff;
+    if (lockable == kSmodCellSentinel) {
+      drill_key = kProbKeySmod;
+    } else if (lockable != 0xff && lockable != 0 && lockable != 19 &&
+               (lockable < 16 || (lockable >= 24 && lockable < 28))) {
+      drill_key = lockable;
+    }
+    if (drill_key != 0xff) {
       uint8_t held_sr = 0xff;
       for (uint8_t s = 0; s < 8; ++s) {
         if (ui.switch_held(s)) { held_sr = s; break; }
       }
       if (held_sr != 0xff) {
         uint8_t held_step = 7 - held_sr;
-        if (drill_step_ == held_step && drill_lockable_ == lockable) {
+        if (drill_step_ == held_step && drill_lockable_ == drill_key) {
           drill_step_ = 0xff;
           drill_lockable_ = 0xff;
         } else {
           drill_step_ = held_step;
-          drill_lockable_ = lockable;
+          drill_lockable_ = drill_key;
         }
         ui.inhibit_switch(1 << held_sr);
         return 1;
@@ -546,12 +556,19 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
   }
 
   // SMOD cell — per-step only (no track default). Pot 0..127 → 0..13
-  // value space; written into step_flags bits 2..5 of the held step.
+  // value space; written into step_flags bits 2..5 of the held step. When
+  // drill-in is active on this step's SMOD, pot writes a PROB byte to the
+  // prob pool (key kProbKeySmod) instead — gating whether SMOD takes effect.
   if (lockable == kSmodCellSentinel) {
     if (held_sr != 0xff) {
       uint8_t held_step = 7 - held_sr;
-      uint8_t smod = ScalePot(value, kSmodCount - 1);
-      SetStepSmod(tr->steps[held_step], smod);
+      if (drill_step_ == held_step && drill_lockable_ == kProbKeySmod) {
+        sequencer.mutable_lock_prob_pool().Set(
+            track, held_step, kProbKeySmod, ProbEncodePot(value));
+      } else {
+        uint8_t smod = ScalePot(value, kSmodCount - 1);
+        SetStepSmod(tr->steps[held_step], smod);
+      }
       step_lock_dirty_ |= (1 << held_step);
       ui.inhibit_switch(1 << held_sr);
     }
@@ -965,8 +982,10 @@ void SeqStepsPage::UpdateScreen() {
     // is semantically identical to the internal portamento on INT.
     // v4.3 #38: cells with a per-lock PROB entry for the held step also
     // render uppercase to advertise "this lock has a PROB attached."
-    uint8_t has_prob = (held_step != 0xff && lockable != 0xff && lockable < 28 &&
-                       sequencer.lock_prob_pool().Find(track, held_step, lockable) != 0xff);
+    // SMOD cell uses synthetic key kProbKeySmod for its prob entry.
+    uint8_t prob_key = (lockable == kSmodCellSentinel) ? kProbKeySmod : lockable;
+    uint8_t has_prob = (held_step != 0xff && prob_key != 0xff && prob_key < 29 &&
+                       sequencer.lock_prob_pool().Find(track, held_step, prob_key) != 0xff);
     const prog_char* abbr_src = kAbbr + cell_global * 4;
     for (uint8_t c = 0; c < 4; ++c) {
       char ch = pgm_read_byte(abbr_src + c);
@@ -1030,8 +1049,16 @@ void SeqStepsPage::UpdateScreen() {
     }
 
     // SMOD cell — render label of held step's SMOD nibble, or "----" when
-    // no step is held (no track-level default for SMOD).
+    // no step is held (no track-level default for SMOD). When drilled in
+    // on this step's SMOD, render the PROB byte instead of the SMOD label.
     if (lockable == kSmodCellSentinel) {
+      if (held_step != 0xff && drill_step_ == held_step &&
+          drill_lockable_ == kProbKeySmod) {
+        WriteProbByte(&buffer[6],
+                      sequencer.lock_prob_pool().GetProb(
+                          track, held_step, kProbKeySmod));
+        continue;
+      }
       if (held_step != 0xff) {
         uint8_t smod = StepSmod(tr.steps[held_step]);
         if (smod >= kSmodCount) smod = 0;

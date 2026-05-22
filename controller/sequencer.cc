@@ -554,6 +554,17 @@ void Sequencer::Clock(uint8_t ticks) {
           uint8_t guard;
           for (guard = 0; guard < len; ++guard) {
             uint8_t smod = StepSmod(tr.steps[fired]);
+            // Per-step SMOD PROB gate (v4.3, #38). If a prob entry exists
+            // for this step under key kProbKeySmod, roll it; on fail, treat
+            // the step as if its SMOD were None — fire normally, no jump,
+            // no skip, no direction mutation.
+            if (smod != kSmodNone) {
+              uint8_t pi = lock_prob_pool_.Find(t, fired, kProbKeySmod);
+              if (pi != 0xff &&
+                  !ProbRoll(lock_prob_pool_.entry(pi).prob, tr.shadow[kShdwLOOP])) {
+                smod = kSmodNone;
+              }
+            }
             if (smod == kSmodSkip || smod == kSmodESkp) {
               // ESkp (explicit skip) steps are skipped during normal
               // iteration; they only fire when another step's jump SMOD
@@ -593,8 +604,13 @@ void Sequencer::Clock(uint8_t ticks) {
 
           if (fire_now && (tr.steps[fired].step_flags & kStepFlagOn)) {
             int8_t ssub_f = SsubOf(tr.steps[fired].subs);
-            // SSUB=-2: gate initial fire on bit 0 of substep_bits.
-            if (ssub_f != -2 || (tr.steps[fired].substep_bits & 0x01)) {
+            // Bit 0 of substep_bits gates the main fire whenever the step is
+            // in a substep mode — ratchets (kStepFlagGated) or repeats
+            // (SSUB=-2). Toggling slot 0 off in the SUBS editor must
+            // visibly suppress the main fire to match the LED state.
+            uint8_t gated = (ssub_f == -2) ||
+                            (tr.steps[fired].step_flags & kStepFlagGated);
+            if (!gated || (tr.steps[fired].substep_bits & 0x01)) {
               FireStep(t, fired, 0);
             }
           }
