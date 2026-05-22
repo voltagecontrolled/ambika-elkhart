@@ -550,6 +550,7 @@ void Sequencer::Clock(uint8_t ticks) {
           // mutate kPatDIRN (sticky); rjmp/jmp[N] reseat the playhead
           // before firing. Only applied when PROB passes.
           uint8_t fire_now = 1;
+          uint8_t jumped = 0;
           uint8_t guard;
           for (guard = 0; guard < len; ++guard) {
             uint8_t smod = StepSmod(tr.steps[fired]);
@@ -574,17 +575,13 @@ void Sequencer::Clock(uint8_t ticks) {
               uint8_t target = Random::GetByte() % len;
               tr.shadow[kShdwSTEP] = target;
               fired = (target + tr.pattern[kPatROTA]) % len;
-              // Jumps reseat the playhead, ending the current loop. Tick the
-              // counter so iterative PROB on a jump step alternates correctly
-              // (without this, the jump prevents the natural wrap that would
-              // otherwise advance the counter and the gate would freeze).
-              ++tr.shadow[kShdwLOOP];
+              jumped = 1;
             } else if (smod >= kSmodJmp1 && smod <= kSmodJmp8) {
               uint8_t target = smod - kSmodJmp1;
               if (target >= len) target = len - 1;
               tr.shadow[kShdwSTEP] = target;
               fired = (target + tr.pattern[kPatROTA]) % len;
-              ++tr.shadow[kShdwLOOP];
+              jumped = 1;
             }
             break;
           }
@@ -601,6 +598,12 @@ void Sequencer::Clock(uint8_t ticks) {
               FireStep(t, fired, 0);
             }
           }
+          // Increment kShdwLOOP for jumps AFTER FireStep so step PROB and
+          // per-lock PROB both evaluate against the same loop count this
+          // iteration. The bump still keeps iterative gates on jump steps
+          // alternating across visits (the jump itself prevents the natural
+          // wrap that would otherwise advance the counter).
+          if (jumped) ++tr.shadow[kShdwLOOP];
           if (fire_now) {
             uint8_t rept = ReptOf(tr.steps[fired].subs);
             tr.shadow[kShdwREPT] = rept;
