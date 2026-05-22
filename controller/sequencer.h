@@ -218,9 +218,10 @@ static const uint8_t kShdwDIR  = 4;  // pendulum direction: 0=fwd, 1=rev
 static const uint8_t kShdwLAST = 5;  // most-recently-fired step (for chaselight LED)
 static const uint8_t kShdwPROB = 6;  // PROB roll outcome for current main step (1=fire-allowed)
 static const uint8_t kShdwLOOP = 7;  // per-track loop counter, increments at pattern wrap
-static const uint8_t kShdwSIZE = 8;
+static const uint8_t kShdwSubs = 8;  // 1 = substep machinery active this fire (SUBS PROB gate)
+static const uint8_t kShdwSIZE = 9;
 
-// SeqTrack — v4.3: 56 + 8 + 28 + kCfgSIZE + kShdwSIZE = 129 bytes/track.
+// SeqTrack — v4.3: 56 + 8 + 28 + kCfgSIZE + kShdwSIZE = 130 bytes/track.
 // defaults[N]: fallback value for lockable param N when no pool entry exists.
 //   defaults[0..7]   = page1 (NOTE..FINE)        — defaults[0] (NOTE) unused; NOTE is intrinsic
 //   defaults[8..15]  = page2 (E1DEC, TUN2, E2DEC, FIN2, E3DEC, _reserved_, NOIS, SUB)

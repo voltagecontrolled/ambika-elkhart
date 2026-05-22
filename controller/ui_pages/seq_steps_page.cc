@@ -187,7 +187,7 @@ static inline uint8_t IsSubWaveCell(uint8_t lockable) {
   return lockable == 27;   // kP3WAVE (24 + kP3WAVE=3)
 }
 
-// MINT chord shape, 0..12 (4 chars each). Each value selects a chord whose
+// MINT chord shape, 0..13 (4 chars each). Each value selects a chord whose
 // intervals are walked across sub-triggers; see kChordIntervals in sequencer.cc.
 static const prog_char kMintNames[] PROGMEM =
   " off"  // 0  mutation disabled
@@ -202,7 +202,8 @@ static const prog_char kMintNames[] PROGMEM =
   " m7 "  // 9  {0, 3, 7, 10}      — minor 7
   " M7 "  // 10 {0, 4, 7, 11}      — major 7
   "7sus"  // 11 {0, 5, 7, 10}      — 7sus4
-  "pent"; // 12 {0, 3, 5, 7, 10}   — minor pentatonic
+  "pent"  // 12 {0, 3, 5, 7, 10}   — minor pentatonic
+  " chr"; // 13 {0..11}             — chromatic walk (all 12 semitones)
 
 // MDIR wave-shape labels (4 chars each). Values 0..7.
 // Sawtooth wraps to root; triangle bounces; random picks a chord-tone position.
@@ -350,6 +351,8 @@ uint8_t SeqStepsPage::OnClick() {
                 (lockable >= 24 && lockable < 28))) {
       drill_key = lockable;
     }
+    // SUBS PROB lives on pot 4 inside the substep editor (since the SUBS
+    // cell's click opens the editor, can't double-duty for drill-in).
     if (drill_key != 0xff) {
       uint8_t held_sr = 0xff;
       for (uint8_t s = 0; s < 8; ++s) {
@@ -480,9 +483,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
       return 1;
     }
     if (index == 1) {
-      // MINT — chord shape, 0..12 (0 = off). Pool-backed (lock_index 22).
+      // MINT — chord shape, 0..13 (0 = off). Pool-backed (lock_index 22).
       sequencer.SetStepLock(track, substep_step_, 16 + kSPMINT,
-                            ScalePot(value, 12));
+                            ScalePot(value, 13));
       return 1;
     }
     if (index == 2) {
@@ -501,6 +504,14 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
           track, substep_step_, 16 + kSPMDIR);
       sequencer.SetStepLock(track, substep_step_, 16 + kSPMDIR,
                             (cur & 0x07) | ((mapped & 0x03) << 3));
+      return 1;
+    }
+    if (index == 4) {
+      // SUBS PROB (v4.3, #38): bipolar PROB byte attached to this step's
+      // substep machinery. Roll-fail at fire time suppresses ratchets,
+      // repeats, chord walk, and the substep_bits[0] gating for that loop.
+      sequencer.mutable_lock_prob_pool().Set(
+          track, substep_step_, kProbKeySubs, ProbEncodePot(value));
       return 1;
     }
     return 0;
@@ -868,7 +879,7 @@ void SeqStepsPage::UpdateScreen() {
     memcpy_P(&line0[11], PSTR("mint"), 4);
     {
       uint8_t mint = sequencer.StepLockedValue(track, substep_step_, 16 + kSPMINT);
-      memcpy_P(&line0[15], kMintNames + (mint <= 12 ? mint : 12) * 4, 4);
+      memcpy_P(&line0[15], kMintNames + (mint <= 13 ? mint : 13) * 4, 4);
     }
     line0[19] = ' ';
     // MDIR cell (offset 20..29) — pool-backed lock_index 23 (shared byte with MOCT).
@@ -892,16 +903,15 @@ void SeqStepsPage::UpdateScreen() {
       line0[38] = '0' + moct;
     }
     line0[39] = ' ';
-    // Substep bit pattern on line 1 (8 slots × 4 chars = 32 chars).
-    // Slots >= substep_count_ are shown blank (not interactive).
-    uint8_t bits = step.substep_bits;
-    for (uint8_t b = 0; b < 8; ++b) {
-      uint8_t pos = b * 4;
-      line1[pos]     = ' ';
-      line1[pos + 1] = ' ';
-      line1[pos + 2] = (b < substep_count_) ? ((bits & (1 << b)) ? '#' : '-') : ' ';
-      line1[pos + 3] = ' ';
-    }
+    // Line 1: cleared, then SUBS PROB rendered at positions 30..39. The
+    // substep-bit on/off state is shown by the S1..S8 LEDs (green = active
+    // and firing; red = active but suppressed; dark = inactive slot).
+    for (uint8_t b = 0; b < 40; ++b) line1[b] = ' ';
+    memcpy_P(&line1[30], PSTR("prob"), 4);
+    line1[34] = ' ';
+    WriteProbByte(&line1[35],
+                  sequencer.lock_prob_pool().GetProb(
+                      track, substep_step_, kProbKeySubs));
     return;
   }
 
@@ -999,9 +1009,11 @@ void SeqStepsPage::UpdateScreen() {
     // is semantically identical to the internal portamento on INT.
     // v4.3 #38: cells with a per-lock PROB entry for the held step also
     // render uppercase to advertise "this lock has a PROB attached."
-    // SMOD cell uses synthetic key kProbKeySmod for its prob entry.
-    uint8_t prob_key = (lockable == kSmodCellSentinel) ? kProbKeySmod : lockable;
-    uint8_t has_prob = (held_step != 0xff && prob_key != 0xff && prob_key < 29 &&
+    // SMOD and SUBS sentinels map to their synthetic prob-pool keys.
+    uint8_t prob_key = lockable;
+    if (lockable == kSmodCellSentinel) prob_key = kProbKeySmod;
+    else if (lockable == kSubsMergedSentinel) prob_key = kProbKeySubs;
+    uint8_t has_prob = (held_step != 0xff && prob_key != 0xff && prob_key < 30 &&
                        sequencer.lock_prob_pool().Find(track, held_step, prob_key) != 0xff);
     const prog_char* abbr_src = kAbbr + cell_global * 4;
     for (uint8_t c = 0; c < 4; ++c) {
@@ -1150,11 +1162,13 @@ void SeqStepsPage::UpdateLeds() {
   uint8_t track = ui.state().active_part;
   const SeqTrack& tr = sequencer.track(track);
   if (editing_substeps_) {
+    // Three-state slot indicators (replaces the textual #/- row freed for
+    // the SUBS PROB display): green = active+firing, red = active+disabled,
+    // dark = inactive slot. Buttons S1..S8 toggle the bit.
     uint8_t bits = tr.steps[substep_step_].substep_bits;
     for (uint8_t i = 0; i < kNumStepsPerTrack; ++i) {
-      if (i < substep_count_ && (bits & (1 << i))) {
-        leds.set_pixel(LED_1 + i, 0x0f);
-      }
+      if (i >= substep_count_) continue;
+      leds.set_pixel(LED_1 + i, (bits & (1 << i)) ? 0x0f : 0xf0);
     }
     return;
   }

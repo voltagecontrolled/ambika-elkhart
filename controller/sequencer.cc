@@ -60,6 +60,7 @@ static inline uint8_t RatePeriod(uint8_t byte) {
 //  10 M7   {0,4,7,11}
 //  11 7sus {0,5,7,10}
 //  12 pent {0,3,5,7,10}    — minor pentatonic
+//  13 chr  {0..11}          — chromatic walk, all 12 semitones
 static const prog_uint8_t kChordIntervals[] PROGMEM = {
   /* oct  */  0,
   /* pwr  */  0, 7,
@@ -73,12 +74,13 @@ static const prog_uint8_t kChordIntervals[] PROGMEM = {
   /* M7   */  0, 4, 7, 11,
   /* 7sus */  0, 5, 7, 10,
   /* pent */  0, 3, 5, 7, 10,
+  /* chr  */  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
 };
 static const prog_uint8_t kChordOffsets[] PROGMEM = {
-  0, 1, 3, 6, 9, 12, 15, 18, 22, 26, 30, 34
+  0, 1, 3, 6, 9, 12, 15, 18, 22, 26, 30, 34, 39
 };
 static const prog_uint8_t kChordSizes[] PROGMEM = {
-  1, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5
+  1, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 12
 };
 
 // PROB cycle-phase slot table (v4.3, #6). Each byte:
@@ -486,7 +488,7 @@ void Sequencer::Clock(uint8_t ticks) {
     uint8_t cur = tr.shadow[kShdwLAST];
     int8_t ssub = SsubOf(tr.steps[cur].subs);
     if (tr.shadow[kShdwTICK] < period) {
-      if (ssub > 0 && tr.shadow[kShdwPROB]) {
+      if (ssub > 0 && tr.shadow[kShdwPROB] && tr.shadow[kShdwSubs]) {
         // Ratchets: N+1 evenly-spaced fires per period. Slot 0 = main fire.
         uint8_t sub_period = period / (static_cast<uint8_t>(ssub) + 1);
         if (sub_period == 0) sub_period = 1;
@@ -544,6 +546,16 @@ void Sequencer::Clock(uint8_t ticks) {
         // downstream inherit this decision via kShdwPROB.
         tr.shadow[kShdwPROB] =
             ProbRoll(tr.steps[fired].prob, tr.shadow[kShdwLOOP]);
+
+        // SUBS PROB (v4.3, #38): a second gate attached to the SUBS cell.
+        // On roll fail the main step still fires (subject to kShdwPROB) but
+        // ratchets/repeats/chord-walk are suppressed for this loop.
+        {
+          uint8_t pi = lock_prob_pool_.Find(t, fired, kProbKeySubs);
+          tr.shadow[kShdwSubs] =
+              (pi == 0xff) ||
+              ProbRoll(lock_prob_pool_.entry(pi).prob, tr.shadow[kShdwLOOP]);
+        }
 
         if (tr.shadow[kShdwPROB]) {
           // SMOD dispatch. skip = bounded re-advance loop; fwd/rev/dir
@@ -606,10 +618,11 @@ void Sequencer::Clock(uint8_t ticks) {
             int8_t ssub_f = SsubOf(tr.steps[fired].subs);
             // Bit 0 of substep_bits gates the main fire whenever the step is
             // in a substep mode — ratchets (kStepFlagGated) or repeats
-            // (SSUB=-2). Toggling slot 0 off in the SUBS editor must
-            // visibly suppress the main fire to match the LED state.
-            uint8_t gated = (ssub_f == -2) ||
-                            (tr.steps[fired].step_flags & kStepFlagGated);
+            // (SSUB=-2). Only applies when SUBS PROB passes; if SUBS is
+            // gated out for this loop, the step fires as if SSUB=0.
+            uint8_t gated = tr.shadow[kShdwSubs] &&
+                            ((ssub_f == -2) ||
+                             (tr.steps[fired].step_flags & kStepFlagGated));
             if (!gated || (tr.steps[fired].substep_bits & 0x01)) {
               FireStep(t, fired, 0);
             }
@@ -621,7 +634,11 @@ void Sequencer::Clock(uint8_t ticks) {
           // wrap that would otherwise advance the counter).
           if (jumped) ++tr.shadow[kShdwLOOP];
           if (fire_now) {
-            uint8_t rept = ReptOf(tr.steps[fired].subs);
+            // SUBS PROB suppresses repeats this loop — set REPT to 0 so the
+            // step doesn't re-fire even though the intrinsic REPT field is
+            // non-zero.
+            uint8_t rept = tr.shadow[kShdwSubs]
+                ? ReptOf(tr.steps[fired].subs) : 0;
             tr.shadow[kShdwREPT] = rept;
             if (rept == 0) {
               AdvanceStep(t);
@@ -743,12 +760,13 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // SSUB=0 case: no substeps to drive the walk, so use the per-track loop
   // counter instead — each pattern wrap advances the chord-tone position.
   uint8_t walk_idx = sub_idx;
-  if (walk_idx == 0 && SsubOf(tr.steps[step_index].subs) == 0) {
+  if (walk_idx == 0 && SsubOf(tr.steps[step_index].subs) == 0 &&
+      tr.shadow[kShdwSubs]) {
     walk_idx = tr.shadow[kShdwLOOP];
   }
   if (walk_idx > 0) {
     uint8_t mint = StepLockedValue(t, step_index, 16 + kSPMINT);
-    if (mint > 0 && mint <= 12) {
+    if (mint > 0 && mint <= 13) {
       uint8_t mdir_byte = StepLockedValue(t, step_index, 16 + kSPMDIR);
       uint8_t mdir = MdirOf(mdir_byte);
       uint8_t moct = MoctOf(mdir_byte);
@@ -917,6 +935,7 @@ void Sequencer::Reset() {
     tracks_[t].shadow[kShdwLAST] = 0;
     tracks_[t].shadow[kShdwPROB] = 0;
     tracks_[t].shadow[kShdwLOOP] = 0;
+    tracks_[t].shadow[kShdwSubs] = 1;
     // Pre-charge TICK so the first Clock() call after Play()/Reset() lands
     // TICK exactly at period and fires step 0 with a full-period gate window
     // (matching every subsequent step). Pre-charging to period (instead of

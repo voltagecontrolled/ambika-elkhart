@@ -28,7 +28,11 @@ static const uint8_t kLockProbPoolFree     = 0xff;  // param sentinel = empty sl
 // pool to attach a PROB byte to non-pool-backed step state.
 //   28 = SMOD nibble (in step_flags). Drill-in via the SFX cell on the
 //        step page; fire-time gate suppresses the SMOD effect on roll fail.
+//   29 = SUBS machinery (ratchets/repeats/chord walk). Drill-in via the
+//        SUBS cell; on roll fail the step still fires (subject to step
+//        PROB) but ratchets/repeats/chord-walk are suppressed for that loop.
 static const uint8_t kProbKeySmod = 28;
+static const uint8_t kProbKeySubs = 29;
 
 struct LockProbEntry {
   uint8_t ts;     // track in bits 0..2, step in bits 3..5 (LockTsPack-compatible)
