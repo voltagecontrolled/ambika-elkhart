@@ -51,6 +51,14 @@ class SeqStepsPage : public UiPage {
   // sweeps near the stored tick value.
   static uint8_t rate_snap_pending_;
 
+  // Per-lock PROB drill-in (v4.3). Set via encoder click on a pool-backed
+  // lockable cell while a step is held. While active, the cell's display
+  // shows the PROB byte instead of the lock value, and the matching pot
+  // writes to LockProbPool. Cleared on step release or second click.
+  // drill_step_ = 0xff means inactive.
+  static uint8_t drill_step_;
+  static uint8_t drill_lockable_;
+
   DISALLOW_COPY_AND_ASSIGN(SeqStepsPage);
 };
 

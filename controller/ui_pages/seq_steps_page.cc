@@ -79,6 +79,11 @@ uint16_t SeqStepsPage::last_tap_ms_ = 0;
 /* static */
 uint8_t SeqStepsPage::rate_snap_pending_ = 0;
 
+/* static */
+uint8_t SeqStepsPage::drill_step_ = 0xff;
+/* static */
+uint8_t SeqStepsPage::drill_lockable_ = 0xff;
+
 // Hold ≥ this many ms = peek (no release toggle).
 static const uint16_t kStepLongPressMs = 250;
 // Two taps on the same step within this many ms = clear locks.
@@ -322,6 +327,32 @@ uint8_t SeqStepsPage::OnClick() {
         // Swallow the release of the held step so it doesn't toggle the
         // matching substep_bit on the way out of the click gesture.
         ui.inhibit_switch(1 << s);
+        return 1;
+      }
+    }
+  }
+  // Per-lock PROB drill-in (v4.3, #38 slim). Click on a pool-backed lockable
+  // cell while a step is held toggles the cell into PROB-edit mode for that
+  // step. The pot on that cell then writes a bipolar PROB byte to the
+  // LockProbPool; release of the step exits drill-in.
+  {
+    uint8_t lockable = pgm_read_byte(&kCellLockable[cursor_]);
+    if (lockable != 0xff && lockable != 19 &&
+        (lockable < 16 || (lockable >= 24 && lockable < 28))) {
+      uint8_t held_sr = 0xff;
+      for (uint8_t s = 0; s < 8; ++s) {
+        if (ui.switch_held(s)) { held_sr = s; break; }
+      }
+      if (held_sr != 0xff) {
+        uint8_t held_step = 7 - held_sr;
+        if (drill_step_ == held_step && drill_lockable_ == lockable) {
+          drill_step_ = 0xff;
+          drill_lockable_ = 0xff;
+        } else {
+          drill_step_ = held_step;
+          drill_lockable_ = lockable;
+        }
+        ui.inhibit_switch(1 << held_sr);
         return 1;
       }
     }
@@ -619,6 +650,16 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
 
   if (held_sr != 0xff) {
     uint8_t held_step = 7 - held_sr;
+    // Drill-in intercept: when this cell is the drilled-in (step, lockable),
+    // the pot writes a bipolar PROB byte into LockProbPool instead of the
+    // lock value itself.
+    if (drill_step_ == held_step && drill_lockable_ == lockable) {
+      sequencer.mutable_lock_prob_pool().Set(
+          track, held_step, lockable, ProbEncodePot(value));
+      step_lock_dirty_ |= (1 << held_step);
+      ui.inhibit_switch(1 << held_sr);
+      return 1;
+    }
     sequencer.SetStepLock(track, held_step, lockable, mapped);
     step_lock_dirty_ |= (1 << held_step);
     ui.inhibit_switch(1 << held_sr);
@@ -689,6 +730,11 @@ uint8_t SeqStepsPage::OnKey(uint8_t key) {
   // OnPot during a lock edit) already suppresses the release event for the
   // held press, so the dirty bit was leftover residue that ate the next
   // normal tap on the same step — breaking double-tap-to-clear.
+  // Step release exits drill-in if this is the step being drilled.
+  if (drill_step_ == key) {
+    drill_step_ = 0xff;
+    drill_lockable_ = 0xff;
+  }
   uint8_t sr = 7 - key;
   uint16_t hold = ui.last_hold_ms(sr);
   ui.clear_last_hold_ms(sr);
@@ -708,6 +754,40 @@ uint8_t SeqStepsPage::OnKey(uint8_t key) {
   last_tap_step_ = key;
   last_tap_ms_ = now;
   return 1;
+}
+
+// Render a bipolar PROB byte into the 4-char value field at buf[0..3]:
+// NN% / 100 / X:N / !X:N / FILL / !FIL. Shared by step PROB (#6) and per-lock
+// PROB drill-in (#38 slim).
+static void WriteProbByte(char* buf, uint8_t v) {
+  buf[0] = ' '; buf[1] = ' '; buf[2] = ' '; buf[3] = ' ';
+  if (!(v & 0x80)) {
+    uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
+    if (pct > 100) pct = 100;
+    if (pct >= 100) { buf[0] = '1'; buf[1] = '0'; buf[2] = '0'; }
+    else if (pct >= 10) { buf[1] = '0' + (pct / 10); buf[2] = '0' + (pct % 10); }
+    else { buf[2] = '0' + pct; }
+    buf[3] = '%';
+    return;
+  }
+  uint8_t entry = ProbCyclePhaseEntry(v & 0x7F);
+  if (entry == 0) {
+    buf[0] = ' '; buf[1] = '1'; buf[2] = '0'; buf[3] = '0';
+    return;
+  }
+  uint8_t neg = entry & 0x80;
+  uint8_t X = (entry >> 4) & 0x07;
+  uint8_t N = entry & 0x0F;
+  if (N == 15) {
+    if (neg) { buf[0] = '!'; buf[1] = 'F'; buf[2] = 'I'; buf[3] = 'L'; }
+    else     { buf[0] = 'F'; buf[1] = 'I'; buf[2] = 'L'; buf[3] = 'L'; }
+    return;
+  }
+  uint8_t col = 0;
+  if (neg) buf[col++] = '!';
+  buf[col++] = '0' + X;
+  buf[col++] = ':';
+  buf[col++] = '0' + N;
 }
 
 // Write 3-char note name at buf: natural="C 4", sharp="C#4", sub-octave "C-".
@@ -883,10 +963,14 @@ void SeqStepsPage::UpdateScreen() {
     // Short name — uniform 4-char label at positions 1..4. GLID keeps its
     // label on EXT tracks — on EXT it maps to CC 5 (Portamento Time), which
     // is semantically identical to the internal portamento on INT.
+    // v4.3 #38: cells with a per-lock PROB entry for the held step also
+    // render uppercase to advertise "this lock has a PROB attached."
+    uint8_t has_prob = (held_step != 0xff && lockable != 0xff && lockable < 28 &&
+                       sequencer.lock_prob_pool().Find(track, held_step, lockable) != 0xff);
     const prog_char* abbr_src = kAbbr + cell_global * 4;
     for (uint8_t c = 0; c < 4; ++c) {
       char ch = pgm_read_byte(abbr_src + c);
-      if (i == cursor_in_page && ch >= 'a' && ch <= 'z') {
+      if ((i == cursor_in_page || has_prob) && ch >= 'a' && ch <= 'z') {
         ch -= 0x20;
       }
       buffer[1 + c] = ch;
@@ -969,6 +1053,15 @@ void SeqStepsPage::UpdateScreen() {
       v = tr.defaults[lockable];
     }
 
+    // Drill-in: render PROB byte from LockProbPool instead of the lock value
+    // when this cell matches the drilled-in (step, lockable).
+    if (held_step != 0xff && lockable == drill_lockable_ &&
+        drill_step_ == held_step) {
+      WriteProbByte(&buffer[6],
+                    sequencer.lock_prob_pool().GetProb(track, held_step, lockable));
+      continue;
+    }
+
     if (lockable == 0) {
       // NOTE — 3-char note name, right-aligned in the 4-char field at 6..9.
       buffer[6] = ' ';
@@ -1000,37 +1093,7 @@ void SeqStepsPage::UpdateScreen() {
         memcpy_P(&buffer[6], kRateLabels + i * 4, 4);
       }
     } else if (lockable == 16) {
-      // PROB — bipolar render. Bit 7 clear: NN% roll. Bit 7 set: cycle-phase
-      // slot index, with byte 0x80 (slot 0) = "100" (always fire / center).
-      buffer[6] = ' '; buffer[7] = ' '; buffer[8] = ' '; buffer[9] = ' ';
-      if (!(v & 0x80)) {
-        uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
-        if (pct > 100) pct = 100;
-        if (pct >= 100) { buffer[6] = '1'; buffer[7] = '0'; buffer[8] = '0'; }
-        else if (pct >= 10) { buffer[7] = '0' + (pct / 10); buffer[8] = '0' + (pct % 10); }
-        else { buffer[8] = '0' + pct; }
-        buffer[9] = '%';
-      } else {
-        uint8_t entry = ProbCyclePhaseEntry(v & 0x7F);
-        if (entry == 0) {
-          buffer[6] = ' '; buffer[7] = '1'; buffer[8] = '0'; buffer[9] = '0';
-        } else {
-          uint8_t neg = entry & 0x80;
-          uint8_t X = (entry >> 4) & 0x07;
-          uint8_t N = entry & 0x0F;
-          if (N == 15) {
-            // FILL / !FILL marker
-            if (neg) { buffer[6] = '!'; buffer[7] = 'F'; buffer[8] = 'I'; buffer[9] = 'L'; }
-            else     { buffer[6] = 'F'; buffer[7] = 'I'; buffer[8] = 'L'; buffer[9] = 'L'; }
-          } else {
-            uint8_t col = 6;
-            if (neg) buffer[col++] = '!';
-            buffer[col++] = '0' + X;
-            buffer[col++] = ':';
-            buffer[col++] = '0' + N;
-          }
-        }
-      }
+      WriteProbByte(&buffer[6], v);
     } else {
       WriteU8Right(&buffer[6], v);
     }
