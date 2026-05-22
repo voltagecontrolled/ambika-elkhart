@@ -11,7 +11,9 @@ class SystemPage : public UiPage {
 
   static void OnInit(PageInfo* info);
   static uint8_t OnIncrement(int8_t increment);
+  static uint8_t OnPot(uint8_t index, uint8_t value);
   static uint8_t OnKey(uint8_t key);
+  static uint8_t OnIdle();
   static void UpdateScreen();
   static void UpdateLeds();
   static void OnDialogClosed(uint8_t dialog_id, uint8_t return_value);
@@ -19,31 +21,38 @@ class SystemPage : public UiPage {
   static const prog_EventHandlers event_handlers_;
 
  private:
-  enum Mode {
-    MODE_MENU,
-    MODE_SAVE,
-    MODE_LOAD,
-  };
+  // v4.2: SAVE/LOAD sub-modes and confirmation dialogs retired (issue #30).
+  // Save/load fire on hold-to-confirm; result reported via LED blink
+  // (green = success, red = fail) instead of an info/error popup.
+  enum Mode { MODE_MENU };
 
-  enum DialogId {
-    DLG_OVERWRITE = 1,
-    DLG_INFO_SAVED,
-    DLG_INFO_LOADED,
-    DLG_INFO_EMPTY,
-    DLG_ERROR_FAILED,
-  };
-
-  static void EnterMode(Mode m);
   static void DoSave();
   static void DoLoad();
-  static void ShowInfo(const prog_char* text);
-  static void ShowError(const prog_char* text);
   static void RenderSlot(char* buf, uint8_t slot);  // writes 2 chars or "--"
 
   static uint8_t mode_;
   static uint8_t cur_slot_;   // 0xff = none
   static uint8_t new_slot_;
   static uint8_t pending_slot_;
+
+  // Cached SlotOccupied(new_slot_) result. Re-queried only when new_slot_
+  // changes (encoder) or after save/load completes — every other render
+  // would otherwise spin up an SdCardSession and flash the SD icon.
+  static uint8_t new_slot_occupied_cached_;
+  static uint8_t new_slot_occupied_for_;
+  static void RefreshOccupancyCache();
+
+  // Hold-to-confirm state for save (S1) and load (S3). Both go through the
+  // same arm-then-fire timeline: 300 ms → fast-blink armed, 900 ms → fire,
+  // then ~600 ms feedback blink (green = success, red = fail).
+  enum HoldButton { kHoldNone = 0, kHoldSave = 1, kHoldLoad = 3 };
+  enum FeedbackStatus { kFbNone = 0, kFbSuccess = 1, kFbFail = 2 };
+  static uint8_t  hold_button_;        // which button is currently held
+  static uint16_t hold_arm_ms_;        // 0 = not yet armed; else press ms
+  static uint8_t  hold_fired_;         // already fired this press cycle
+  static uint8_t  feedback_button_;    // which LED to blink (1=save, 3=load)
+  static uint8_t  feedback_status_;    // success / fail
+  static uint16_t feedback_start_ms_;  // when feedback animation began
 
   DISALLOW_COPY_AND_ASSIGN(SystemPage);
 };

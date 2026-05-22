@@ -82,21 +82,16 @@ enum UiPageNumber {
   PAGE_ENV_LFO,
   PAGE_VOICE_LFO,
 
-  PAGE_MODULATIONS,
+  // v4.2: PAGE_MODULATIONS / PAGE_MULTI_CLOCK / PAGE_PERFORMANCE /
+  // PAGE_KNOB_ASSIGN / PAGE_MULTI retired (issue #30). The four 0xff
+  // placeholders were always dead; PAGE_MULTI (S7 transport) folded
+  // into the System page (BPM/CLK pots on the top row).
 
   // Order matters for encoder navigation: registry index = enum value, and
-  // ShowPageRelative steps through enum values in order. We want encoder
-  // right from S3 → S5 → S6 → S7 (button order), so SEQUENCER comes before
-  // PART (track settings) and ARPEGGIATOR.
+  // ShowPageRelative steps through enum values in order.
   PAGE_PART_SEQUENCER,
   PAGE_PART,
   PAGE_SEQ_MIXER,
-
-  PAGE_MULTI,
-  PAGE_MULTI_CLOCK,
-
-  PAGE_PERFORMANCE,
-  PAGE_KNOB_ASSIGN,
 
   PAGE_LIBRARY,
   PAGE_VERSION_MANAGER,

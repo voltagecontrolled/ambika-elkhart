@@ -254,7 +254,9 @@ void SeqMixerPage::UpdateScreen() {
 
 /* static */
 void SeqMixerPage::UpdateLeds() {
-  UiPage::UpdateLeds();
+  // Mixer owns S1..S6 for voice mute/solo; do NOT call UiPage::UpdateLeds
+  // (which would draw step on/off + playhead and conflict with the voice
+  // display). Per-page step LEDs only render on patch pages.
   uint8_t bits = (mode_ == kModeAmut) ? amut_bits_ :
                  (mode_ == kModeSolo) ? solo_bits_ : smut_bits_;
   // SMUT/AMUT: lit = audible (bit clear). SOLO: lit = solo'd.

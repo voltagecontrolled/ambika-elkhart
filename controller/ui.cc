@@ -31,7 +31,6 @@
 
 #include "controller/ui_pages/card_info_page.h"
 #include "controller/ui_pages/dialog_box.h"
-#include "controller/ui_pages/multi_page.h"
 #include "controller/ui_pages/os_info_page.h"
 #include "controller/ui_pages/seq_mixer_page.h"
 #include "controller/ui_pages/seq_steps_page.h"
@@ -73,12 +72,6 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_ENV_LFO, 2, 0x0f,
   },
 
-  { PAGE_MODULATIONS,
-    &ParameterEditor::event_handlers_,
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    PAGE_ENV_LFO, 2, 0xf0,
-  },
-  
   // S5 group 4: sequencer mode (3 lock pages cycled by encoder).
   { PAGE_PART_SEQUENCER,
     &SeqStepsPage::event_handlers_,
@@ -100,35 +93,8 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_PART, 5, 0x0f,
   },
 
-  // S7 group 6: transport (relocated from S5). Single-page group — clock
-  // params (groove amount aka swng) are surfaced inline on PAGE_MULTI.
-  { PAGE_MULTI,
-    &MultiPage::event_handlers_,
-    { 0, 0, 0, 0, 0, 0, 0, 0 },
-    PAGE_MULTI, 6, 0xf0,
-  },
-
-  // Vestigial entry kept so PAGE_MULTI_CLOCK (the upper bound used by
-  // ShowPageRelative wraparound) stays in the registry. All-0xff data makes
-  // the encoder skip past it.
-  { PAGE_MULTI_CLOCK,
-    &ParameterEditor::event_handlers_,
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    PAGE_MULTI, 6, 0x0f,
-  },
-
-  // PAGE_PERFORMANCE and PAGE_KNOB_ASSIGN: placeholder until Perf page is built.
-  { PAGE_PERFORMANCE,
-    &ParameterEditor::event_handlers_,
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    PAGE_PERFORMANCE, 6, 0xf0,
-  },
-
-  { PAGE_KNOB_ASSIGN,
-    &ParameterEditor::event_handlers_,
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    PAGE_PERFORMANCE, 6, 0x0f,
-  },
+  // v4.2: PAGE_MULTI (S7 transport) retired — BPM/CLK live on the System
+  // page top row now.
 
   // PAGE_LIBRARY: repurposed as the System page (Save/Load/Info menu).
   { PAGE_LIBRARY,
@@ -163,7 +129,7 @@ static const prog_uint8_t default_most_recent_page_in_group[9] PROGMEM = {
   PAGE_ENV_LFO,            // S4 (shares group 2 with S3 — both env+LFO)
   PAGE_PART_SEQUENCER,     // S5: sequencer mode (lock pages)
   PAGE_PART,               // S6: per-track settings
-  PAGE_MULTI,              // S7: transport
+  PAGE_LIBRARY,            // S7: System page (transport + Save/Load)
   PAGE_LIBRARY,            // S8: System page (Save/Load/Info menu)
   PAGE_SYSTEM_SETTINGS
 };
@@ -249,24 +215,27 @@ void Ui::Poll() {
     increment = 0;
   }
 
-  // Hold-S7 + encoder turn = cycle Transport ↔ Mixer page.
-  // SR-index 1 = SWITCH_7 (mapping: control = 7 - sr_index).
-  if (switches_.low(1) && increment != 0) {
-    inhibit_switch_ |= (1 << 1);
-    UiPageNumber target =
-        (active_page_ == PAGE_SEQ_MIXER) ? PAGE_MULTI : PAGE_SEQ_MIXER;
-    display.Clear();
-    ShowPage(target);
-    increment = 0;
+  // Hold-Sn + encoder turn = direct jump to a view.
+  // SR-index mapping: control = SWITCH_8 - i, so SR 0 = S8, SR 1 = S7,
+  // SR 2 = S6, SR 4 = S4.
+  if (increment != 0) {
+    UiPageNumber jump_to = active_page_;
+    uint8_t jump_sr = 0xff;
+    if (switches_.low(0))      { jump_to = PAGE_LIBRARY;        jump_sr = 0; }
+    else if (switches_.low(1)) { jump_to = PAGE_SEQ_MIXER;      jump_sr = 1; }
+    else if (switches_.low(2)) { jump_to = PAGE_PART;           jump_sr = 2; }
+    else if (switches_.low(4)) { jump_to = PAGE_PART_SEQUENCER; jump_sr = 4; }
+    if (jump_sr != 0xff) {
+      inhibit_switch_ |= (1 << jump_sr);
+      display.Clear();
+      ShowPage(jump_to);
+      increment = 0;
+    }
   }
 
   if (increment != 0) {
     uint8_t control_id = 0;
-    if (switches_.low(0)) {
-      increment *= 8;
-      inhibit_switch_ |= 0x01;
-    }
-    // SR-index 6 = SWITCH_2: hold to jump by full page (×8 like SWITCH_8).
+    // SR-index 6 = SWITCH_2: hold to jump by full page (×8 multiplier).
     if (switches_.low(6)) {
       increment *= 8;
       inhibit_switch_ |= 0x40;
@@ -347,8 +316,8 @@ void Ui::ShowPageRelative(int8_t increment) {
   do {
     current_page += increment;
     if (current_page < 0) {
-      current_page = PAGE_MULTI_CLOCK;
-    } else if (current_page > PAGE_MULTI_CLOCK) {
+      current_page = PAGE_SEQ_MIXER;
+    } else if (current_page > PAGE_SEQ_MIXER) {
       current_page = 0;
     }
     ResourcesManager::Load(page_registry, current_page, &candidate);
@@ -434,9 +403,55 @@ void Ui::DoEvents() {
     // right side of the page, so we fill the last character of the first line
     // with an invisible, non-space character.
     display.line_buffer(0)[39] = '\xfe';
-    
+
     display.set_cursor_position(kLcdNoCursor);
     (*event_handlers_.UpdateScreen)();
+
+    // Lock-edit overlay: snapshot pool fullness at the START of a step-hold
+    // and render it as a 5×8 bitmap in CGRAM slot 0. The CGRAM write is
+    // expensive (queue drain + ~20 slow LCD writes with interrupts off);
+    // doing it per-frame caused audible lag and edit-time jitter. Showing
+    // the state-at-press only is informative enough — new locks added
+    // during the hold show up next time the user presses a step.
+    static uint8_t gauge_active_ = 0;
+    {
+      uint8_t held = 0;
+      for (uint8_t s = 0; s < 8; ++s) {
+        if (switches_.low(s)) { held = 1; break; }
+      }
+      if (held) {
+        if (!gauge_active_) {
+          // First frame of this hold: build + queue the glyph once. The
+          // CGRAM write goes through the same LCD OutputBuffer the
+          // BufferedDisplay uses — the timer ISR processes it in order
+          // alongside any pending DDRAM writes, with no interrupts-off
+          // window or busy-wait. Audio + LED ISRs run uninterrupted.
+          uint16_t count = sequencer.lock_pool().count();
+          uint8_t fill_px = (count == 0)
+              ? 0
+              : static_cast<uint8_t>((count * 40u + 191u) / 192u);
+          if (fill_px > 40) fill_px = 40;
+          uint8_t pattern[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+          uint8_t remaining = fill_px;
+          for (int8_t r = 7; r >= 0 && remaining; --r) {
+            uint8_t in_row = (remaining >= 5) ? 5 : remaining;
+            uint8_t bits = 0;
+            for (uint8_t b = 0; b < in_row; ++b) bits |= (1 << (4 - b));
+            pattern[r] = bits;
+            remaining -= in_row;
+          }
+          if (lcd.QueueCustomCharMap(pattern, 1, 0)) {
+            display.Invalidate();
+            gauge_active_ = 1;
+          }
+          // If the buffer was full, gauge_active_ stays 0 and we'll
+          // retry on the next redraw — no harm done.
+        }
+        display.line_buffer(1)[0] = 0;  // CGRAM slot 0
+      } else if (gauge_active_) {
+        gauge_active_ = 0;
+      }
+    }
   }
   
   leds.Clear();
@@ -465,7 +480,7 @@ void Ui::ShowPage(UiPageNumber page, uint8_t initialize) {
   queue_.Touch();
   pots_.Lock(16);
   
-  if (page <= PAGE_KNOB_ASSIGN) {
+  if (page <= PAGE_SEQ_MIXER) {
     most_recent_non_system_page_ = page;
   }
   active_page_ = page;

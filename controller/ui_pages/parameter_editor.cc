@@ -25,7 +25,9 @@
 #include "controller/leds.h"
 #include "controller/multi.h"
 #include "controller/parameter.h"
+#include "controller/sequencer.h"
 #include "controller/system_settings.h"
+#include "controller/ui.h"
 
 namespace ambika {
 
@@ -144,6 +146,33 @@ uint8_t ParameterEditor::OnPot(uint8_t index, uint8_t value) {
     }
   }
   active_control_ = index;
+
+  // Lock-edit: if a step button is held AND this parameter has a lock_index,
+  // write the scaled byte to the sequencer lock pool instead of the patch.
+  // Pool-full refuses silently (the gauge glyph gives advance warning).
+  // Either way, a pot turn while a step is held inhibits the release-toggle
+  // — the user intent is lock-edit, not a step on/off tap.
+  uint8_t held_step = 0xff;
+  for (uint8_t s = 0; s < 8; ++s) {
+    if (ui.switch_held(s)) { held_step = 7 - s; break; }
+  }
+  if (held_step != 0xff) {
+    ui.inhibit_switch(1 << (7 - held_step));
+    if (parameter.level == PARAMETER_LEVEL_PATCH) {
+      uint8_t lock_index = ParamIdToLockIndex(
+          parameter_id, instance_index(index));
+      if (lock_index != 0xff) {
+        uint8_t scaled = parameter.Scale(value);
+        uint8_t track  = part_index(active_control_);
+        sequencer.SetStepLock(track, held_step, lock_index, scaled);
+        return 1;
+      }
+    }
+    // Step held but param not lockable on this cell — swallow the event
+    // so we don't accidentally rewrite the patch default mid-lock-edit.
+    return 1;
+  }
+
   parameter_manager.Scale(
       parameter,
       part_index(active_control_),
@@ -156,6 +185,13 @@ uint8_t ParameterEditor::OnPot(uint8_t index, uint8_t value) {
 
 /* static */
 void ParameterEditor::UpdateScreen() {
+  // If a step button is held, render the per-step locked value (lock pool or
+  // intrinsic) so the user can see what the step will play. No step held →
+  // render the live patch value.
+  uint8_t held_step = 0xff;
+  for (uint8_t s = 0; s < 8; ++s) {
+    if (ui.switch_held(s)) { held_step = 7 - s; break; }
+  }
   uint8_t paramLength = 0;
   for (uint8_t i = 0; i < kNumParametersPerPage; ++i) {
     uint8_t parameter_id = parameter_index(i);
@@ -170,10 +206,17 @@ void ParameterEditor::UpdateScreen() {
     }
     if (parameter_id != 0xff) {
       const Parameter& parameter = parameter_manager.parameter(parameter_id);
-      uint8_t value = parameter_manager.GetValue(
-          parameter,
-          part_index(i),
-          instance_index(i));
+      uint8_t value;
+      uint8_t lock_index = (held_step != 0xff
+                            && parameter.level == PARAMETER_LEVEL_PATCH)
+          ? ParamIdToLockIndex(parameter_id, instance_index(i))
+          : 0xff;
+      if (lock_index != 0xff) {
+        value = sequencer.StepLockedValue(part_index(i), held_step, lock_index);
+      } else {
+        value = parameter_manager.GetValue(
+            parameter, part_index(i), instance_index(i));
+      }
       if (parameter.level == PARAMETER_LEVEL_UI) {
         parameter.Print(value, &buffer[1], 6, 2);
         paramLength = 6;
