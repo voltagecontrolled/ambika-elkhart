@@ -152,10 +152,10 @@ static const uint8_t kSmodCellSentinel = 0xfd;
 // per-step lockable; held-step gestures are ignored on this cell.
 static const uint8_t kMrstCellSentinel = 0xfb;
 
-// 4-char display labels for SMOD values 0..13. Order matches kSmod*.
+// 4-char display labels for SMOD values 0..14. Order matches kSmod*.
 static const prog_char kSmodLabels[] PROGMEM =
   "noneskipfwd rev dir rjmp"
-  "jmp1jmp2jmp3jmp4jmp5jmp6jmp7jmp8";
+  "jmp1jmp2jmp3jmp4jmp5jmp6jmp7jmp8sfx ";
 
 // Lockable indices that store an int8_t (centered at 0).
 static inline uint8_t IsSignedLockable(uint8_t lockable) {

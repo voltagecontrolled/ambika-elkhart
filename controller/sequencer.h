@@ -81,7 +81,8 @@ static const uint8_t kSmodDir  = 4;   // transient: toggle pendulum shadow dir
 static const uint8_t kSmodRjmp = 5;   // jump to a random step
 static const uint8_t kSmodJmp1 = 6;   // jump to step 1..8 (kSmodJmp1+N-1)
 static const uint8_t kSmodJmp8 = 13;
-static const uint8_t kSmodCount = 14;
+static const uint8_t kSmodSfx  = 14;  // skip on normal iter; fire when summoned by a jump SMOD
+static const uint8_t kSmodCount = 15;
 
 // SeqStep — 7 bytes (v4.2). Holds intrinsic per-step fields only.
 // Non-intrinsic locks live in the global LockPool keyed by (track, step,

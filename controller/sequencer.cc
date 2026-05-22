@@ -479,7 +479,9 @@ void Sequencer::Clock(uint8_t ticks) {
           uint8_t guard;
           for (guard = 0; guard < len; ++guard) {
             uint8_t smod = StepSmod(tr.steps[fired]);
-            if (smod == kSmodSkip) {
+            if (smod == kSmodSkip || smod == kSmodSfx) {
+              // Sfx steps are skipped during normal iteration; they only
+              // fire when another step's jump SMOD reseats fired onto them.
               AdvanceStep(t);
               fired = (tr.shadow[kShdwSTEP] + tr.pattern[kPatROTA]) % len;
               continue;
