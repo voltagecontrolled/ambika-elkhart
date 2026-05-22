@@ -447,9 +447,16 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
         substep_pot0_entry_ = value;
         return 1;
       }
-      // Mirrors S5a subs pot: 0..55=repeats 8r..1r, 56..71=deadzone, 72..127=ratchets 1x..8x.
+      // SUBS pot layout (v4.3): displayed labels are total fires
+      //   CCW  : 0..55  → repeats 7r..1r (stored rept 7..1; "Nr" = N total
+      //          fires including main); 7 values × 8 positions = 56.
+      //   center: 56..71 → deadzone (SSUB=0, REPT=0; treated as "1x" = main fire only).
+      //   CW   : 72..127 → ratchets 2x..8x (stored ssub 1..7); 7 values × 8 positions = 56.
+      // Storage semantics unchanged from v4.2 — stored ssub/rept still
+      // mean "N additional ratchets/repeats beyond the main fire"; only
+      // the displayed label and the pot range cap (max 7) shifted.
       if (value < 56) {
-        uint8_t rept_v = 8 - (value / 7);
+        uint8_t rept_v = 7 - (value / 8);
         if (rept_v < 1) rept_v = 1;
         uint8_t cnt = rept_v + 1;
         if (cnt > substep_count_) {
@@ -461,8 +468,8 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
         step.subs = PackSubs(-2, rept_v);
         step.step_flags &= ~kStepFlagGated;
       } else if (value > 71) {
-        uint8_t r = (value - 72) / 7 + 1;
-        if (r > 8) r = 8;
+        uint8_t r = (value - 72) / 8 + 1;
+        if (r > 7) r = 7;
         uint8_t cnt = r + 1;
         if (cnt > substep_count_) {
           for (uint8_t b = substep_count_; b < cnt; ++b) step.substep_bits |= (1 << b);
@@ -860,17 +867,23 @@ void SeqStepsPage::UpdateScreen() {
       int8_t  ssub_s = SsubOf(step.subs);
       uint8_t rept_s = ReptOf(step.subs);
       char* b = &line0[5];
+      // Display total fires (storage + 1): main step plus N ratchets/repeats.
+      // Storage N=1 → display "2"; N=7 → display "8". SSUB=0,REPT=0 = "1x"
+      // (single fire, no substep behavior). SSUB=-2 = custom-repeat pattern.
       b[0] = b[1] = b[2] = b[3] = ' ';
       if (rept_s > 0) {
-        b[1] = '0' + (rept_s > 9 ? 9 : rept_s);
+        uint8_t shown = (rept_s >= 8) ? 9 : (rept_s + 1);
+        b[1] = '0' + shown;
         b[3] = 'r';
       } else if (ssub_s > 0) {
-        b[1] = '0' + (ssub_s > 9 ? 9 : static_cast<uint8_t>(ssub_s));
+        uint8_t shown = (ssub_s >= 8) ? 9 : static_cast<uint8_t>(ssub_s + 1);
+        b[1] = '0' + shown;
         b[3] = 'x';
       } else if (ssub_s == -2) {
         memcpy_P(b, PSTR(" cus"), 4);
       } else {
-        b[3] = '0';
+        b[1] = '1';
+        b[3] = 'x';
       }
     }
     line0[9] = ' ';
@@ -1043,16 +1056,20 @@ void SeqStepsPage::UpdateScreen() {
       buffer[7] = ' ';
       buffer[8] = ' ';
       buffer[9] = ' ';
+      // Total-fires labeling (v4.3): storage N → display (N+1).
       if (rept_v > 0) {
-        buffer[7] = '0' + (rept_v > 9 ? 9 : rept_v);
+        uint8_t shown = (rept_v >= 8) ? 9 : (rept_v + 1);
+        buffer[7] = '0' + shown;
         buffer[9] = 'r';
       } else if (ssub_v > 0) {
-        buffer[7] = '0' + (ssub_v > 9 ? 9 : ssub_v);
+        uint8_t shown = (ssub_v >= 8) ? 9 : ssub_v + 1;
+        buffer[7] = '0' + shown;
         buffer[9] = 'x';
       } else if (ssub_v == -2) {
         memcpy_P(&buffer[6], PSTR(" cus"), 4);
       } else {
-        buffer[9] = '0';
+        buffer[7] = '1';
+        buffer[9] = 'x';
       }
       continue;
     }
