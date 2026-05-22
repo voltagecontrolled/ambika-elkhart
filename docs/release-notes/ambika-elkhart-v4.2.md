@@ -116,8 +116,11 @@ migrate transparently on load.
 This release ships with:
 
 - Controller `kSystemVersion = 0x42`
-- Voicecard `kSystemVersion = 0x40` (unchanged from v4.0 / v4.1;
-  voicecard binaries are byte-identical to those releases)
+- Voicecard `kSystemVersion = 0x42` (bumped from `0x40`; binary
+  differs from v4.0 / v4.1 because the ENV3 → pitch path (PAMT)
+  was moved out of the modulation matrix and into a wider scaling
+  path in `Voice::RenderOscillators` — row 2 of the matrix is now
+  skipped and PAMT can sweep ~±5 octaves for kick-style pitch drops)
 
 The OS Info page reports these. Mismatched versions can corrupt
 the per-step snapshot protocol — if the OS Info page shows

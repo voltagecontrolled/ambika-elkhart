@@ -17,8 +17,11 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 **Flash:** controller 90.9% → **86.4%** (net `−2,934 B` after lock-pool
 + migration TU + dialog retirements). **RAM:** controller 94.5% →
 **76.9%** — net `−718 B` (issue #30).
-Voicecard binaries unchanged. `kSystemVersion = 0x42`. Snapshot file
-format bumps to `0x03`.
+Controller `kSystemVersion = 0x42`. Voicecard `kSystemVersion`
+also bumps to `0x42` (from `0x40`) — the binary changed when the
+ENV3 → pitch path was moved out of the modulation matrix into a
+wider-scaling dedicated path in `Voice::RenderOscillators`. Snapshot
+file format bumps to `0x03`.
 
 The biggest single RAM consumer was the per-step lock storage in
 `SeqTrack`: a dense 32-bit lock bitfield plus 28 lockable bytes on
