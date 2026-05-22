@@ -776,13 +776,13 @@ static void WriteProbByte(char* buf, uint8_t v) {
     return;
   }
   uint8_t neg = entry & 0x80;
-  uint8_t X = (entry >> 4) & 0x07;
-  uint8_t N = entry & 0x0F;
-  if (N == 15) {
+  if (entry & 0x01) {
     if (neg) { buf[0] = '!'; buf[1] = 'F'; buf[2] = 'I'; buf[3] = 'L'; }
     else     { buf[0] = 'F'; buf[1] = 'I'; buf[2] = 'L'; buf[3] = 'L'; }
     return;
   }
+  uint8_t X = ((entry >> 4) & 0x07) + 1;  // 1..8
+  uint8_t N = ((entry >> 1) & 0x07) + 1;  // 1..8
   uint8_t col = 0;
   if (neg) buf[col++] = '!';
   buf[col++] = '0' + X;
