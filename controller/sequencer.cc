@@ -633,7 +633,14 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   //                    5=rnd bipolar / 6=rnd+ above / 7=rnd- below (random).
   // The walk visits chord tones in interval order, climbing by 12 semitones
   // each time it cycles through the chord, capped at MOCT octaves above/below.
-  if (sub_idx > 0) {
+  //
+  // SSUB=0 case: no substeps to drive the walk, so use the per-track loop
+  // counter instead — each pattern wrap advances the chord-tone position.
+  uint8_t walk_idx = sub_idx;
+  if (walk_idx == 0 && SsubOf(tr.steps[step_index].subs) == 0) {
+    walk_idx = tr.shadow[kShdwLOOP];
+  }
+  if (walk_idx > 0) {
     uint8_t mint = StepLockedValue(t, step_index, 16 + kSPMINT);
     if (mint > 0 && mint <= 12) {
       uint8_t mdir_byte = StepLockedValue(t, step_index, 16 + kSPMDIR);
@@ -648,16 +655,16 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
       switch (mdir) {
         default:
         case 0: {  // up sawtooth
-          step_count = sub_idx % (N + 1);
+          step_count = walk_idx % (N + 1);
           break;
         }
         case 1: {  // dn sawtooth
-          step_count = -static_cast<int16_t>(sub_idx % (N + 1));
+          step_count = -static_cast<int16_t>(walk_idx % (N + 1));
           break;
         }
         case 2: {  // ud bipolar triangle, period 4N
           uint8_t period = N << 2;
-          uint8_t phase = sub_idx % period;
+          uint8_t phase = walk_idx % period;
           if (phase <= N) step_count = phase;
           else if (phase <= 3 * N) step_count = static_cast<int16_t>(2 * N) - phase;
           else step_count = static_cast<int16_t>(phase) - static_cast<int16_t>(period);
@@ -665,13 +672,13 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
         }
         case 3: {  // ud+ unipolar above, period 2N
           uint8_t period = N << 1;
-          uint8_t phase = sub_idx % period;
+          uint8_t phase = walk_idx % period;
           step_count = (phase <= N) ? phase : static_cast<int16_t>(2 * N) - phase;
           break;
         }
         case 4: {  // ud- unipolar below, period 2N
           uint8_t period = N << 1;
-          uint8_t phase = sub_idx % period;
+          uint8_t phase = walk_idx % period;
           int16_t s = (phase <= N) ? phase : static_cast<int16_t>(2 * N) - phase;
           step_count = -s;
           break;
