@@ -95,6 +95,8 @@ class Voice {
   static Envelope* mutable_envelope(uint8_t i) { return &envelope_[i]; }
   static void TriggerEnvelope(uint8_t stage);
   static void TriggerEnvelope(uint8_t index, uint8_t stage);
+  static void LfoTick();
+  static void LfoReset();
   
   static void ResetAllControllers();
 
@@ -103,16 +105,20 @@ class Voice {
   static inline void ProcessModulationMatrix() __attribute__((always_inline));
   static inline void UpdateDestinations() __attribute__((always_inline));
   static inline void RenderOscillators() __attribute__((always_inline));
+  static void TickOneLfo(Lfo& lfo, uint8_t rate, uint8_t renders_per_tick);
+
+  static volatile uint8_t renders_since_lfo_tick_;
 
   static uint8_t patch_data_[1];
   static Patch patch_;
   static uint8_t part_data_[1];
   static Part part_;
-  
+
   // Envelope generators.
   static Envelope envelope_[kNumEnvelopes];
   static uint8_t gate_;
   static Lfo voice_lfo_;
+  static Lfo voice_lfo_2_;
   static uint8_t modulation_sources_[kNumModulationSources];
   static int8_t modulation_destinations_[kNumModulationDestinations];
   static int16_t dst_[kNumModulationDestinations];

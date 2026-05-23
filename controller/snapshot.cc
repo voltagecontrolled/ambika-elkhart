@@ -20,7 +20,7 @@ static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
 // LockPool. v0x03 loads zero-fill the prob pool (existing locks then apply
 // unconditionally, matching v4.2 behavior). v0x01 / v0x02 reach this via
 // MigrationV41 — neither carries a prob pool either.
-static const uint8_t kVersion = 0x04;
+static const uint8_t kVersion = 0x05;
 
 // Persistent prefix = everything before shadow[]. offsetof is bulletproof
 // against any compiler-side struct alignment changes.
@@ -65,7 +65,7 @@ FilesystemStatus Snapshot::Save(uint8_t slot) {
   STATIC_ASSERT(offsetof(SeqTrack, pattern)  == 56);
   STATIC_ASSERT(offsetof(SeqTrack, defaults) == 63);
   STATIC_ASSERT(offsetof(SeqTrack, config)   == 91);
-  STATIC_ASSERT(offsetof(SeqTrack, shadow)   == 120);
+  STATIC_ASSERT(offsetof(SeqTrack, shadow)   == 122);
   STATIC_ASSERT(sizeof(MultiData) == 61);
 
   // Stop transport so no step-fires queue voicecard SPI traffic during the
@@ -223,16 +223,29 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
         return FS_DISK_ERROR;
       }
     } else {
-      // v0x03 / v0x04: native layout. Track blob is the SeqTrack prefix
-      // followed by LockPool (and v0x04+ adds the per-lock PROB pool).
+      // v0x03 / v0x04 / v0x05: native layout. Track blob is the SeqTrack
+      // prefix followed by LockPool (and v0x04+ adds the per-lock PROB pool).
+      //
+      // v0x05 widened kCfgSIZE 29→31 (LFO5 dest/amount appended). Reading
+      // an older snapshot reads 2 bytes less per track and zero-fills the
+      // new bytes — LFO5 is silent by default (amount=0).
+      const uint16_t track_read_size = (snapshot_version < 0x05)
+          ? (kTrackPersistentSize - 2) : kTrackPersistentSize;
       for (uint8_t t = 0; t < kNumVoices; ++t) {
         uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
-        if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
-            || got != kTrackPersistentSize) {
+        if (Storage::file_.Read(tp, track_read_size, &got) != FS_OK
+            || got != track_read_size) {
           Storage::file_.Close();
           return FS_DISK_ERROR;
         }
-        for (uint16_t i = 0; i < kTrackPersistentSize; ++i) checksum += tp[i];
+        for (uint16_t i = 0; i < track_read_size; ++i) checksum += tp[i];
+        // Zero-fill the two new config bytes (kCfgL5D, kCfgL5A) appended
+        // in v0x05. They live at the end of the config[] block, just
+        // before shadow[] — i.e. the last 2 bytes of the persistent prefix.
+        if (snapshot_version < 0x05) {
+          tp[kTrackPersistentSize - 2] = 0;
+          tp[kTrackPersistentSize - 1] = 0;
+        }
       }
       // Lock pool: count + entries.
       uint8_t pool_count;

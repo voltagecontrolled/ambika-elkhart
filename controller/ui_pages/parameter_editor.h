@@ -36,8 +36,10 @@ class ParameterEditor : public UiPage {
   static void SetActiveControl(ActiveControl active_control);
 
   static uint8_t OnIncrement(int8_t increment);
+  static uint8_t OnClick();
   static uint8_t OnPot(uint8_t index, uint8_t value);
-  
+  static uint8_t OnIdle();
+
   static void UpdateScreen();
   static void UpdateLeds();
   
@@ -51,6 +53,14 @@ class ParameterEditor : public UiPage {
   
  private:
   static SnapMask snapped_;
+
+  // Trigger-time reset toggle feedback. While (now - feedback_start_ms_)
+  // is below kFeedbackDurationMs, UpdateScreen overlays a short
+  // "rst on" / "rst off" label on the cell at feedback_cell_. A
+  // start_ms_ of 0 = no active feedback.
+  static uint16_t feedback_start_ms_;
+  static uint8_t feedback_cell_;
+  static uint8_t feedback_state_;
 
   DISALLOW_COPY_AND_ASSIGN(ParameterEditor);
 };

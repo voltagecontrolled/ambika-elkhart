@@ -186,7 +186,7 @@ static const uint8_t kCfgLSHP  = 5;   // LFO4 shape
 static const uint8_t kCfgLFO4D = 6;   // LFO4 destination
 static const uint8_t kCfgLFOS  = 7;   // LFO4 rate
 static const uint8_t kCfgLFO4A = 8;   // LFO4 amount
-static const uint8_t kCfgLFOR  = 9;   // LFO4 reset mode
+static const uint8_t kCfgLFOR  = 9;   // LFO4 retrigger
 static const uint8_t kCfgTRAK  = 10;  // filter KB tracking
 static const uint8_t kCfgE1ATK = 11;  // Env1 attack
 static const uint8_t kCfgE2ATK = 12;  // Env2 attack
@@ -198,16 +198,18 @@ static const uint8_t kCfgPHSE  = 17;  // oscillator phase reset on trigger
 static const uint8_t kCfgSMTH   = 18;  // portamento / smoothing
 static const uint8_t kCfgVELAMT = 19;  // velocity → VCA amount (mod slot 11)
 static const uint8_t kCfgOSC1R = 20;  // osc1 range
-static const uint8_t kCfgOSC2R = 21;  // unused — OSC2 coarse moved to defaults[8 + kP2TUN2]
-static const uint8_t kCfgOSC2D = 22;  // unused — OSC2 detune moved to defaults[8 + kP2FIN2]
+static const uint8_t kCfgL5SH  = 21;  // LFO5 shape (was kCfgOSC2R — unused)
+static const uint8_t kCfgL5FR  = 22;  // LFO5 rate  (was kCfgOSC2D — unused)
 static const uint8_t kCfgFMOP  = 23;  // FM/crossmod operator mode
 static const uint8_t kCfgFUZZ  = 24;  // fuzz
 static const uint8_t kCfgE1DEPT = 25; // ENV1→VCA depth (mod slot 10 amount)
 static const uint8_t kCfgE2DEPT = 26; // ENV2→VCF depth (filter_env)
-static const uint8_t kCfgE3DEPT = 27; // unused — ENV3→pitch depth moved to defaults[24 + kP3PAMT]
+static const uint8_t kCfgL5RT  = 27;  // LFO5 retrigger (was kCfgE3DEPT — unused)
 static const uint8_t kCfgWSUB  = 28;  // sub-osc waveform shape
+static const uint8_t kCfgL5D   = 29;  // LFO5 destination (mod slot 6)
+static const uint8_t kCfgL5A   = 30;  // LFO5 amount      (mod slot 6)
 
-static const uint8_t kCfgSIZE  = 29;
+static const uint8_t kCfgSIZE  = 31;
 
 // ---- shadow[] indices (transient playhead state; zeroed on Reset/load) ----
 static const uint8_t kShdwSTEP = 0;  // next step index to fire (0–7)

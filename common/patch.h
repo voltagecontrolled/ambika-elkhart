@@ -134,11 +134,21 @@ enum ModifierOp {
 };
 
 enum LfoWave {
-  // For oscillators.
+  // Cheap oscillators (voicecard-supported).
   LFO_WAVEFORM_TRIANGLE,
   LFO_WAVEFORM_SQUARE,
   LFO_WAVEFORM_S_H,
   LFO_WAVEFORM_RAMP,
+  // One-shot shapes: ride one cycle from a note-on retrigger, then hold at 0.
+  // Placed adjacent to the cheap shapes so the voice LFO can expose them
+  // without exposing the wavetable shapes (disabled on voicecard).
+  LFO_WAVEFORM_ONE_SHOT_EXP,
+  LFO_WAVEFORM_ONE_SHOT_LIN,
+  LFO_WAVEFORM_ONE_SHOT_TRI,
+  LFO_WAVEFORM_VOICE_LFO_LAST = LFO_WAVEFORM_ONE_SHOT_TRI,
+  // Wavetable shapes: controller-only (voicecard builds with
+  // DISABLE_WAVETABLE_LFOS). These remain in the enum for the patch struct,
+  // but the voicecard LFO never renders them.
   LFO_WAVEFORM_WAVE_1,
   LFO_WAVEFORM_WAVE_2,
   LFO_WAVEFORM_WAVE_3,
@@ -242,7 +252,6 @@ enum FilterMode {
 
 static const uint8_t kNumSyncedLfoRates = 15;
 static const uint8_t kNumEnvelopes = 3;
-static const uint8_t kNumLfos = kNumEnvelopes;
 static const uint8_t kNumModulations = 14;
 static const uint8_t kNumModifiers = 4;
 static const uint8_t kNumOscillators = 2;
@@ -284,9 +293,20 @@ struct Patch {
   // Offset: 104-106
   int8_t filter_velo;
   int8_t filter_kbt;
-  
+
   // Offset: 106-112
-  uint8_t padding[6];
+  // osc_phase_reset: 0 = osc 1 keeps free-running phase across notes
+  // (drift); 1 = phase resets on note-on (consistent attack). Osc 2
+  // always resets, matching stock MI behavior.
+  // lfo4_retrigger / lfo5_retrigger: 0 = LFO runs freely across notes;
+  // 1 = phase resets on note-on. One-shot shapes always retrigger
+  // regardless — their envelope behavior depends on it.
+  uint8_t osc_phase_reset;
+  uint8_t lfo4_retrigger;
+  uint8_t voice_lfo_2_shape;
+  uint8_t voice_lfo_2_rate;
+  uint8_t lfo5_retrigger;
+  uint8_t padding[1];
 };
 
 typedef Patch PROGMEM prog_Patch;
@@ -340,7 +360,12 @@ enum PatchParameter {
   PRM_PATCH_MOD_OPERATOR,
   
   PRM_PATCH_FILTER1_VELO = 104,
-  PRM_PATCH_FILTER1_KBT
+  PRM_PATCH_FILTER1_KBT,
+  PRM_PATCH_OSC_PHASE_RESET = 106,
+  PRM_PATCH_LFO4_RETRIGGER,
+  PRM_PATCH_VOICE_LFO_2_SHAPE,
+  PRM_PATCH_VOICE_LFO_2_RATE,
+  PRM_PATCH_LFO5_RETRIGGER
 };
 
 }  // namespace ambika

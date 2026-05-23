@@ -31,6 +31,20 @@ namespace ambika {
 /* extern */
 Voice voice;
 
+// LFO phase increment per MIDI clock tick, indexed by sync-rate slot
+// (0..kNumSyncedLfoRates-1). Mirrors the stock controller-side table; the
+// voicecard advances voice_lfo_ phase by one of these on each clock tick
+// when patch_.voice_lfo_rate is in the sync zone.
+// Reversed so index 0 = fastest sync (1/96, full cycle per MIDI tick) and
+// index 14 = slowest (1/1, one cycle per whole note). With the rate field's
+// 0..14 sync zone preceding the 15..142 free-run zone, this puts the
+// slowest sync rate (1/1) immediately adjacent to the slowest free-run
+// rate, so the value 14↔15 transition is musically smooth.
+static const prog_uint16_t lfo_phase_increment_per_clock_tick[15] PROGMEM = {
+  65535, 32768, 21845, 16384, 10923, 8192, 5461,
+  4096, 2731, 2048, 1820, 1365, 1024, 910, 683
+};
+
 Oscillator osc_1;
 Oscillator osc_2;
 SubOscillator sub_osc;
@@ -45,6 +59,8 @@ uint8_t Voice::part_data_[1];
 Part Voice::part_;
 
 Lfo Voice::voice_lfo_;
+Lfo Voice::voice_lfo_2_;
+volatile uint8_t Voice::renders_since_lfo_tick_;
 Envelope Voice::envelope_[kNumEnvelopes];
 uint8_t Voice::gate_;
 int16_t Voice::pitch_increment_;
@@ -154,14 +170,69 @@ void Voice::TriggerEnvelope(uint8_t index, uint8_t stage) {
 }
 
 /* static */
+void Voice::LfoTick() {
+  // The MIDI clock fires ~48× / sec at 120 BPM but the LFO renders at
+  // the audio control rate (~977 Hz). Snap-advancing phase only on ticks
+  // would leave the LFO output frozen between ticks (audible as stepping
+  // / envelope-like behavior). Instead, measure how many Renders elapsed
+  // in the previous tick interval and set phase_increment_ to the per-
+  // Render value that gives one full tick-increment worth of phase
+  // advance across that interval. The next inter-tick interval then
+  // advances smoothly through Render's existing per-block path.
+  uint8_t count = renders_since_lfo_tick_;
+  renders_since_lfo_tick_ = 0;
+  if (count == 0) {
+    // First tick (transport start) or impossibly fast tick rate. The
+    // next tick will produce a valid count and dial in the increment.
+    return;
+  }
+  TickOneLfo(voice_lfo_,   patch_.voice_lfo_rate,   count);
+  TickOneLfo(voice_lfo_2_, patch_.voice_lfo_2_rate, count);
+}
+
+/* static */
+void Voice::TickOneLfo(Lfo& lfo, uint8_t rate, uint8_t renders_per_tick) {
+  if (rate >= kNumSyncedLfoRates) {
+    return;
+  }
+  uint16_t tick_inc = pgm_read_word(
+      &lfo_phase_increment_per_clock_tick[rate]);
+  lfo.set_phase_increment(tick_inc / renders_per_tick);
+}
+
+/* static */
+void Voice::LfoReset() {
+  voice_lfo_.set_phase(0);
+  voice_lfo_2_.set_phase(0);
+}
+
+/* static */
 void Voice::Trigger(uint16_t note, uint8_t velocity, uint8_t legato) {
   pitch_target_ = note;
   if (!part_.legato || !legato) {
     gate_ = 255;
     TriggerEnvelope(ATTACK);
+    // Voice LFO retrigger on note-on is conditional per LFO. One-shot
+    // shapes are envelopes and must always reset; for the cheap shapes
+    // the per-LFO retrigger flag controls whether the phase restarts.
+    uint8_t shape4 = patch_.voice_lfo_shape;
+    if (patch_.lfo4_retrigger ||
+        (shape4 >= LFO_WAVEFORM_ONE_SHOT_EXP &&
+         shape4 <= LFO_WAVEFORM_ONE_SHOT_TRI)) {
+      voice_lfo_.set_phase(0);
+    }
+    uint8_t shape5 = patch_.voice_lfo_2_shape;
+    if (patch_.lfo5_retrigger ||
+        (shape5 >= LFO_WAVEFORM_ONE_SHOT_EXP &&
+         shape5 <= LFO_WAVEFORM_ONE_SHOT_TRI)) {
+      voice_lfo_2_.set_phase(0);
+    }
     transient_generator.Trigger();
     modulation_sources_[MOD_SRC_VELOCITY] = velocity;
     modulation_sources_[MOD_SRC_RANDOM] = Random::state_msb();
+    if (patch_.osc_phase_reset) {
+      osc_1.Reset();
+    }
     osc_2.Reset();
   }
   if (pitch_value_ == 0 || (part_.legato && !legato)) {
@@ -201,6 +272,15 @@ inline void Voice::LoadSources() {
   modulation_sources_[MOD_SRC_GATE] = gate_;
   modulation_sources_[MOD_SRC_LFO_4] = voice_lfo_.Render(
       patch_.voice_lfo_shape);
+  modulation_sources_[MOD_SRC_LFO_2] = voice_lfo_2_.Render(
+      patch_.voice_lfo_2_shape);
+  // Saturating counter — used by LfoTick to derive per-Render phase
+  // increment for synced LFOs. 255 is plenty of headroom (only ~20
+  // Renders per MIDI tick at 120 BPM); high values mean very slow tempo
+  // and the LFO would simply use a small increment.
+  if (renders_since_lfo_tick_ < 255) {
+    ++renders_since_lfo_tick_;
+  }
 
   // Apply the modulation operators
   for (uint8_t i = 0; i < kNumModifiers; ++i) {
@@ -263,7 +343,13 @@ inline void Voice::LoadSources() {
   dst_[MOD_DST_ATTACK] = 8192;
   dst_[MOD_DST_DECAY] = 8192;
   dst_[MOD_DST_RELEASE] = 8192;
-  dst_[MOD_DST_LFO_4] = U8U8Mul(patch_.voice_lfo_rate, 128);
+  // LFO 4 rate is two-zone: 0..kNumSyncedLfoRates-1 = synced (handled by
+  // tick path), kNumSyncedLfoRates..142 = free-run. Bias dst_ so the
+  // free-run zone maps to 0..127*128 — at max rate 142 this is 16256, still
+  // inside the 14-bit window U14ShiftRight6 expects.
+  dst_[MOD_DST_LFO_4] = (patch_.voice_lfo_rate >= kNumSyncedLfoRates)
+      ? U8U8Mul(patch_.voice_lfo_rate - kNumSyncedLfoRates, 128)
+      : 0;
 }
 
 
@@ -355,9 +441,23 @@ inline void Voice::UpdateDestinations() {
     envelope_[i].Update(new_rise, new_fall, patch_.env_lfo[i].sustain);
   }
   
-  voice_lfo_.set_phase_increment(
-      ResourcesManager::Lookup<uint16_t, uint8_t>(
-          lut_res_lfo_increments, U14ShiftRight6(dst_[MOD_DST_LFO_4]) >> 1));
+  // Sync-mode phase_increment_ is owned by LfoTick (computed each MIDI
+  // clock tick from observed Renders-per-tick). UpdateDestinations only
+  // touches the LFO rate when free-run.
+  if (patch_.voice_lfo_rate >= kNumSyncedLfoRates) {
+    // dst_[MOD_DST_LFO_4] is already biased to the free-run zone (see
+    // LoadSources). LFO 4 rate modulation in the matrix still applies.
+    voice_lfo_.set_phase_increment(
+        ResourcesManager::Lookup<uint16_t, uint8_t>(
+            lut_res_lfo_increments,
+            U14ShiftRight6(dst_[MOD_DST_LFO_4]) >> 1));
+  }
+  if (patch_.voice_lfo_2_rate >= kNumSyncedLfoRates) {
+    voice_lfo_2_.set_phase_increment(
+        ResourcesManager::Lookup<uint16_t, uint8_t>(
+            lut_res_lfo_increments,
+            patch_.voice_lfo_2_rate - kNumSyncedLfoRates));
+  }
 }
 
 /* static */

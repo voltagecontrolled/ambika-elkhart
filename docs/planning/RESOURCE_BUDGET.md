@@ -11,15 +11,69 @@ after each landed issue and update both this table and the baseline.
 
 ---
 
-## Baseline (v4.3, 2026-05-22)
+## Baseline (v4.4 WIP, 2026-05-22, page reorg + LFO 5)
+
+| Target     | Flash used | Flash free | RAM used | RAM free |
+|------------|-----------:|-----------:|---------:|---------:|
+| controller |    60156 B |     5380 B |   3300 B |    796 B |
+| voicecard  |    26750 B |     6018 B |   1062 B |    986 B |
+
+### v4.4 delta from v4.3 (full LFO 4 + LFO 5 stack)
+
+| Target     |   Δ Flash |  Δ RAM |
+|------------|----------:|-------:|
+| controller |  +1004 B  | +38 B  |
+| voicecard  |   +524 B  |  +9 B  |
+
+Cumulative additions versus v4.3:
+- **LFO 4**: clock sync (2-zone rate field), three one-shot shapes (1exp / 1lin / 1tri), retrigger gating, sync-rate `set_phase(0)` special-case for 1/96.
+- **LFO 5**: second per-voice LFO mirroring LFO 4 (sync + one-shots + retrigger), routed via `MOD_SRC_LFO_2` and pre-configured mod-slot 6 (configurable dest/amount).
+- **Trigger toggles**: `osc_phase_reset` and per-LFO `lfo4_retrigger` / `lfo5_retrigger` patch bytes flipped by encoder click on the OSC1 SHAPE / LFO4 SHAPE / LFO5 SHAPE cells, with ~500 ms transient `rst on / off` overlay.
+- **Transport double-Stop** → broadcast `COMMAND_LFO_RESET`.
+- **Sync rate ordering reversed** so the value-14↔15 boundary puts the slowest sync rate (1/1) adjacent to the slowest free-run rate.
+- **Page layout reorg**: filter envelope moved from env page to filter page (bottom row); pitch envelope occupies the freed env-page bottom row; voice LFO page now has LFO 4 (top) and LFO 5 (bottom), each with rate / wave / dest / dept.
+- **Cleanup**: relabelled dead `MOD_SRC_LFO_1`/`LFO_3` to `lfo.` (kept enum slots for patch compat); removed `kNumLfos` constant; snapshot version bumped to `0x05` (config slots widened from 29 to 31).
+
+Controller RAM growth dominated by `kCfgSIZE` 29 → 31 (× 6 voices = 12 B) plus added parameter table entries.
+
+## Previous baseline (v4.4 WIP, 2026-05-22, LFO 4 sync + one-shots only)
+
+| Target     | Flash used | Flash free | RAM used | RAM free |
+|------------|-----------:|-----------:|---------:|---------:|
+| controller |    59568 B |     5968 B |   3283 B |    813 B |
+| voicecard  |    26562 B |     6206 B |   1054 B |    994 B |
+
+### v4.4-mid delta from v4.3 (LFO 4 sync + one-shot shapes + trigger toggles)
+
+| Target     |   Δ Flash |  Δ RAM |
+|------------|----------:|-------:|
+| controller |   +416 B  |  +21 B |
+| voicecard  |   +336 B  |   +1 B |
+
+Controller: sync rate table, clock-tick dispatch loop, `osc_phase_reset`
+and `lfo_retrigger` patch-byte plumbing (`Part::SetValue`, `Touch()`
+sync list), encoder-click toggle handler on OSC1 shape + voice LFO
+shape cells, transient "rst on / rst off" overlay (~300 ms), double-Stop
+detection broadcasting `COMMAND_LFO_RESET`. RAM growth = `feedback_*`
+static state + the 30-entry `lfo_phase_increment_per_clock_tick[]`
+PROGMEM. Voicecard: one-shot render branch, sync-rate decoding, `tick()`
++ `LfoTick()` + `LfoReset()` paths, conditional osc_1.Reset and LFO
+retrigger in `Voice::Trigger`. SPI: 6 single-byte ticks per MIDI clock
+while transport runs, plus 6-byte broadcast on slow double-Stop.
+
+Controller: `lfo_phase_increment_per_clock_tick[15]` table never landed
+(voicecard owns the sync rate lookup); only multi.cc clock-dispatch loop
+and `TickLfo()` inline send add bytes. Voicecard: one-shot render branch
+(EXP/LIN/TRI), reordered LfoWave enum, sync-zone rate decoding, +1 B
+`one_shot_done_` state in Lfo. SPI: 6 single-byte ticks per MIDI clock
+when transport is running.
+
+## Previous baseline (v4.3, 2026-05-22)
 
 | Target     | Flash used | Flash free | RAM used | RAM free |
 |------------|-----------:|-----------:|---------:|---------:|
 | controller |    59152 B |     6384 B |   3262 B |    834 B |
 | voicecard  |    26226 B |     6542 B |   1053 B |    995 B |
-
-Controller flash now **90.3 %**, RAM **79.6 %**. Voicecard untouched
-in v4.3 (still 80 % flash).
 
 ### v4.3 delta from v4.2
 
@@ -53,8 +107,7 @@ Columns are signed byte deltas. **C-flash / C-RAM** = controller; **V-flash
 |-----|------------------------------------------------------|------------:|-------------:|----------:|-----------:|------------:|-------------:|----------:|-----------:|-------|
 | 6   | Iterative probability mode for part steps            |        +400 |         +900 |        +6 |        +10 |             |              |           |            | ~53-entry CW slot LUT, per-track cycle counter (6 B), global FILL state (1 B), pot-zone dispatcher. Counter reset on transport stop. |
 | 8   | Mixer page cosmetic fixes                            |         +30 |         +100 |           |            |             |              |           |            | Label re-layout + LED-color polarity swap on `seq_mixer_page`. Pure draw-side change. |
-| 11  | Mod matrix (4 slots × 2 pages on S4a/S4b)            |        +600 |        +1500 |       +32 |        +96 |        +200 |         +600 |       +24 |        +72 | New page + 4 slot records (dep/src/dst). V-side cost only if matrix is evaluated on voicecard; controller-side evaluation pushes already-resolved values via existing patch transport (cheaper voicecard, more controller traffic). |
-| 12  | Clock-sync rates for LFO 4                           |        +100 |         +300 |           |         +2 |             |              |           |            | Extend LFO 4 rate field to include sync slots; reuses existing sync-rate table from LFO 1–3. |
+| 12  | Clock-sync rates for LFO 4                           |        +100 |         +300 |           |         +2 |             |              |           |            | Extend LFO 4 rate field to include sync slots; reuses existing sync-rate table from LFO 1–3. *(Landed in v4.4.)* |
 | 18  | Wavefolder waveform                                  |         +10 |          +40 |           |            |        +200 |         +500 |           |            | Iterative quadratic fold; one wave-enum slot. **Risk:** voicecard already 80 % full — landing this may force dropping the reserved CZ filter-sim slots referenced in #18. |
 | 19  | Performance: master transpose                        |         +60 |         +150 |        +1 |         +2 |             |              |           |            | Depends on #29 page existing. Bipolar `-12..+12` applied pre per-track quantize in `Sequencer::FireStep`. |
 | 20  | Performance: master scale                            |        +100 |         +250 |        +1 |         +2 |             |              |           |            | Depends on #29. Reuses existing `kScaleMasks[]` palette + `---` sentinel; overrides per-track SCAL in fire path. |

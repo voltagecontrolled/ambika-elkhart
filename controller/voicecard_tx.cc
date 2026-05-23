@@ -124,15 +124,6 @@ void VoicecardProtocolTx::WriteData(
 }
     
 /* static */
-void VoicecardProtocolTx::WriteLfo(
-    uint8_t voice_id,
-    uint8_t address,
-    uint8_t value) {
-  Write(voice_id, COMMAND_WRITE_LFO | address);
-  Write(voice_id, value);
-}
-
-/* static */
 Word VoicecardProtocolTx::GetVersion(uint8_t voice_id) {
   Word result;
   Sync(voice_id);

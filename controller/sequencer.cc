@@ -250,14 +250,16 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // SMTH = no portamento
   127,  // VELAMT = full velocity→VCA (mod slot 11 amount)
   0,    // OSC1R = 0
-  0,    // OSC2R = 0
-  0,    // OSC2D = center
+  0,    // L5SH (was OSC2R) — LFO5 shape = TRIANGLE
+  128,  // L5FR (was OSC2D) — LFO5 rate = medium free-run (mirrors LFO4)
   0,    // FMOP = no FM
   0,    // FUZZ = no fuzz
   127,  // E1DEPT = ENV1→VCA full depth (round 5: 0..127 unipolar)
   64,   // E2DEPT = ENV2→VCF depth (round 5 mid; can push higher now)
-  0,    // E3DEPT unused — ENV3→pitch depth lives in defaults[24 + kP3PAMT]
+  0,    // L5RT (was E3DEPT) — LFO5 retrigger off
   0,    // WSUB = WAVEFORM_SUB_OSC_SQUARE_1
+  0,    // L5D = LFO5 destination (mod slot 6 dest)
+  0,    // L5A = LFO5 amount (mod slot 6 amount)
 };
 
 // Fixed mod routing sent by Part::Touch() — amounts at bytes 58/72/73/82 come from config[].
@@ -268,7 +270,7 @@ const prog_uint8_t kDefaultMod[42] PROGMEM = {
   0, 0, 0,    // slot  3: cleared
   0, 0, 0,    // slot  4: cleared
   0, 0, 0,    // slot  5: cleared
-  0, 0, 0,    // slot  6: cleared
+  4, 0, 0,    // slot  6: LFO_5 (MOD_SRC_LFO_2 slot) → dest/amount from L5D/L5A
   6, 0, 0,    // slot  7: LFO_4 → dest/amount from LFO4D/LFO4A
   11, 0, 0,   // slot  8: SEQ_1 → PARAMETER_1
   12, 1, 0,   // slot  9: SEQ_2 → PARAMETER_2
@@ -949,6 +951,15 @@ void Sequencer::Reset() {
 }
 
 void Sequencer::Stop() {
+  // Second Stop while already stopped: broadcast LFO phase reset to every
+  // voice. Lets the user align synced LFOs to song-position-0 deliberately
+  // without affecting first-time Stop semantics.
+  if (global_.transport == kSeqStopped) {
+    for (uint8_t t = 0; t < kNumVoices; ++t) {
+      voicecard_tx.ResetLfo(t);
+    }
+    return;
+  }
   Reset();
   global_.transport = kSeqStopped;
   multi.Stop();

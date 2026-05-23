@@ -43,7 +43,7 @@ static const prog_uint16_t units_definitions[UNIT_LAST] PROGMEM = {
   STR_RES_SQU1,       // UNIT_SUB_OSC_WAVEFORM
   STR_RES_LP,         // UNIT_FILTER_MODE
   STR_RES_FREE,       // UNIT_LFO_SYNC_MODE
-  STR_RES_1_1,        // UNIT_LFO_RATE
+  STR_RES_1_96,       // UNIT_LFO_RATE — block runs fastest→slowest (1/96 .. 1/1)
   STR_RES_TRI,        // UNIT_LFO_SHAPE
   STR_RES_ENV1,       // UNIT_MODULATION_SOURCE
   STR_RES_PRM1,       // UNIT_MODULATION_DESTINATION
@@ -581,14 +581,14 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
   // 32
   { PARAMETER_LEVEL_PATCH,
     PRM_PATCH_VOICE_LFO_RATE,
-    UNIT_RAW_UINT8, 0, 127,
+    UNIT_LFO_RATE, 0, kNumSyncedLfoRates + 127,
     1, 0, 0xff, 47,
     STR_RES_RATE, STR_RES_RATE, STR_RES_VOICE_LFO },
 
   // 33
   { PARAMETER_LEVEL_PATCH,
     PRM_PATCH_VOICE_LFO_SHAPE,
-    UNIT_LFO_SHAPE, 0, LFO_WAVEFORM_RAMP,
+    UNIT_LFO_SHAPE, 0, LFO_WAVEFORM_VOICE_LFO_LAST,
     1, 0, 0xff, 48,
     STR_RES_WAVEFORM, STR_RES_WAVEFORM, STR_RES_VOICE_LFO },
 
@@ -831,10 +831,14 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 0xff,
     STR_RES_CURV, STR_RES_CURV, STR_RES_ENVELOPE },
 
-  // 77 — E2 depth (virtual addr 201 → filter_env / E2DEPT)
+  // 77 — E2 depth (a.k.a. FLT). Writes the same patch byte as the FAMT
+  // page3 default at addr 22 so the per-step snapshot picks up changes
+  // — without this they diverge: FLT used to land in kCfgE2DEPT (not
+  // in the Touch sync list nor the snapshot field set) and never reached
+  // the voicecard via the playback path.
   { PARAMETER_LEVEL_PATCH,
-    201,
-    UNIT_UINT8, 0, 127,
+    PRM_PATCH_FILTER1_ENV,
+    UNIT_UINT8, 0, 63,
     1, 0, 0xff, 0xff,
     STR_RES_FLT, STR_RES_DEPTH, STR_RES_ENVELOPE },
 
@@ -876,6 +880,34 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
   // 83 — LFO4 depth (mod slot 7 amount, addr 73)
   { PARAMETER_LEVEL_PATCH,
     73,
+    UNIT_INT8, -63, 63,
+    1, 0, 0xff, 0xff,
+    STR_RES_DEPT, STR_RES_DEPTH, STR_RES_VOICE_LFO },
+
+  // 84 — LFO5 rate (addr 109)
+  { PARAMETER_LEVEL_PATCH,
+    PRM_PATCH_VOICE_LFO_2_RATE,
+    UNIT_LFO_RATE, 0, kNumSyncedLfoRates + 127,
+    1, 0, 0xff, 0xff,
+    STR_RES_RATE, STR_RES_RATE, STR_RES_VOICE_LFO },
+
+  // 85 — LFO5 shape (addr 108) — encoder click toggles lfo5_retrigger
+  { PARAMETER_LEVEL_PATCH,
+    PRM_PATCH_VOICE_LFO_2_SHAPE,
+    UNIT_LFO_SHAPE, 0, LFO_WAVEFORM_VOICE_LFO_LAST,
+    1, 0, 0xff, 0xff,
+    STR_RES_WAVEFORM, STR_RES_WAVEFORM, STR_RES_VOICE_LFO },
+
+  // 86 — LFO5 destination (mod slot 6 destination, addr 69)
+  { PARAMETER_LEVEL_PATCH,
+    69,
+    UNIT_MODULATION_DESTINATION, 0, MOD_DST_LAST - 1,
+    1, 0, 0xff, 0xff,
+    STR_RES_DEST, STR_RES_DESTINATION, STR_RES_VOICE_LFO },
+
+  // 87 — LFO5 depth (mod slot 6 amount, addr 70)
+  { PARAMETER_LEVEL_PATCH,
+    70,
     UNIT_INT8, -63, 63,
     1, 0, 0xff, 0xff,
     STR_RES_DEPT, STR_RES_DEPTH, STR_RES_VOICE_LFO },

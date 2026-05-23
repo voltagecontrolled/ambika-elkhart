@@ -78,6 +78,18 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 203: return &tr.config[kCfgSMTH];          // portamento (VOICECARD_DATA_PART)
     // Filter KB tracking
     case 105: return &tr.config[kCfgTRAK];
+    // Trigger-time reset toggles (encoder click toggles them on OSC1 SHAPE,
+    // LFO4 SHAPE, LFO5 SHAPE cells respectively).
+    case 106: return &tr.config[kCfgPHSE];        // osc 1 phase reset
+    case 107: return &tr.config[kCfgLFOR];        // LFO4 retrigger
+    // LFO5 — mirrors LFO4 (rate/shape) and lives in mod-matrix slot 6
+    // (source=MOD_SRC_LFO_2 fixed via kDefaultMod; dest/amount configurable
+    // at addresses 69/70).
+    case 69:  return &tr.config[kCfgL5D];         // LFO5 destination
+    case 70:  return &tr.config[kCfgL5A];         // LFO5 amount
+    case 108: return &tr.config[kCfgL5SH];        // LFO5 shape
+    case 109: return &tr.config[kCfgL5FR];        // LFO5 rate
+    case 110: return &tr.config[kCfgL5RT];        // LFO5 retrigger
     // EG depth (virtual; indexed by active_env_lfo; 200=Amp/E1, 201=Filt/E2, 202=Pitch/E3)
     case 200: return &tr.config[kCfgE1DEPT];
     case 201: return &tr.config[kCfgE2DEPT];
@@ -126,8 +138,8 @@ void Part::Touch() {
     32, 33, 34,
     40, 41, 42,
     48, 49,
-    58, 72, 73, 82, 85,
-    105,
+    58, 69, 70, 72, 73, 82, 85,
+    105, 106, 107, 108, 109, 110,
   };
   for (uint8_t i = 0; i < sizeof(kSyncAddresses); ++i) {
     uint8_t addr = kSyncAddresses[i];

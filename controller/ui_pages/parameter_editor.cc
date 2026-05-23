@@ -20,6 +20,7 @@
 #include "controller/ui_pages/parameter_editor.h"
 
 #include "avrlib/string.h"
+#include "avrlib/time.h"
 
 #include "controller/display.h"
 #include "controller/leds.h"
@@ -48,6 +49,14 @@ const prog_EventHandlers ParameterEditor::event_handlers_ PROGMEM = {
 
 /* static */
 ParameterEditor::SnapMask ParameterEditor::snapped_;
+/* static */
+uint16_t ParameterEditor::feedback_start_ms_;
+/* static */
+uint8_t ParameterEditor::feedback_cell_;
+/* static */
+uint8_t ParameterEditor::feedback_state_;
+
+static const uint16_t kFeedbackDurationMs = 500;
 
 /* static */
 uint8_t ParameterEditor::parameter_index(uint8_t control_id) {
@@ -91,6 +100,53 @@ void ParameterEditor::SetActiveControl(ActiveControl active_control) {
     active_control_ = 8;
     OnIncrement(-1);
   }
+}
+
+// Trigger-time reset toggle dispatch. Encoder click on the OSC1 SHAPE
+// cell flips osc_phase_reset (patch byte 106); click on the VOICE LFO
+// SHAPE cell flips lfo_retrigger (patch byte 107). Other cells: no-op
+// (the legacy click-to-toggle-edit-mode behaviour is dropped — pots are
+// the canonical value editor).
+/* static */
+uint8_t ParameterEditor::OnClick() {
+  if (active_control_ < 0 || active_control_ >= kNumParametersPerPage) {
+    return 1;
+  }
+  uint8_t parameter_id = info_->data[active_control_];
+  uint8_t patch_addr;
+  if (parameter_id == 0) {                // OSC1 SHAPE cell
+    patch_addr = 106;                     // osc_phase_reset
+  } else if (parameter_id == 33) {        // VOICE LFO 4 SHAPE cell
+    patch_addr = 107;                     // lfo4_retrigger
+  } else if (parameter_id == 74) {        // VOICE LFO 5 SHAPE cell (array idx)
+    patch_addr = 110;                     // lfo5_retrigger
+  } else {
+    return 1;                             // no click action on this cell
+  }
+  uint8_t part = ui.state().active_part;
+  uint8_t current = multi.part(part).GetValue(patch_addr);
+  uint8_t next = current ? 0 : 1;
+  multi.mutable_part(part)->SetValue(patch_addr, next, 1);
+  uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+  if (now == 0) now = 1;                  // 0 reserved as "no feedback"
+  feedback_start_ms_ = now;
+  feedback_cell_ = active_control_;
+  feedback_state_ = next;
+  return 1;
+}
+
+/* static */
+uint8_t ParameterEditor::OnIdle() {
+  // Force a redraw while feedback is active so the overlay actually
+  // clears once the duration elapses (UpdateScreen only runs on redraw).
+  if (feedback_start_ms_) {
+    uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+    if (static_cast<uint16_t>(now - feedback_start_ms_) >= kFeedbackDurationMs) {
+      feedback_start_ms_ = 0;
+      return 1;
+    }
+  }
+  return UiPage::OnIdle();
 }
 
 /* static */
@@ -242,6 +298,23 @@ void ParameterEditor::UpdateScreen() {
     if (parameter_id == 0xff) {
       buffer[0] = ' ';
       buffer[10] = ' ';
+    }
+  }
+
+  // Trigger-time reset toggle feedback overlay. While within
+  // kFeedbackDurationMs of the encoder click, replaces the cell contents
+  // (between the kDelimiter separators) with "rst on " or "rst off".
+  if (feedback_start_ms_ && feedback_cell_ < kNumParametersPerPage) {
+    uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+    if (static_cast<uint16_t>(now - feedback_start_ms_) < kFeedbackDurationMs) {
+      uint8_t line = feedback_cell_ < 4 ? 0 : 1;
+      uint8_t row = (feedback_cell_ & 3) * 10;
+      char* buffer = display.line_buffer(line) + row + 1;
+      const char* label = feedback_state_ ? "rst on " : "rst off";
+      for (uint8_t c = 0; c < 9; ++c) buffer[c] = ' ';
+      for (uint8_t c = 0; label[c]; ++c) buffer[c] = label[c];
+    } else {
+      feedback_start_ms_ = 0;
     }
   }
 }

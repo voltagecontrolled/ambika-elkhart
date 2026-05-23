@@ -77,10 +77,13 @@ class VoicecardProtocolTx {
       uint8_t address,
       uint8_t value);
 
-  static void WriteLfo(
-      uint8_t voice_id,
-      uint8_t address,
-      uint8_t value);
+  static inline void TickLfo(uint8_t voice_id) {
+    Write(voice_id, COMMAND_LFO_TICK);
+  }
+
+  static inline void ResetLfo(uint8_t voice_id) {
+    Write(voice_id, COMMAND_LFO_RESET);
+  }
 
   static void Sync(uint8_t voice_id);
   static void SyncAllVoices();

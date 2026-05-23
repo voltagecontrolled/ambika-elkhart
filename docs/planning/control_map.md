@@ -55,7 +55,8 @@ the encoder skips them.
 | Gesture                  | Effect                                                  |
 |--------------------------|---------------------------------------------------------|
 | Encoder turn             | Walk cursor through current page's parameters           |
-| Encoder click            | Focused-edit on current parameter (ParameterEditor pages) |
+| Encoder click            | On OSC1 wave / LFO4 wave / LFO5 wave cells: toggle the trigger-time reset flag (`osc_phase_reset` / `lfo4_retrigger` / `lfo5_retrigger`) with a transient `rst on/off` overlay. No-op on other cells — pots are the canonical value editor. |
+| Transport double-Stop    | Second CCW Stop while already stopped broadcasts `COMMAND_LFO_RESET` to all voicecards (aligns synced LFOs to song-position-0). |
 | `S1` + encoder turn      | Voice select — cycle the active track                   |
 | `S2` + encoder turn      | ×8 page-jump multiplier — skip whole page groups        |
 | `S8` + encoder turn      | ×8 page-jump multiplier (same as `S2`)                  |
@@ -99,7 +100,7 @@ truncated to the 4-char cell width by `Parameter::PrintName`.
 
 ## S2 — `PAGE_FILTER` (Group 1)
 
-**Handler:** `ParameterEditor`  ·  **Param indices:** `{16, 17, 0xff, 18, 22, 0xff, 0xff, 0xff}`
+**Handler:** `ParameterEditor`  ·  **Param indices:** `{16, 17, 0xff, 18, 28, 64, 65, 66}`
 
 | Slot  | Idx  | Label  | short_name str        | Name           | Range   | Notes |
 |-------|------|--------|-----------------------|----------------|---------|-------|
@@ -107,49 +108,44 @@ truncated to the 4-char cell width by `Parameter::PrintName`.
 | top2  | 17   | `reso` | `str_res_resonance`   | Resonance      | 0..63   | |
 | top3  | —    | —      | —                     | (unused)       | —       | |
 | top4  | 18   | `mode` | `str_res_mode`        | Filter mode    | 0..3    | LP / BP / HP / Notch |
-| bot1  | 22   | `env2` | `str_res_env2Tvcf`    | Env 2 → cutoff | 0..63   | "env2~vcf" truncated. Lockable on S5c as `famt` |
-| bot2  | —    | —      | —                     | (unused)       | —       | |
-| bot3  | —    | —      | —                     | (unused)       | —       | |
-| bot4  | —    | —      | —                     | (unused)       | —       | |
-
-`DRIV` and `BITS` referenced in the previous MANUAL are **not present on
-this page** in the current registry — they live on S1b (`fuzz` / `crsh`).
-MANUAL needs correction.
+| bot1  | 28   | `rise` | `str_res_rise`        | Env 2 rise     | 0..127  | Filter env attack |
+| bot2  | 64   | `fall` | `str_res_fall`        | Env 2 fall     | 0..127  | (= `fdec` lockable on S5c) |
+| bot3  | 65   | `curv` | `str_res_curv`        | Env 2 curve    | 0..127  | 0=linear, 127=expo |
+| bot4  | 66   | `flt ` | `str_res_flt`         | Env 2 → cutoff | 0..63   | Depth (filter_env / FAMT). Writes patch addr 22 directly (unified with `famt` on S5c). |
 
 ## S3a — `PAGE_ENV_LFO` (Group 2, top half)
 
-**Handler:** `ParameterEditor`  ·  **Param indices:** `{24, 25, 26, 27, 28, 75, 76, 77}`
+**Handler:** `ParameterEditor`  ·  **Param indices:** `{24, 25, 26, 27, 67, 68, 69, 70}`
 
-| Slot  | Idx | Label  | short_name str    | Name           | Range  | Notes |
-|-------|-----|--------|-------------------|----------------|--------|-------|
-| top1  | 24  | `rise` | `str_res_rise`    | Env 1 rise     | 0..127 | Attack rate |
-| top2  | 25  | `fall` | `str_res_fall`    | Env 1 fall     | 0..127 | Decay/release rate (= `adec` lockable on S5c) |
-| top3  | 26  | `curv` | `str_res_curv`    | Env 1 curve    | 0..127 | 0=linear, 127=expo |
-| top4  | 27  | `amp ` | `str_res_amp`     | Env 1 → VCA    | 0..127 | Depth (virtual addr 200). 3-char string + space pad |
-| bot1  | 28  | `rise` | `str_res_rise`    | Env 2 rise     | 0..127 | |
-| bot2  | 75  | `fall` | `str_res_fall`    | Env 2 fall     | 0..127 | (= `fdec` lockable on S5c) |
-| bot3  | 76  | `curv` | `str_res_curv`    | Env 2 curve    | 0..127 | |
-| bot4  | 77  | `flt ` | `str_res_flt`     | Env 2 → cutoff | 0..127 | Depth (virtual addr 201; same value as `famt` on S5c) |
+| Slot  | Idx | Label  | short_name str    | Name           | Range    | Notes |
+|-------|-----|--------|-------------------|----------------|----------|-------|
+| top1  | 24  | `rise` | `str_res_rise`    | Env 1 rise     | 0..127   | Attack rate |
+| top2  | 25  | `fall` | `str_res_fall`    | Env 1 fall     | 0..127   | Decay/release rate (= `adec` lockable on S5c) |
+| top3  | 26  | `curv` | `str_res_curv`    | Env 1 curve    | 0..127   | 0=linear, 127=expo |
+| top4  | 27  | `amp ` | `str_res_amp`     | Env 1 → VCA    | 0..127   | Depth (virtual addr 200). 3-char string + space pad |
+| bot1  | 67  | `rise` | `str_res_rise`    | Env 3 rise     | 0..127   | Pitch env attack |
+| bot2  | 68  | `fall` | `str_res_fall`    | Env 3 fall     | 0..127   | (= `pdec` lockable on S5c) |
+| bot3  | 69  | `curv` | `str_res_curv`    | Env 3 curve    | 0..127   | |
+| bot4  | 70  | `pitc` | `str_res_pch`     | Env 3 → pitch  | -63..+63 | Depth (virtual addr 202; = `pamt` on S5c). String literal is `"pitc"` despite resource enum being `pch`. |
 
 ## S3b — `PAGE_VOICE_LFO` (Group 2, bottom half / also reachable via S4)
 
-**Handler:** `ParameterEditor`  ·  **Param indices:** `{78, 79, 80, 81, 32, 33, 82, 83}`
+**Handler:** `ParameterEditor`  ·  **Param indices:** `{32, 33, 71, 72, 73, 74, 75, 76}`
 
 | Slot  | Idx | Label  | short_name str    | Name              | Range    | Notes |
 |-------|-----|--------|-------------------|-------------------|----------|-------|
-| top1  | 78  | `rise` | `str_res_rise`    | Env 3 rise        | 0..127   | |
-| top2  | 79  | `fall` | `str_res_fall`    | Env 3 fall        | 0..127   | (= `pdec` lockable on S5c) |
-| top3  | 80  | `curv` | `str_res_curv`    | Env 3 curve       | 0..127   | |
-| top4  | 81  | `pitc` | `str_res_pch`     | Env 3 → pitch     | 0..127   | Depth (virtual addr 202; = `pamt` on S5c). String literal is `"pitc"` despite resource enum being `pch` |
-| bot1  | 32  | `rate` | `str_res_rate`    | LFO 4 rate        | 0..127   | Tempo-sync extension pending (#12) |
-| bot2  | 33  | `wave` | `str_res_waveform`| LFO 4 waveform    | 0..N enum| Sine/tri/sqr/ramp/S&H |
-| bot3  | 82  | `dest` | `str_res_dest`    | LFO 4 destination | 0..N enum| |
-| bot4  | 83  | `dept` | `str_res_dept`    | LFO 4 depth       | -63..+63 | Signed |
+| top1  | 32  | `rate` | `str_res_rate`    | LFO 4 rate        | 0..142   | Two-zone: 0..14 = sync (1/96..1/1, reversed so the value-14↔15 boundary is musically continuous), 15..142 = free-run |
+| top2  | 33  | `wave` | `str_res_waveform`| LFO 4 waveform    | 0..6 enum| tri / sqr / S&H / ramp / 1exp / 1lin / 1tri. Click toggles `lfo4_retrigger` |
+| top3  | 71  | `dest` | `str_res_dest`    | LFO 4 destination | 0..N enum| Mod matrix slot 7 destination |
+| top4  | 72  | `dept` | `str_res_dept`    | LFO 4 depth       | -63..+63 | Mod matrix slot 7 amount |
+| bot1  | 73  | `rate` | `str_res_rate`    | LFO 5 rate        | 0..142   | Same two-zone scheme as LFO 4 |
+| bot2  | 74  | `wave` | `str_res_waveform`| LFO 5 waveform    | 0..6 enum| Same shapes as LFO 4. Click toggles `lfo5_retrigger` |
+| bot3  | 75  | `dest` | `str_res_dest`    | LFO 5 destination | 0..N enum| Mod matrix slot 6 dest (source `MOD_SRC_LFO_2` fixed via `kDefaultMod`) |
+| bot4  | 76  | `dept` | `str_res_dept`    | LFO 5 depth       | -63..+63 | Mod matrix slot 6 amount |
 
-## S4 — Mod matrix (planned; currently `PAGE_MODULATIONS` placeholder)
+## S4 — `PAGE_VOICE_LFO` (Group 2)
 
-`PAGE_MODULATIONS` exists in the registry with all-`0xff` pot data — the
-encoder skips it. Layout for v4.0 is being scoped on issue #11.
+Shares group 2 with `S3`: pressing `S4` lands on `PAGE_VOICE_LFO` (the LFO 4 / LFO 5 rows above). Mod matrix (#11) was closed unimplemented — per-pot assign on `PAGE_VOICE_LFO` covers the routing surface.
 
 ---
 

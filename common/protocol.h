@@ -25,10 +25,11 @@
 // 0x20 address value: write patch data
 // 0x30 address value: write part data
 // 0x40 address value: write entry in modulation matrix
-// 0x5n value: write lfo n value
 // 0x60 release
 // 0x70 kill
 // 0x8n retrigger envelope
+// 0x90 lfo clock tick (advance synced voice LFO by one MIDI clock)
+// 0x91 lfo phase reset (broadcast on transport double-stop)
 // 0xf8 reset all controllers
 // 0xf9 reset
 // 0xfa lights out
@@ -56,13 +57,16 @@ enum ProtocolCommands {
   COMMAND_WRITE_PATCH_DATA = 0x20,
   COMMAND_WRITE_PART_DATA = 0x30,
   COMMAND_WRITE_MOD_MATRIX = 0x40,
-  COMMAND_WRITE_LFO = 0x50,
-  
+
   COMMAND_RELEASE = 0x60,
   COMMAND_KILL = 0x70,
-  
+
   COMMAND_RETRIGGER_ENVELOPE = 0x80,
-  
+
+  COMMAND_LFO_TICK = 0x90,
+  COMMAND_LFO_RESET = 0x91,
+
+
   COMMAND_RESET_ALL_CONTROLLERS = 0xf8,
   COMMAND_RESET = 0xf9,
 

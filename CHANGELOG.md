@@ -12,6 +12,28 @@ Build requires avr-gcc 4.3.5 via `./build-squeeze.sh` from the repo root.
 > below is retired. Historical Phase 2–5 entries kept verbatim. Current
 > work tracker: GitHub issues.
 
+### v4.4 (in progress) — LFO 4 clock sync, one-shot shapes, LFO 5, env/LFO page reorg (2026-05-23)
+
+**Flash:** controller 90.3% → **91.9%** (`+1,070 B` over v4.3). **RAM:** controller 79.6% → **80.6%** (`+38 B`). Voicecard 80.0% → **81.7%** (`+536 B` flash, `+10 B` RAM). `kSystemVersion` left at v4.3 levels per mid-sprint policy; bumps when v4.4 closes. Snapshot file format bumps to `0x05`; v4.1/v4.2/v4.3/v4.4-mid (`0x01`..`0x04`) snapshots still load — the two new LFO 5 config bytes (dest + amount) zero-fill, so loaded patches start with LFO 5 silent.
+
+The voice LFO grew from a single free-running per-voice oscillator with four shapes into two independent per-voice LFOs (LFO 4 and LFO 5), each with MIDI-clock-synced rates, three one-shot shapes that function as routable envelopes, and per-patch retrigger flags. The env / filter / LFO page layout was reworked to match.
+
+**Clock-sync rates for LFO 4 and LFO 5 (#12).** Rate field becomes two-zone: `0..14` indexes 15 sync ratios (`1/96`..`1/1`, reversed so the slow end is adjacent to the slow free-run end — the value-14↔15 boundary is now musically continuous), `15..142` is free-run with the existing per-Render LUT. Voicecard measures Renders-per-MIDI-tick on the fly and divides the per-tick phase increment by that count, so synced LFOs render smoothly through the regular per-block advance path instead of stepping. Self-calibrating across tempo changes; phase stays frozen until the first tick after transport start. Transport double-stop broadcasts a new `COMMAND_LFO_RESET` so synced LFOs can be aligned to song-position deliberately.
+
+**One-shot LFO shapes — `1exp` / `1lin` / `1tri`.** Three new shapes appended to `LfoWave` immediately after `RAMP` (before the wavetable shapes, so the voice LFO range stays contiguous with the new `LFO_WAVEFORM_VOICE_LFO_LAST` sentinel). One-shot fires once on retrigger then holds at zero. Backed by the existing `wav_res_env_expo` LUT for `1exp` (`255 - env_expo[phase]`), computed inline for `1lin` and `1tri`. With LFO 5 routable anywhere, this gives players a fourth "envelope" without paying for a fourth envelope generator.
+
+**Second per-voice LFO — LFO 5.** Full clone of LFO 4: own shape/rate/retrigger patch bytes (offsets 108/109/110, repurposed from osc 2 range/detune and env 3 depth config slots that had been dead since the round-5 refactor), own `Lfo` instance on voicecard, own sync + free-run + one-shot decode, own mod-matrix slot (pre-routed in `kDefaultMod` slot 6 with source `MOD_SRC_LFO_2` — the dead enum slot already read by the voicecard's filter-LFO path, so the wiring is implicit). Dest and amount are configurable through the new voice LFO page cells.
+
+**Per-patch trigger toggles via encoder click.** Click the OSC1 SHAPE cell to toggle `osc_phase_reset` (osc 1 phase reset on note-on; osc 2 always resets per stock MI). Click either LFO SHAPE cell to toggle that LFO's retrigger flag — one-shot shapes ignore the flag and always retrigger since they're envelopes by design. The legacy click-to-toggle-edit-mode gesture on `ParameterEditor` is gone; pots are the canonical value editor and encoder is for navigation. Toggle feedback is a `rst on/off` overlay on the clicked cell for ~500 ms via a `milliseconds()` timestamp.
+
+**Env / filter / LFO page reorg.** Filter envelope moves off the env page onto the filter page bottom row (E2 rise / fall / curv / depth). The redundant `FILTER1_ENV` cell that used to sit on the filter page top row is dropped. Pitch envelope (E3) takes the freed env page bottom row (E1 still on top). Voice LFO page now has two rows: LFO 4 on top, LFO 5 on bottom, each `rate | wave | dest | dept` with the encoder-click retrigger toggle on the wave cell.
+
+**FLT / FAMT storage unification.** Param 77 (FLT, the E2 depth cell) used to write to `kCfgE2DEPT` while param 22 (FAMT, the page3 default) wrote to `defaults[24 + kP3FAMT]`; both broadcast to the same voicecard byte (`patch_.filter_env`, addr 22) but only the FAMT storage made it through `Touch()` and the per-step snapshot rewrite. FLT changes were silently being stomped on every note-on. FLT now writes addr 22 directly (range capped at 0..63 to match FAMT). The bipolar filter_env range (64..127 = negative env→cutoff) is retired.
+
+**LFO 1/3 remnants swept.** Strings for the dead `MOD_SRC_LFO_1` and `MOD_SRC_LFO_3` slots renamed to `lfo.` (kept in the enum for patch byte compat), `MOD_SRC_LFO_2` renamed to `lfo5` (now occupied by LFO 5). `kNumLfos` constant removed. Mod matrix issue (#11) closed unimplemented — per-pot assign on the new voice LFO page covers the use case.
+
+---
+
 ### v4.3 — Probability everywhere: bipolar PROB, per-lock gates, chord walk on loop, SUBS rework (2026-05-22)
 
 **Flash:** controller 86.4% → **90.3%** (`+2,572 B` over v4.2). **RAM:** controller 76.9% → **79.6%** (`+103 B`: 96 B per-lock PROB pool + 1 count + 6 B per-track loop counter + 6 B per-track substep gate). Controller `kSystemVersion = 0x43`. Voicecard untouched (still `0x42`). Snapshot file format bumps to `0x04`; v4.2 (`0x03`) snapshots load with the new per-lock PROB pool zero-filled.

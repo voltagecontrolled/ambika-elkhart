@@ -136,9 +136,9 @@ in the per-page sections below.
 |------------------------------|------------------------------------------------|-------------------------------------------------------------------------------|
 | Oscillators                  | `S2` + turn (Osc/Mixer group, page 1)          | `wave para rang tune` / `wave para rang tune`                                 |
 | Mixer                        | `S2` + turn (Osc/Mixer group, page 2)          | `mix nois sub wave` / `xmod amnt fuzz crsh`                                   |
-| Filter                       | `S2` + turn (Filter group)                     | `freq reso — mode` / `env2 — — —`                                             |
-| Amp + Filter envelopes       | `S2` + turn (Envelopes group, page 1) / `S3`   | `rise fall curv amp` / `rise fall curv flt`                                   |
-| Pitch envelope + voice LFO   | `S2` + turn (Envelopes group, page 2) / `S4`*  | `rise fall curv pitc` / `rate wave dest dept`                                 |
+| Filter                       | `S2` + turn (Filter group)                     | `freq reso — mode` / `rise fall curv flt`                                     |
+| Amp + Pitch envelopes        | `S2` + turn (Envelopes group, page 1) / `S3`   | `rise fall curv amp` / `rise fall curv pitc`                                  |
+| Voice LFOs (LFO 4 + LFO 5)   | `S2` + turn (Envelopes group, page 2) / `S4`*  | `rate wave dest dept` / `rate wave dest dept`                                 |
 | Sequencer Step page          | `S4` + turn (Sequencer mode, lock page 1)      | `note vel vamt rate` / `subs prob glid sfx`                                   |
 | Sequencer Voice 1 page       | encoder past Step page (lock page 2; INT only) | `nois w1 pa1 tun2` / `mix w2 pa2 fin2`                                        |
 | Sequencer Voice 2 page       | encoder past Voice 1 page (lock page 3)        | `freq fdec famt adec` / `pdec pamt sub wave`                                  |
@@ -172,13 +172,13 @@ Oscillators                       Mixer
 wave saw  | para  64 | rang  +0 | tune   +0     mix   32 | nois  16 | sub   48 | wave  squ1
 wave fm   | para  90 | rang +12 | tune  -05     xmod env | amnt  20 | fuzz  18 | crsh   4
 
-Filter                            Amp + Filter envelopes
+Filter                            Amp + Pitch envelopes
 freq  64 | reso  18 | --       | mode  LP       rise   2 | fall  64 | curv  90 | amp  127
-env2  20 | --       | --       | --             rise   8 | fall  72 | curv  40 | flt   48
+rise   8 | fall  72 | curv  40 | flt   48       rise   0 | fall  20 | curv 100 | pitc  +24
 
-Pitch envelope + voice LFO        Per-track settings
-rise   0 | fall  20 | curv 100 | pitc  +24      dirn fwd  | rate 16   | rota   0 | leng   8
-rate  48 | wave tri | dest pit | dept  +32      scal min  | root   0  | mch    1 | mmod INT
+Voice LFOs (LFO 4 + LFO 5)        Per-track settings
+rate 1/4 | wave tri | dest prm1| dept  +32      dirn fwd  | rate 16   | rota   0 | leng   8
+rate  72 | wave 1exp| dest cut | dept  +48      scal min  | root   0  | mch    1 | mmod INT
 
 Sequencer Step page               Sequencer Voice 1 page (INT tracks)
 note C 3 | vel  100 | vamt  64 | rate trk       nois  16 | w1   saw | pa1  64 | tun2 +07
@@ -298,12 +298,13 @@ into the voice.
 
 ## Filter (`S2`)
 
-A single page drives the state-variable filter. Only four of the
-eight pot positions are active; the other four are inert.
+A single page drives the state-variable filter. The top row carries
+the filter cells; the bottom row hosts Env 2 (filter envelope) so it
+sits next to the cutoff it shapes.
 
 ```
 freq  64 | reso  18 | --       | mode  LP
-env2  20 | --       | --       | --
+rise   8 | fall  72 | curv  40 | flt   48     ← Env 2 (Filter)
 ```
 
 | Cell   | Range                | Notes                                                                                                                   |
@@ -311,18 +312,18 @@ env2  20 | --       | --       | --
 | `freq` | 0–127                | Cutoff frequency. Lockable per step.                                                                                    |
 | `reso` | 0–63                 | Resonance. High resonance near a strong harmonic produces ringing, near-self-oscillation tones.                         |
 | `mode` | LP / BP / HP / Notch | Filter response. **LP** for body and warmth, **HP** for hats and air, **BP** for nasal / metallic character, **Notch** for phaser-like rejection. |
-| `env2` | 0–63                 | Filter envelope depth — how far Env 2 sweeps the cutoff around the `freq` setting. Lockable per step (as `famt`).       |
+| `rise` | 0–127                | Env 2 attack rate.                                                                                                      |
+| `fall` | 0–127                | Env 2 decay/release rate. Lockable per step (as `fdec`).                                                                |
+| `curv` | 0–127                | Linear-to-exponential fall blend (0=linear, 127=expo).                                                                  |
+| `flt`  | 0–63                 | Env 2 → cutoff depth. Lockable per step (as `famt`). FLT and FAMT now write the same patch byte — edits in either place agree. |
 
 For an effectively open / passthrough sound, set `freq` to maximum
 and `reso` to `0`.
 
-The filter envelope itself (rise, fall, curve) is Env 2, edited on
-the Envelopes page.
-
-## Envelopes and LFO (`S3`)
+## Envelopes and LFOs (`S3` / `S4`)
 
 Each voice has **three independent envelopes** with fixed routing,
-and one LFO. Every envelope is parameterised the same way: an
+and **two LFOs**. Every envelope is parameterised the same way: an
 **attack** rate (`rise`), a **decay/release** rate (`fall`), a
 **curve** blend, and a **depth** sent to the envelope's destination.
 
@@ -330,50 +331,56 @@ There is no sustain stage. After the attack completes, each envelope
 falls immediately at its `fall` rate. `curv` blends the fall shape
 from linear (`0`) to exponential (`127`).
 
-| Envelope | Drives                | Lockable per step |
-|----------|-----------------------|-------------------|
-| Env 1    | Output amplitude (VCA)| `fall` (as `adec`)|
-| Env 2    | Filter cutoff         | `fall` (as `fdec`)|
-| Env 3    | Osc 1 base pitch      | `fall` (as `pdec`)|
+| Envelope | Drives                 | Edited on    | Lockable per step  |
+|----------|------------------------|--------------|--------------------|
+| Env 1    | Output amplitude (VCA) | `S3` top row | `fall` (as `adec`) |
+| Env 2    | Filter cutoff          | `S2` bot row | `fall` (as `fdec`) |
+| Env 3    | Osc 1 base pitch       | `S3` bot row | `fall` (as `pdec`) |
 
-The `S3` group has two pages: amp + filter envelopes, then pitch
-envelope + voice LFO. `S4` shares the same group; tapping `S4`
-lands on the pitch + LFO page.
+Tapping `S3` lands on the **Amp + Pitch envelopes** page. Tapping
+`S4` lands on the **Voice LFOs** page (LFO 4 + LFO 5). Either button
++ encoder turn walks within the group.
 
-### Amp + Filter envelopes
+### Amp + Pitch envelopes (`S3`)
 
 ```
 rise   2 | fall  64 | curv  90 | amp  127      ← Env 1 (VCA)
-rise   8 | fall  72 | curv  40 | flt   48      ← Env 2 (Filter)
+rise   0 | fall  20 | curv 100 | pitc  +24     ← Env 3 (Pitch)
 ```
 
 The depth knob doubles as the row label so you can tell which
-envelope you're editing at a glance: `amp` = Env 1, `flt` = Env 2.
+envelope you're editing at a glance: `amp` = Env 1, `pitc` = Env 3.
 
 | Cell   | Range                  | Notes                                                                       |
 |--------|------------------------|-----------------------------------------------------------------------------|
 | `rise` | 0–127                  | Attack rate. Low = snappy; high = slow swell.                               |
 | `fall` | 0–127                  | Decay/release rate. Lockable per step.                                      |
 | `curv` | 0–127                  | Linear-to-exponential blend on the fall stage.                              |
-| `amp` / `flt` | 0–63 (signed for `flt`) | Depth into the envelope's destination. `flt` is the same control as `env2` on the Filter page. |
+| `amp`  | 0–127                  | Env 1 → VCA depth.                                                          |
+| `pitc` | −63..+63               | Env 3 → Osc 1 pitch depth (bipolar, default 0). Same byte as `pamt` on the step locks — edits in either place agree. Range is roughly ±5 octaves at full deflection, plenty for kick-drum pitch drops or upward chirps. |
 
-### Pitch envelope + voice LFO
+### Voice LFOs (`S4`)
+
+Two independent per-voice LFOs, identical layout. Each row is one
+LFO; top row = LFO 4, bottom row = LFO 5.
 
 ```
-rise   0 | fall  20 | curv 100 | pitc  +24     ← Env 3 (Pitch)
-rate  48 | wave tri | dest pit | dept  +32     ← LFO
+rate 1/4 | wave tri | dest prm1| dept  +32     ← LFO 4
+rate  72 | wave 1exp| dest cut | dept  +48     ← LFO 5
 ```
 
 | Cell   | Range            | Notes                                                                   |
 |--------|------------------|-------------------------------------------------------------------------|
-| `rise` | 0–127            | Env 3 attack.                                                           |
-| `fall` | 0–127            | Env 3 decay/release. Lockable per step (as `pdec`).                     |
-| `curv` | 0–127            | Env 3 fall curve blend.                                                 |
-| `pitc` | −63..+63         | Env 3 → Osc 1 pitch depth (bipolar, default 0). Same byte as `pamt` on the voice page / step locks — edits in either place agree. Range is roughly ±5 octaves at full deflection, plenty for kick-drum pitch drops or upward chirps. |
-| `rate` | 0–127            | LFO speed. Free-running — there is no tempo sync in this version.       |
-| `wave` | sine / tri / square / ramp / S&H | LFO waveform.                                          |
-| `dest` | destination list | What the LFO modulates (pitch, cutoff, FM depth, etc.).                 |
-| `dept` | −63..+63         | LFO depth, signed — negative values invert the modulation.              |
+| `rate` | sync `1/96` → `1/1`, then free-run 0–127 | Two-zone. Turning encoder CCW from a free-run rate passes through the slowest free-run setting into the **slowest** sync ratio (`1/1`) and accelerates through sync ratios up to `1/96`. Synced LFOs lock to MIDI clock — at 120 BPM `1/4` = one cycle per beat. |
+| `wave` | `tri sqr s&h ramp 1exp 1lin 1tri` | LFO shape. The three `1xxx` shapes are **one-shots** — fire once per note then hold at zero. Useful as a 4th routable envelope (route to filter cutoff for AD-style bite, etc.). Encoder click on this cell toggles the LFO's `retrigger` flag (transient `rst on/off` overlay). One-shot shapes always retrigger regardless of the flag, since they're envelopes by design. |
+| `dest` | destination list | What the LFO modulates. |
+| `dept` | −63..+63         | LFO depth, signed — negative values invert the modulation. `0` mutes the LFO output (default for LFO 5 on init patches). |
+
+Sync rates lock the LFO to the running MIDI clock. When the
+transport is stopped, a synced LFO holds at its last phase. **Pressing
+Stop a second time** (slow double-tap; the fast double-tap is Panic)
+broadcasts an LFO phase reset to every voice, aligning all synced
+LFOs to song-position-0 deliberately.
 
 ## Per-track settings (`S6`)
 

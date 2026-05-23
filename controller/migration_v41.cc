@@ -120,9 +120,12 @@ uint8_t MigrationV41::LoadAllTracks(uint8_t* checksum) {
     const uint8_t* defs = pat + kV41PatternSize;
     for (uint8_t i = 0; i < 28; ++i) dst->defaults[i] = defs[i];
 
-    // Config: 29 bytes, layout identical.
+    // Config: 29 bytes on disk; layout identical for the first 29 slots.
+    // v0x05 widened kCfgSIZE to 31 (LFO5 dest/amount appended) — zero-fill
+    // the new bytes so LFO5 starts silent.
     const uint8_t* cfg = defs + kV41DefaultsSize;
-    for (uint8_t i = 0; i < kCfgSIZE; ++i) dst->config[i] = cfg[i];
+    for (uint8_t i = 0; i < kV41ConfigSize; ++i) dst->config[i] = cfg[i];
+    for (uint8_t i = kV41ConfigSize; i < kCfgSIZE; ++i) dst->config[i] = 0;
 
     // Second pass: for any step whose v4.1 intrinsic lock bit was clear,
     // overwrite the provisional page-byte value with the track default

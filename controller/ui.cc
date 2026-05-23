@@ -56,19 +56,27 @@ const prog_PageInfo page_registry[] PROGMEM = {
   
   { PAGE_FILTER,
     &ParameterEditor::event_handlers_,
-    { 16, 17, 0xff, 18, 22, 0xff, 0xff, 0xff },
+    // top: cutoff | reso | (gap) | mode
+    // bot: E2 rise | E2 fall | E2 curv | E2 depth (filter env)
+    // NOTE: ids are array indices into parameters[], NOT the `// N`
+    // comment labels — those count past gaps left by removed entries.
+    { 16, 17, 0xff, 18, 28, 64, 65, 66 },
     PAGE_FILTER, 1, 0xf0,
   },
 
   { PAGE_ENV_LFO,
     &ParameterEditor::event_handlers_,
-    { 24, 25, 26, 27, 28, 64, 65, 66 },
+    // top: E1 (amp env) — rise | fall | curv | depth
+    // bot: E3 (pitch env) — rise | fall | curv | depth
+    { 24, 25, 26, 27, 67, 68, 69, 70 },
     PAGE_VOICE_LFO, 2, 0xf0,
   },
 
   { PAGE_VOICE_LFO,
     &ParameterEditor::event_handlers_,
-    { 67, 68, 69, 70, 32, 33, 71, 72 },
+    // top: LFO4 — rate | wave | dest | dept   (click wave = lfo4 retrig toggle)
+    // bot: LFO5 — rate | wave | dest | dept   (click wave = lfo5 retrig toggle)
+    { 32, 33, 71, 72, 73, 74, 75, 76 },
     PAGE_ENV_LFO, 2, 0x0f,
   },
 

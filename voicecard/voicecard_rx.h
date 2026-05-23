@@ -115,11 +115,6 @@ class VoicecardProtocolRx {
       case COMMAND_WRITE_MOD_MATRIX:
         voice.set_modulation_source(arguments_[0], arguments_[1]);
         break;
-      case COMMAND_WRITE_LFO:
-        voice.set_modulation_source(
-            MOD_SRC_LFO_1 + (command_ & 0x0f),
-            arguments_[0]);
-        break;
     }
   }
   
@@ -137,6 +132,12 @@ class VoicecardProtocolRx {
       case COMMAND_RETRIGGER_ENVELOPE + 1:
       case COMMAND_RETRIGGER_ENVELOPE + 2:
         voice.TriggerEnvelope(command_ & 0x0f, ATTACK);
+        break;
+      case COMMAND_LFO_TICK:
+        voice.LfoTick();
+        break;
+      case COMMAND_LFO_RESET:
+        voice.LfoReset();
         break;
       case COMMAND_RESET_ALL_CONTROLLERS:
         voice.ResetAllControllers();
@@ -191,10 +192,8 @@ class VoicecardProtocolRx {
             command_ < COMMAND_WRITE_PATCH_DATA) {
           data_size_ = 3;
         } else if (command_ >= COMMAND_WRITE_PATCH_DATA
-                   && command_ < COMMAND_WRITE_LFO) {
+                   && command_ < COMMAND_RELEASE) {
           data_size_ = 2;
-        } else if ((command_ & 0xf0) == COMMAND_WRITE_LFO) {
-          data_size_ = 1;
         } else {
           DoShortCommand();
           state_ = EXPECTING_COMMAND;

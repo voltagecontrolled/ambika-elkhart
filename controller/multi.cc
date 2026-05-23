@@ -15,6 +15,7 @@
 #include "controller/multi.h"
 #include "controller/sequencer.h"
 #include "controller/storage.h"
+#include "controller/voicecard_tx.h"
 
 namespace ambika {
 
@@ -145,6 +146,9 @@ void Multi::Clock() {
   sequencer.Clock(1);
   if (running_) {
     midi_dispatcher.OnClock();
+    for (uint8_t i = 0; i < kNumVoices; ++i) {
+      voicecard_tx.TickLfo(i);
+    }
   }
 }
 
