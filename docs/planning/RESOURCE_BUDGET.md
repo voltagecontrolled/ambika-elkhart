@@ -18,6 +18,17 @@ after each landed issue and update both this table and the baseline.
 | controller |    60156 B |     5380 B |   3300 B |    796 B |
 | voicecard  |    26750 B |     6018 B |   1062 B |    986 B |
 
+### v4.4 update (2026-05-23, wavefolder + sn16 sine bank)
+
+| Target     | Flash used | Flash free | RAM used | RAM free |
+|------------|-----------:|-----------:|---------:|---------:|
+| controller |    60178 B |     5358 B |   3300 B |    796 B |
+| voicecard  |    26642 B |     6126 B |   1068 B |    980 B |
+
+- **Wavefolder** added a ~200-byte iterative-reflection loop in `Voice::ProcessBlock` plus ~32 B for the parameter row + lock wiring on the controller.
+- **CZ filter-sim removal** dropped 3 render methods + the `wav_res_cz_phase_reset` LUT — ~530 B of voicecard flash reclaimed.
+- **sn16 windowed sine bank** added a single `RenderSin16Bit` (~130 B) — net voicecard reclaim −108 B.
+
 ### v4.4 delta from v4.3 (full LFO 4 + LFO 5 stack)
 
 | Target     |   Δ Flash |  Δ RAM |

@@ -237,8 +237,10 @@ something different in each family:
 - **Filtered noise.** Coloured noise sources. `para` shapes the
   filter.
 - **Period-grit.** A "dirty PWM" with intentional aliasing, the
-  pre-PolyBLEP saw kept for character, and several CZ-style filter-
-  simulation variants. `para` shapes the timbral character of each.
+  pre-PolyBLEP saw kept for character, and `sn16` — a bank of eight
+  windowed sine variants morphed by `para` (full sine, half-rectified,
+  absolute, quarter, alternating, camel, square, log saw). `para`
+  shapes the timbral character of each.
 
 ### Mixer page
 
@@ -303,7 +305,7 @@ the filter cells; the bottom row hosts Env 2 (filter envelope) so it
 sits next to the cutoff it shapes.
 
 ```
-freq  64 | reso  18 | --       | mode  LP
+freq  64 | reso  18 | fold  24 | mode  LP
 rise   8 | fall  72 | curv  40 | flt   48     ← Env 2 (Filter)
 ```
 
@@ -311,6 +313,7 @@ rise   8 | fall  72 | curv  40 | flt   48     ← Env 2 (Filter)
 |--------|----------------------|-------------------------------------------------------------------------------------------------------------------------|
 | `freq` | 0–127                | Cutoff frequency. Lockable per step.                                                                                    |
 | `reso` | 0–63                 | Resonance. High resonance near a strong harmonic produces ringing, near-self-oscillation tones.                         |
+| `fold` | 0–70                 | Pre-filter wavefolder drive. Folds the post-mix signal (Osc 1 + Osc 2 + sub) before the filter. `0` is dry; values above add progressively more folded harmonics. Hold a step button while turning to lock per step. The upper range cap (70) keeps drive below the inharmonic-aliasing zone. |
 | `mode` | LP / BP / HP / Notch | Filter response. **LP** for body and warmth, **HP** for hats and air, **BP** for nasal / metallic character, **Notch** for phaser-like rejection. |
 | `rise` | 0–127                | Env 2 attack rate.                                                                                                      |
 | `fall` | 0–127                | Env 2 decay/release rate. Lockable per step (as `fdec`).                                                                |

@@ -74,11 +74,11 @@ truncated to the 4-char cell width by `Parameter::PrintName`.
 
 | Slot  | Idx | Label  | short_name str         | Name           | Range           | Notes |
 |-------|-----|--------|------------------------|----------------|-----------------|-------|
-| top1  | 0   | `wave` | `str_res_waveform`     | Osc 1 waveform | 0..43 enum      | CZ filter-sim variants 6..14 strip pending |
+| top1  | 0   | `wave` | `str_res_waveform`     | Osc 1 waveform | 0..35 enum      | CZ filter-sim variants stripped in v4.4; slot 6 = `WAVEFORM_SIN_16BIT` (8 windowed sine variants stepped via PARA) |
 | top2  | 1   | `para` | `str_res_parameter`    | Osc 1 parameter| 0..127          | Algorithm-dependent (PWM, formant, FM index, fold depth, …) |
 | top3  | 2   | `rang` | `str_res_range`        | Osc 1 range    | -24..+24 semis  | Coarse pitch offset |
 | top4  | 3   | `tune` | `str_res_tune`         | Osc 1 detune   | -64..+64 cents  | Fine pitch offset |
-| bot1  | 4   | `wave` | `str_res_waveform`     | Osc 2 waveform | 0..43 enum      | |
+| bot1  | 4   | `wave` | `str_res_waveform`     | Osc 2 waveform | 0..35 enum      | |
 | bot2  | 5   | `para` | `str_res_parameter`    | Osc 2 parameter| 0..127          | |
 | bot3  | 6   | `rang` | `str_res_range`        | Osc 2 range    | -24..+24 semis  | |
 | bot4  | 7   | `tune` | `str_res_tune`         | Osc 2 detune   | -64..+64 cents  | |
@@ -100,13 +100,13 @@ truncated to the 4-char cell width by `Parameter::PrintName`.
 
 ## S2 — `PAGE_FILTER` (Group 1)
 
-**Handler:** `ParameterEditor`  ·  **Param indices:** `{16, 17, 0xff, 18, 28, 64, 65, 66}`
+**Handler:** `ParameterEditor`  ·  **Param indices:** `{16, 17, 77, 18, 28, 64, 65, 66}`
 
 | Slot  | Idx  | Label  | short_name str        | Name           | Range   | Notes |
 |-------|------|--------|-----------------------|----------------|---------|-------|
 | top1  | 16   | `freq` | `str_res_frequency`   | Cutoff         | 0..127  | Lockable per-step on S5c |
 | top2  | 17   | `reso` | `str_res_resonance`   | Resonance      | 0..63   | |
-| top3  | —    | —      | —                     | (unused)       | —       | |
+| top3  | 77   | `fold` | `str_res_fold`        | Wavefolder drive | 0..70 | Pre-filter iterative reflection. Lockable via drill-in (no S5 cell). Range capped at 70 to avoid the aliasing zone. |
 | top4  | 18   | `mode` | `str_res_mode`        | Filter mode    | 0..3    | LP / BP / HP / Notch |
 | bot1  | 28   | `rise` | `str_res_rise`        | Env 2 rise     | 0..127  | Filter env attack |
 | bot2  | 64   | `fall` | `str_res_fall`        | Env 2 fall     | 0..127  | (= `fdec` lockable on S5c) |
