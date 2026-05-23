@@ -174,12 +174,8 @@ static inline uint8_t IsWaveCell(uint8_t lockable) {
   return lockable == 1 || lockable == 5;
 }
 
-// Map a 0..127 pot value to a valid osc waveform index, skipping the
-// 9 stripped CZ resonant variants (indices 6..14). Valid set: 0..5, 15..42
-// = 34 entries. Pot maps 0..127 → 0..33, then +9 offset for indices ≥ 6.
 static uint8_t MapWaveform(uint8_t value) {
-  uint8_t idx = ScalePot(value, 33);
-  return (idx <= 5) ? idx : idx + 9;
+  return ScalePot(value, WAVEFORM_LAST - 1);
 }
 
 // Sub-osc waveform cell — 4-char text name from STR_RES_SQU1.
