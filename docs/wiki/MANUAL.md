@@ -104,7 +104,7 @@ except System and Performance mixer.
 | Double-tap `Sn` within 300 ms                 | Clear every lock for step `n`                                                |
 
 While holding a step button, the lower-left LCD character shows a
-fullness gauge for the per-step lock pool (192 entries max). The
+fullness gauge for the per-step lock pool (240 entries max). The
 gauge updates at the moment the step is pressed; release and
 re-press to see the count after adding more locks.
 

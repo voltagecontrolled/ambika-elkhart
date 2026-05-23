@@ -280,63 +280,23 @@ const prog_uint8_t kDefaultMod[42] PROGMEM = {
   0, 0, 0,    // slot 13: cleared
 };
 
-// Read the intrinsic-storage byte for an intrinsic lock_index.
-static inline uint8_t ReadIntrinsic(const SeqStep& step, uint8_t lock_index) {
-  switch (lock_index) {
-    case 0:  return step.note;
-    case 16: return step.prob;
-    case 17: return static_cast<uint8_t>(SsubOf(step.subs));
-    case 18: return ReptOf(step.subs);
-    case 20: return step.vel;
-    case 21: return step.glid;
-    default: return 0;
-  }
-}
-
 uint8_t Sequencer::StepLockedValue(
     uint8_t t, uint8_t s, uint8_t lock_index) const {
-  if (IsIntrinsicLock(lock_index)) {
-    return ReadIntrinsic(tracks_[t].steps[s], lock_index);
-  }
   return lock_pool_.Get(t, s, lock_index, tracks_[t].defaults[lock_index]);
 }
 
 uint8_t Sequencer::StepIsLocked(
     uint8_t t, uint8_t s, uint8_t lock_index) const {
-  if (IsIntrinsicLock(lock_index)) return 1;
   return (lock_pool_.Find(t, s, lock_index) != 0xff) ? 1 : 0;
 }
 
 uint8_t Sequencer::SetStepLock(
     uint8_t t, uint8_t s, uint8_t lock_index, uint8_t value) {
-  SeqStep& step = tracks_[t].steps[s];
-  switch (lock_index) {
-    case 0:  step.note = value;                       return 1;
-    case 16: step.prob = value;                       return 1;
-    case 17: step.subs = SetSsub(step.subs, static_cast<int8_t>(value)); return 1;
-    case 18: step.subs = SetRept(step.subs, value);   return 1;
-    case 20: step.vel  = value;                       return 1;
-    case 21: step.glid = value;                       return 1;
-    default: return lock_pool_.Set(t, s, lock_index, value);
-  }
+  return lock_pool_.Set(t, s, lock_index, value);
 }
 
 void Sequencer::ClearStepLock(
     uint8_t t, uint8_t s, uint8_t lock_index) {
-  if (IsIntrinsicLock(lock_index)) {
-    SeqStep& step = tracks_[t].steps[s];
-    uint8_t def = tracks_[t].defaults[lock_index];
-    switch (lock_index) {
-      case 0:  step.note = def; break;
-      case 16: step.prob = def; break;
-      case 17: step.subs = SetSsub(step.subs, static_cast<int8_t>(def)); break;
-      case 18: step.subs = SetRept(step.subs, def); break;
-      case 20: step.vel  = def; break;
-      case 21: step.glid = def; break;
-    }
-    lock_prob_pool_.Clear(t, s, lock_index);
-    return;
-  }
   lock_pool_.Clear(t, s, lock_index);
   lock_prob_pool_.Clear(t, s, lock_index);
 }
@@ -389,15 +349,6 @@ uint8_t ParamIdToLockIndex(uint8_t param_id, uint8_t /*instance*/) {
 }
 
 void Sequencer::ClearAllStepLocks(uint8_t t, uint8_t s) {
-  SeqStep& step = tracks_[t].steps[s];
-  const uint8_t* def = tracks_[t].defaults;
-  step.note = def[0];
-  step.prob = def[16 + kSPPROB];
-  step.subs = PackSubs(
-      static_cast<int8_t>(def[16 + kSPSSUB]),
-      def[16 + kSPREPT]);
-  step.vel  = def[16 + kSPVEL];
-  step.glid = def[16 + kSPGLID];
   lock_pool_.ClearStep(t, s);
   lock_prob_pool_.ClearStep(t, s);
 }
@@ -418,7 +369,6 @@ void Sequencer::Init() {
   lock_prob_pool_.Init();
   for (uint8_t t = 0; t < kNumVoices; ++t) {
     SeqTrack& tr = tracks_[t];
-    // Populate track defaults first; intrinsic steps then snapshot from them.
     memcpy_P(tr.pattern,       kDefaultPattern,  7);
     memcpy_P(&tr.defaults[0],  kDefaultPage1,    8);
     memcpy_P(&tr.defaults[8],  kDefaultPage2,    8);
@@ -429,13 +379,6 @@ void Sequencer::Init() {
 
     for (uint8_t s = 0; s < kNumStepsPerTrack; ++s) {
       SeqStep& step = tr.steps[s];
-      step.note         = tr.defaults[0];                  // NOTE  (kP1NOTE)
-      step.vel          = tr.defaults[16 + kSPVEL];
-      step.prob         = tr.defaults[16 + kSPPROB];
-      step.subs         = PackSubs(
-          static_cast<int8_t>(tr.defaults[16 + kSPSSUB]),
-          tr.defaults[16 + kSPREPT]);
-      step.glid         = tr.defaults[16 + kSPGLID];
       step.step_flags   = 0;
       step.substep_bits = 0;
     }
@@ -491,7 +434,7 @@ void Sequencer::Clock(uint8_t ticks) {
     // Only active when a step has been fired (kShdwLAST is valid post-reset).
     // Gate on kShdwPROB so substeps follow the main-step probability decision.
     uint8_t cur = tr.shadow[kShdwLAST];
-    int8_t ssub = SsubOf(tr.steps[cur].subs);
+    int8_t ssub = SsubOf(StepLockedValue(t, cur, 17));
     if (tr.shadow[kShdwTICK] < period) {
       if (ssub > 0 && tr.shadow[kShdwPROB] && tr.shadow[kShdwSubs]) {
         // Ratchets: N+1 evenly-spaced fires per period. Slot 0 = main fire.
@@ -524,13 +467,13 @@ void Sequencer::Clock(uint8_t ticks) {
         // REPT: re-fire the last-fired step, no advance.
         // PROB decision is carried from the main fire (kShdwPROB).
         uint8_t last = tr.shadow[kShdwLAST];
-        uint8_t rept_total = ReptOf(tr.steps[last].subs);
+        uint8_t rept_total = ReptOf(StepLockedValue(t, last, 18));
         tr.shadow[kShdwREPT]--;
         uint8_t repeat_idx = rept_total - tr.shadow[kShdwREPT];
         voicecard_tx.Release(t);
         midi_dispatcher.SequencerNoteOff(t);
         if (tr.shadow[kShdwPROB] && (tr.steps[last].step_flags & kStepFlagOn)) {
-          int8_t ssub_l = SsubOf(tr.steps[last].subs);
+          int8_t ssub_l = SsubOf(StepLockedValue(t, last, 17));
           if (ssub_l != -2) {
             FireStep(t, last, repeat_idx);
           } else {
@@ -550,7 +493,7 @@ void Sequencer::Clock(uint8_t ticks) {
         // PROB roll first — gates both fire AND SMOD. Ratchets/repeats
         // downstream inherit this decision via kShdwPROB.
         tr.shadow[kShdwPROB] =
-            ProbRoll(tr.steps[fired].prob, tr.shadow[kShdwLOOP]);
+            ProbRoll(StepLockedValue(t, fired, 16), tr.shadow[kShdwLOOP]);
 
         // SUBS PROB (v4.3, #38): a second gate attached to the SUBS cell.
         // On roll fail the main step still fires (subject to kShdwPROB) but
@@ -620,7 +563,7 @@ void Sequencer::Clock(uint8_t ticks) {
           tr.shadow[kShdwLAST] = fired;
 
           if (fire_now && (tr.steps[fired].step_flags & kStepFlagOn)) {
-            int8_t ssub_f = SsubOf(tr.steps[fired].subs);
+            int8_t ssub_f = SsubOf(StepLockedValue(t, fired, 17));
             // Bit 0 of substep_bits gates the main fire whenever the step is
             // in a substep mode — ratchets (kStepFlagGated) or repeats
             // (SSUB=-2). Only applies when SUBS PROB passes; if SUBS is
@@ -643,7 +586,7 @@ void Sequencer::Clock(uint8_t ticks) {
             // step doesn't re-fire even though the intrinsic REPT field is
             // non-zero.
             uint8_t rept = tr.shadow[kShdwSubs]
-                ? ReptOf(tr.steps[fired].subs) : 0;
+                ? ReptOf(StepLockedValue(t, fired, 18)) : 0;
             tr.shadow[kShdwREPT] = rept;
             if (rept == 0) {
               AdvanceStep(t);
@@ -712,20 +655,18 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   if (SeqMixerPage::skip_mask() & (1 << t)) return;
 
   SeqTrack& tr = tracks_[t];
-  const SeqStep& step = tr.steps[step_index];
 
   // PROB rolled once per main step in Clock(); ratchets/repeats are gated
   // there on tr.shadow[kShdwPROB], so by the time FireStep runs the decision
   // has already been made and we always fire.
 
   // Resolve 20-byte snapshot: page1[8] || page2[8] || page3[4].
-  // Seed with track defaults, overlay intrinsic NOTE, then iterate the
-  // lock pool ONCE and overlay any pool entries matching (t, step_index).
-  // This replaces 19× O(192) scans with a single O(192) sweep.
+  // Seed with track defaults, then iterate the lock pool ONCE and overlay
+  // any pool entries matching (t, step_index). NOTE (li 0) flows through
+  // the same path as every other lock.
   uint8_t snapshot[20];
   for (uint8_t i = 0; i < 16; ++i) snapshot[i]      = tr.defaults[i];
   for (uint8_t i = 0; i <  4; ++i) snapshot[16 + i] = tr.defaults[24 + i];
-  snapshot[kP1NOTE] = step.note;
   {
     uint8_t ts = LockTsPack(t, step_index);
     uint8_t loop = tr.shadow[kShdwLOOP];
@@ -736,7 +677,6 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
       // Per-lock PROB gate (v4.3, #38 slim). If a prob entry exists for
       // this (t, step, param), roll it; on fail, skip the overlay so the
       // snapshot retains the track default for that param this loop.
-      // Intrinsic locks bypass this — they live on SeqStep, not in the pool.
       uint8_t pi = lock_prob_pool_.Find(t, step_index, li);
       if (pi != 0xff) {
         if (!ProbRoll(lock_prob_pool_.entry(pi).prob, loop)) continue;
@@ -765,7 +705,7 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // SSUB=0 case: no substeps to drive the walk, so use the per-track loop
   // counter instead — each pattern wrap advances the chord-tone position.
   uint8_t walk_idx = sub_idx;
-  if (walk_idx == 0 && SsubOf(tr.steps[step_index].subs) == 0 &&
+  if (walk_idx == 0 && SsubOf(StepLockedValue(t, step_index, 17)) == 0 &&
       tr.shadow[kShdwSubs]) {
     walk_idx = tr.shadow[kShdwLOOP];
   }
@@ -847,7 +787,7 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // (v * (VOL+1)) >> 8 so VOL=255 produces true identity; VOL=0 still silent.
   // Per-lock PROB gate (v4.3, #38): on roll fail, revert to track default
   // so per-step VEL only applies probabilistically.
-  uint8_t velocity = tr.steps[step_index].vel;
+  uint8_t velocity = StepLockedValue(t, step_index, 20);
   {
     uint8_t pi = lock_prob_pool_.Find(t, step_index, 20);
     if (pi != 0xff &&
@@ -864,7 +804,7 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // last step's glid for any interleaved MIDI/keyboard notes — acceptable
   // since step playback is the dominant path here.
   // Per-lock PROB gate (v4.3, #38): on roll fail, revert to track default.
-  uint8_t glid = tr.steps[step_index].glid;
+  uint8_t glid = StepLockedValue(t, step_index, 21);
   {
     uint8_t pi = lock_prob_pool_.Find(t, step_index, 21);
     if (pi != 0xff &&

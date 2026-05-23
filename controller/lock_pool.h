@@ -17,7 +17,7 @@
 
 namespace ambika {
 
-static const uint8_t kLockPoolCapacity = 192;
+static const uint8_t kLockPoolCapacity = 240;
 static const uint8_t kLockPoolFree     = 0xff;  // param_id sentinel = empty slot
 
 struct LockEntry {

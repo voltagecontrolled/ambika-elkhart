@@ -296,10 +296,13 @@ uint8_t SeqStepsPage::OnClick() {
     for (uint8_t s = 0; s < 8; ++s) {
       if (ui.switch_held(s)) {
         substep_step_ = 7 - s;
-        SeqTrack* tr = sequencer.mutable_track(ui.state().active_part);
+        uint8_t track = ui.state().active_part;
+        SeqTrack* tr = sequencer.mutable_track(track);
         SeqStep& step = tr->steps[substep_step_];
-        uint8_t rept_v = ReptOf(step.subs);
-        int8_t  ssub_v = SsubOf(step.subs);
+        uint8_t rept_v = ReptOf(
+            sequencer.StepLockedValue(track, substep_step_, 18));
+        int8_t  ssub_v = SsubOf(
+            sequencer.StepLockedValue(track, substep_step_, 17));
         if (ssub_v == 0 && rept_v == 0) {
           // No ratchets, no repeats. v4.3 #36: still allow entry so MINT/
           // MOCT/MDIR (chord walk per loop wrap) can be configured. Single
@@ -312,7 +315,8 @@ uint8_t SeqStepsPage::OnClick() {
           step.step_flags |= kStepFlagGated;
         } else {
           // Repeats (SSUB=0+REPT, or already SSUB=-2): enter gated-repeat mode.
-          step.subs = SetSsub(step.subs, -2);
+          sequencer.SetStepLock(track, substep_step_, 17,
+                                static_cast<uint8_t>(static_cast<int8_t>(-2)));
           substep_count_ = (rept_v > 0) ? rept_v + 1 : 8;
           step.step_flags &= ~kStepFlagGated;
         }
@@ -467,7 +471,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
           if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
         }
         substep_count_ = cnt;
-        step.subs = PackSubs(-2, rept_v);
+        sequencer.SetStepLock(track, substep_step_, 17,
+                              static_cast<uint8_t>(static_cast<int8_t>(-2)));
+        sequencer.SetStepLock(track, substep_step_, 18, rept_v);
         step.step_flags &= ~kStepFlagGated;
       } else if (value > 71) {
         uint8_t r = (value - 72) / 8 + 1;
@@ -479,14 +485,16 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
           if (cnt < 8) step.substep_bits &= static_cast<uint8_t>((1 << cnt) - 1);
         }
         substep_count_ = cnt;
-        step.subs = PackSubs(static_cast<int8_t>(r), 0);
+        sequencer.SetStepLock(track, substep_step_, 17, static_cast<uint8_t>(r));
+        sequencer.SetStepLock(track, substep_step_, 18, 0);
         step.step_flags |= kStepFlagGated;
       } else {
         // Deadzone — SSUB=0, REPT=0 (no ratchets, no repeats; chord walk in
         // #36 mode advances per pattern loop wrap when this state is in effect).
         substep_count_ = 1;
         step.substep_bits |= 0x01;
-        step.subs = PackSubs(0, 0);
+        sequencer.SetStepLock(track, substep_step_, 17, 0);
+        sequencer.SetStepLock(track, substep_step_, 18, 0);
         step.step_flags &= ~kStepFlagGated;
       }
       return 1;
@@ -617,8 +625,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     // Pot is a no-op when no step is held.
     if (held_sr != 0xff) {
       uint8_t held_step = 7 - held_sr;
-      SeqStep& step = tr->steps[held_step];
-      step.subs = PackSubs(ssub_v, rept_v);
+      sequencer.SetStepLock(track, held_step, 17,
+                            static_cast<uint8_t>(ssub_v));
+      sequencer.SetStepLock(track, held_step, 18, rept_v);
       step_lock_dirty_ |= (1 << held_step);
       ui.inhibit_switch(1 << held_sr);
     }
@@ -706,22 +715,9 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     ui.inhibit_switch(1 << held_sr);
   } else {
     tr->defaults[lockable] = mapped;
-    // Intrinsic defaults broadcast to every step so unlocked steps update
-    // immediately (in v4.2 intrinsic fields are always per-step and don't
-    // re-read defaults at fire time).
-    if (IsIntrinsicLock(lockable)) {
-      for (uint8_t s = 0; s < 8; ++s) {
-        SeqStep& st = tr->steps[s];
-        switch (lockable) {
-          case 0:  st.note = mapped; break;
-          case 16: st.prob = mapped; break;
-          case 17: st.subs = SetSsub(st.subs, static_cast<int8_t>(mapped)); break;
-          case 18: st.subs = SetRept(st.subs, mapped); break;
-          case 20: st.vel  = mapped; break;
-          case 21: st.glid = mapped; break;
-        }
-      }
-    }
+    // v4.4: every lockable resolves at fire time as (pool entry or default).
+    // Unlocked steps follow the new default automatically; locked steps stay
+    // pinned to their pool value — closes issue #45.
     // Page3 lockables also push live to the voicecard so filter/wave respond
     // immediately when adjusting the default (same as config-mapped cells did).
     if (lockable >= 24 && lockable <= 27) {
@@ -861,7 +857,6 @@ void SeqStepsPage::UpdateScreen() {
   const SeqTrack& tr = sequencer.track(track);
 
   if (editing_substeps_) {
-    const SeqStep& step = tr.steps[substep_step_];
     char* line0 = display.line_buffer(0);
     char* line1 = display.line_buffer(1);
     for (uint8_t i = 0; i < kLcdWidth; ++i) { line0[i] = ' '; line1[i] = ' '; }
@@ -873,8 +868,10 @@ void SeqStepsPage::UpdateScreen() {
     // Line 1: prob (SUBS PROB) / / / .
     memcpy_P(&line0[1], PSTR("subs"), 4);
     {
-      int8_t  ssub_s = SsubOf(step.subs);
-      uint8_t rept_s = ReptOf(step.subs);
+      int8_t  ssub_s = SsubOf(
+          sequencer.StepLockedValue(track, substep_step_, 17));
+      uint8_t rept_s = ReptOf(
+          sequencer.StepLockedValue(track, substep_step_, 18));
       char* b = &line0[6];
       // Display total fires (storage + 1): main step plus N ratchets/repeats.
       // Storage N=1 → "2"; N=7 → "8". SSUB=0,REPT=0 = "1x" (just main).
@@ -1044,9 +1041,10 @@ void SeqStepsPage::UpdateScreen() {
         buffer[6] = '-'; buffer[7] = '-'; buffer[8] = '-'; buffer[9] = '-';
         continue;
       }
-      const SeqStep& s = tr.steps[held_step];
-      int8_t  ssub_v = SsubOf(s.subs);
-      uint8_t rept_v = ReptOf(s.subs);
+      int8_t  ssub_v = SsubOf(
+          sequencer.StepLockedValue(track, held_step, 17));
+      uint8_t rept_v = ReptOf(
+          sequencer.StepLockedValue(track, held_step, 18));
       buffer[6] = ' ';
       buffer[7] = ' ';
       buffer[8] = ' ';

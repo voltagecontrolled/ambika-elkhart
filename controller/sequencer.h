@@ -1,9 +1,10 @@
 // Copyright 2011 Emilie Gillet.
 //
 // v4.2 (issue #30): sparse lock-pool storage.
-// SeqStep shrinks to 7 B intrinsic fields; lockable params not in the
-// intrinsic set live in the global LockPool keyed by (track, step,
-// lock_index).
+// v4.4 (issue #45): SeqStep loses its intrinsic-byte cache. All 28 lockables
+// — including NOTE / PROB / SSUB / REPT / VEL / GLID — live in the global
+// LockPool keyed by (track, step, lock_index). SeqStep keeps only the
+// step_flags + substep_bits trigger state.
 
 #ifndef CONTROLLER_SEQUENCER_H_
 #define CONTROLLER_SEQUENCER_H_
@@ -104,53 +105,23 @@ uint8_t ProbEncodePot(uint8_t pot);
 // entry byte ((neg << 7) | (X << 4) | N). Returns 0 for out-of-range slot.
 uint8_t ProbCyclePhaseEntry(uint8_t slot);
 
-// SeqStep — 7 bytes (v4.2). Holds intrinsic per-step fields only.
-// Non-intrinsic locks live in the global LockPool keyed by (track, step,
-// lock_index).
-//
-// Intrinsic lock indices (always allocated, no pool entry needed):
-//   0  NOTE   → step.note
-//   16 PROB   → step.prob
-//   17 SSUB   → SsubOf(step.subs)   — packed in low nibble (signed, -2..+8 stored as +0..+10)
-//   18 REPT   → ReptOf(step.subs)   — packed in high nibble (0..15)
-//   20 VEL    → step.vel
-//   21 GLID   → step.glid
+// SeqStep — 2 bytes (v4.4). Holds only trigger-gate state. All 28 lockable
+// parameters (including NOTE / PROB / SSUB / REPT / VEL / GLID) resolve at
+// fire time from tr.defaults[li] plus any LockPool entry keyed by
+// (track, step, li).
 struct SeqStep {
-  uint8_t note;
-  uint8_t vel;
-  uint8_t prob;
-  uint8_t subs;           // packed SSUB(low nibble + 2) | REPT(high nibble)
-  uint8_t glid;
   uint8_t step_flags;     // bit 0=on, bit 1=gated, bits 2..5=SMOD nibble
   uint8_t substep_bits;   // 8-bit sub-step bitfield (SSUB = -1 or -2)
 };
 
-// SUBS packing — SSUB is signed -2..+8, REPT is 0..15.
-inline int8_t SsubOf(uint8_t subs) {
-  return static_cast<int8_t>(subs & 0x0f) - 2;
+// SSUB lock byte (lock_index 17) holds the signed -2..+8 value bit-cast to
+// uint8_t; REPT lock byte (lock_index 18) holds 0..15 directly. The track
+// default in tr.defaults[16 + kSPSSUB] uses the same int8-cast encoding.
+inline int8_t SsubOf(uint8_t b) {
+  return static_cast<int8_t>(b);
 }
-inline uint8_t ReptOf(uint8_t subs) {
-  return (subs >> 4) & 0x0f;
-}
-inline uint8_t PackSubs(int8_t ssub, uint8_t rept) {
-  uint8_t lo = static_cast<uint8_t>((ssub + 2) & 0x0f);
-  return lo | ((rept & 0x0f) << 4);
-}
-inline uint8_t SetSsub(uint8_t subs, int8_t ssub) {
-  return (subs & 0xf0) | static_cast<uint8_t>((ssub + 2) & 0x0f);
-}
-inline uint8_t SetRept(uint8_t subs, uint8_t rept) {
-  return (subs & 0x0f) | ((rept & 0x0f) << 4);
-}
-
-// Intrinsic-lock predicate. Returns 1 if lock_index has dedicated storage in
-// SeqStep; returns 0 if it lives in the LockPool.
-inline uint8_t IsIntrinsicLock(uint8_t lock_index) {
-  // bits 0, 16, 17, 18, 20, 21 — see SeqStep doc above.
-  // 0x00370001 = (1<<0)|(1<<16)|(1<<17)|(1<<18)|(1<<20)|(1<<21)
-  return (lock_index < 32)
-      ? static_cast<uint8_t>((0x00370001UL >> lock_index) & 1UL)
-      : 0;
+inline uint8_t ReptOf(uint8_t b) {
+  return b & 0x0f;
 }
 
 inline uint8_t StepSmod(const SeqStep& s) {
