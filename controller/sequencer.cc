@@ -381,6 +381,9 @@ static const uint8_t kParamLockMapSize =
     sizeof(kParamLockMap) / sizeof(kParamLockMap[0]);
 
 uint8_t ParamIdToLockIndex(uint8_t param_id, uint8_t /*instance*/) {
+  // FOLD lives at parameters[] array index 77 (last entry), past the
+  // contiguous map. Reclaim the page2 reserved slot (lock_index 13).
+  if (param_id == 77) return 13;
   if (param_id >= kParamLockMapSize) return 0xff;
   return pgm_read_byte(&kParamLockMap[param_id]);
 }

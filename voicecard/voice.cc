@@ -335,6 +335,8 @@ inline void Voice::LoadSources() {
   dst_[MOD_DST_MIX_CRUSH] = patch_.mix_crush << 8;
   dst_[MOD_DST_MIX_NOISE] = patch_.mix_noise << 8;
   dst_[MOD_DST_MIX_SUB_OSC] = patch_.mix_sub_osc << 8;
+  // mix_fold range 0..127 → shift by 7 to fit 14-bit destination bus.
+  dst_[MOD_DST_MIX_FOLD] = patch_.mix_fold << 7;
 
   uint16_t cutoff = U8U8Mul(patch_.filter[0].cutoff, 128);
   dst_[MOD_DST_FILTER_CUTOFF] = S16ClipU14(cutoff + pitch_value_ - 8192);
@@ -630,6 +632,36 @@ void Voice::ProcessBlock() {
   } else {
     sub_gain <<= 1;
     transient_generator.Render(patch_.mix_sub_osc_shape, buffer_, sub_gain);
+  }
+
+  // Pre-filter wavefolder. True iterative reflection with Q4 fractional
+  // drive for smooth response across the full FOLD knob range. Effective
+  // gain = 1 + fold_q/16, so 254 distinct drive values from 1.0625x up to
+  // ~16.875x at max FOLD. Skip entirely when FOLD is off (common case).
+  // Note: no anti-aliasing — high-drive zones (FOLD > ~100) will alias.
+  uint16_t fold_q = U14ShiftRight6(dst_[MOD_DST_MIX_FOLD]);
+  // Clamp to the musical range (mix_fold capped at 70 → fold_q ≤ 140).
+  // Modulation can push dst_ past the base limit; this prevents mods from
+  // entering the inharmonic-aliasing noise zone above ~140.
+  if (fold_q > 140) fold_q = 140;
+  if (fold_q) {
+    for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
+      int16_t s = static_cast<int16_t>(buffer_[i]) - 128;
+      s += (s * static_cast<int16_t>(fold_q)) >> 4;
+      // Bounded iterative reflection. At max gain ~17x, |s| can reach ~2200,
+      // needing ~9 folds to settle. Cap at 16 iterations; samples in range
+      // exit early on the break.
+      for (uint8_t k = 0; k < 16; ++k) {
+        if (s > 127) {
+          s = 254 - s;
+        } else if (s < -128) {
+          s = -256 - s;
+        } else {
+          break;
+        }
+      }
+      buffer_[i] = static_cast<uint8_t>(s + 128);
+    }
   }
 
   uint8_t noise = Random::state_msb();

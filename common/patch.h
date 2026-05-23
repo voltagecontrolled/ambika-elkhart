@@ -67,15 +67,12 @@ enum OscillatorAlgorithm {
   WAVEFORM_TRIANGLE,
   WAVEFORM_SINE,
   WAVEFORM_CZ_SAW,
-  WAVEFORM_CZ_SAW_LP,
-  WAVEFORM_CZ_SAW_PK,
-  WAVEFORM_CZ_SAW_BP,
-  WAVEFORM_CZ_SAW_HP,
-  WAVEFORM_CZ_PLS_LP,
-  WAVEFORM_CZ_PLS_PK,
-  WAVEFORM_CZ_PLS_BP,
-  WAVEFORM_CZ_PLS_HP,
-  WAVEFORM_CZ_TRI_LP,
+  // Single waveform with 8 windowed-sine variants morphed by PARA.
+  // Replaces the 9 CZ filter-sim shapes (CZ_SAW_LP..CZ_TRI_LP) that
+  // previously occupied slots 6..14. Old patches that referenced those
+  // slots will now load as WAVEFORM_SIN_16BIT (slot 6) or whatever new
+  // shape lands at the shifted enum positions 7..14.
+  WAVEFORM_SIN_16BIT,
   WAVEFORM_QUAD_SAW_PAD,
   WAVEFORM_FM,
   WAVEFORM_8BITLAND,
@@ -240,6 +237,8 @@ enum ModulationDestination {
   
   MOD_DST_VCA,
 
+  MOD_DST_MIX_FOLD,
+
   MOD_DST_LAST
 };
 
@@ -306,7 +305,9 @@ struct Patch {
   uint8_t voice_lfo_2_shape;
   uint8_t voice_lfo_2_rate;
   uint8_t lfo5_retrigger;
-  uint8_t padding[1];
+  // Pre-filter wavefolder drive. Sits here (offset 111) rather than next to
+  // mix_fuzz/mix_crush to preserve Patch size for SD-card compatibility.
+  uint8_t mix_fold;
 };
 
 typedef Patch PROGMEM prog_Patch;
@@ -365,7 +366,8 @@ enum PatchParameter {
   PRM_PATCH_LFO4_RETRIGGER,
   PRM_PATCH_VOICE_LFO_2_SHAPE,
   PRM_PATCH_VOICE_LFO_2_RATE,
-  PRM_PATCH_LFO5_RETRIGGER
+  PRM_PATCH_LFO5_RETRIGGER,
+  PRM_PATCH_MIX_FOLD
 };
 
 }  // namespace ambika

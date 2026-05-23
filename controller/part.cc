@@ -90,6 +90,7 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     case 108: return &tr.config[kCfgL5SH];        // LFO5 shape
     case 109: return &tr.config[kCfgL5FR];        // LFO5 rate
     case 110: return &tr.config[kCfgL5RT];        // LFO5 retrigger
+    case 111: return &tr.defaults[8 + kP2FOLD];   // pre-filter wavefolder (lockable)
     // EG depth (virtual; indexed by active_env_lfo; 200=Amp/E1, 201=Filt/E2, 202=Pitch/E3)
     case 200: return &tr.config[kCfgE1DEPT];
     case 201: return &tr.config[kCfgE2DEPT];

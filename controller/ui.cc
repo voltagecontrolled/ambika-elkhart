@@ -56,11 +56,11 @@ const prog_PageInfo page_registry[] PROGMEM = {
   
   { PAGE_FILTER,
     &ParameterEditor::event_handlers_,
-    // top: cutoff | reso | (gap) | mode
+    // top: cutoff | reso | fold | mode
     // bot: E2 rise | E2 fall | E2 curv | E2 depth (filter env)
     // NOTE: ids are array indices into parameters[], NOT the `// N`
     // comment labels — those count past gaps left by removed entries.
-    { 16, 17, 0xff, 18, 28, 64, 65, 66 },
+    { 16, 17, 77, 18, 28, 64, 65, 66 },
     PAGE_FILTER, 1, 0xf0,
   },
 

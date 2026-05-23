@@ -911,6 +911,16 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     UNIT_INT8, -63, 63,
     1, 0, 0xff, 0xff,
     STR_RES_DEPT, STR_RES_DEPTH, STR_RES_VOICE_LFO },
+
+  // 88 — Pre-filter wavefolder drive (addr 111). Capped at 70 — values
+  // above introduce inharmonic aliasing noise that's never musical.
+  // voice.cc also clamps fold_q to keep modulation from pushing into
+  // the noise zone.
+  { PARAMETER_LEVEL_PATCH,
+    PRM_PATCH_MIX_FOLD,
+    UNIT_UINT8, 0, 70,
+    1, 0, 0xff, 14,
+    STR_RES_FOLD, STR_RES__FOLD, STR_RES_FILTER_1 },
 };
 
 /* static */

@@ -34,6 +34,7 @@ static const uint8_t kP2TUN2  = 1;   // OSC2 coarse pitch (patch addr 6, int8)
 static const uint8_t kP2E2DEC = 2;
 static const uint8_t kP2FIN2  = 3;   // OSC2 detune       (patch addr 7, int8)
 static const uint8_t kP2E3DEC = 4;
+static const uint8_t kP2FOLD  = 5;   // pre-filter wavefolder (patch addr 111)
 static const uint8_t kP2NOIS  = 6;
 static const uint8_t kP2SUB   = 7;
 
