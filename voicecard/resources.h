@@ -47,7 +47,6 @@ extern const prog_uint16_t lut_res_env_portamento_increments[] PROGMEM;
 extern const prog_uint16_t lut_res_oscillator_increments[] PROGMEM;
 extern const prog_uint16_t lut_res_fm_frequency_ratios[] PROGMEM;
 extern const prog_uint16_t lut_res_vca_linearization[] PROGMEM;
-extern const prog_uint16_t lut_res_cz_phase_reset[] PROGMEM;
 extern const prog_uint8_t wav_res_formant_sine[] PROGMEM;
 extern const prog_uint8_t wav_res_formant_square[] PROGMEM;
 extern const prog_uint8_t wav_res_sine[] PROGMEM;
@@ -59,6 +58,7 @@ extern const prog_uint8_t wav_res_bandlimited_saw_4[] PROGMEM;
 extern const prog_uint8_t wav_res_bandlimited_saw_5[] PROGMEM;
 extern const prog_uint8_t wav_res_vowel_data[] PROGMEM;
 extern const prog_uint8_t wav_res_distortion[] PROGMEM;
+extern const prog_uint8_t wav_res_fold[] PROGMEM;
 extern const prog_uint8_t wav_res_lfo_waveforms[] PROGMEM;
 extern const prog_uint8_t wav_res_env_expo[] PROGMEM;
 extern const prog_uint8_t wav_res_division_table[] PROGMEM;
@@ -76,8 +76,6 @@ extern const prog_uint8_t wav_res_wavetables[] PROGMEM;
 #define LUT_RES_FM_FREQUENCY_RATIOS_SIZE 25
 #define LUT_RES_VCA_LINEARIZATION 4
 #define LUT_RES_VCA_LINEARIZATION_SIZE 256
-#define LUT_RES_CZ_PHASE_RESET 5
-#define LUT_RES_CZ_PHASE_RESET_SIZE 4
 #define WAV_RES_FORMANT_SINE 0
 #define WAV_RES_FORMANT_SINE_SIZE 256
 #define WAV_RES_FORMANT_SQUARE 1
@@ -102,17 +100,19 @@ extern const prog_uint8_t wav_res_wavetables[] PROGMEM;
 #define WAV_RES_VOWEL_DATA_SIZE 63
 #define WAV_RES_DISTORTION 11
 #define WAV_RES_DISTORTION_SIZE 256
-#define WAV_RES_LFO_WAVEFORMS 12
+#define WAV_RES_FOLD 12
+#define WAV_RES_FOLD_SIZE 256
+#define WAV_RES_LFO_WAVEFORMS 13
 #define WAV_RES_LFO_WAVEFORMS_SIZE 2
-#define WAV_RES_ENV_EXPO 13
+#define WAV_RES_ENV_EXPO 14
 #define WAV_RES_ENV_EXPO_SIZE 257
-#define WAV_RES_DIVISION_TABLE 14
+#define WAV_RES_DIVISION_TABLE 15
 #define WAV_RES_DIVISION_TABLE_SIZE 128
-#define WAV_RES_BLEP_TABLE 15
+#define WAV_RES_BLEP_TABLE 16
 #define WAV_RES_BLEP_TABLE_SIZE 128
-#define WAV_RES_WAVES 16
+#define WAV_RES_WAVES 17
 #define WAV_RES_WAVES_SIZE 10320
-#define WAV_RES_WAVETABLES 17
+#define WAV_RES_WAVETABLES 18
 #define WAV_RES_WAVETABLES_SIZE 288
 typedef avrlib::ResourcesManager<
     ResourceId,

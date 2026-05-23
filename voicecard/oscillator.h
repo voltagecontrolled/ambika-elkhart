@@ -157,9 +157,7 @@ class Oscillator {
   void RenderSilence(uint8_t* buffer);
   void RenderSimpleWavetable(uint8_t* buffer);
   void RenderCzSaw(uint8_t* buffer);
-  void RenderCzResoSaw(uint8_t* buffer);
-  void RenderCzResoPulse(uint8_t* buffer);
-  void RenderCzResoTri(uint8_t* buffer);
+  void RenderSin16Bit(uint8_t* buffer);
   void RenderFm(uint8_t* buffer);
   void Render8BitLand(uint8_t* buffer);
   void RenderVowel(uint8_t* buffer);

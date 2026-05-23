@@ -164,6 +164,30 @@ waveforms.append(('distortion', Scale(fuzz, dither=0)))
 
 
 """----------------------------------------------------------------------------
+Wavefolder transfer curve (pre-baked iterative reflection)
+-----------------------------------------------------------------------------"""
+
+# Iterative wavefolder: drive the signal beyond +/-1, then reflect any
+# excursions back into range. Repeat until in-range. Drive=8 gives ~8
+# visible folds across the input range - aggressive Buchla/Lockhart
+# wavefolder character.
+fold = signal_range * 8.0
+for _ in range(8):
+  fold = numpy.where(fold >  1.0,  2.0 - fold, fold)
+  fold = numpy.where(fold < -1.0, -2.0 - fold, fold)
+
+# Gain compensation: normalize folded RMS to match input RMS. Keeps
+# perceived loudness roughly constant as users sweep fold drive (no
+# amplitude collapse like a single-threshold clamp would produce).
+input_rms = numpy.sqrt(numpy.mean(signal_range ** 2))
+fold_rms  = numpy.sqrt(numpy.mean(fold ** 2))
+fold = fold * (input_rms / fold_rms)
+fold = numpy.clip(fold * 128.0 + 128.0, 0, 255)
+
+waveforms.append(('fold', Scale(fold, dither=0)))
+
+
+"""----------------------------------------------------------------------------
 Dummy LFO waveshape table (not used, can be empty)
 -----------------------------------------------------------------------------"""
 

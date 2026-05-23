@@ -103,15 +103,7 @@ square
 triangle
 sine
 zsaw
-lpzsaw
-pkzsaw
-bpzsaw
-hpzsaw
-lpzpulse
-pkzpulse
-bpzpulse
-hpzpulse
-ztriangle
+sn16
 pad
 fm
 8bits
@@ -235,6 +227,7 @@ deca
 rele
 lfo4
 vca
+fold
 
 env 1
 env 2
@@ -285,6 +278,7 @@ decay
 release
 lfo 4
 vca
+fold
 
 
 lp

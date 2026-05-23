@@ -105,15 +105,7 @@ static const prog_char str_res_square[] PROGMEM = "square";
 static const prog_char str_res_triangle[] PROGMEM = "triangle";
 static const prog_char str_res_sine[] PROGMEM = "sine";
 static const prog_char str_res_zsaw[] PROGMEM = "zsaw";
-static const prog_char str_res_lpzsaw[] PROGMEM = "lpzsaw";
-static const prog_char str_res_pkzsaw[] PROGMEM = "pkzsaw";
-static const prog_char str_res_bpzsaw[] PROGMEM = "bpzsaw";
-static const prog_char str_res_hpzsaw[] PROGMEM = "hpzsaw";
-static const prog_char str_res_lpzpulse[] PROGMEM = "lpzpulse";
-static const prog_char str_res_pkzpulse[] PROGMEM = "pkzpulse";
-static const prog_char str_res_bpzpulse[] PROGMEM = "bpzpulse";
-static const prog_char str_res_hpzpulse[] PROGMEM = "hpzpulse";
-static const prog_char str_res_ztriangle[] PROGMEM = "ztriangle";
+static const prog_char str_res_sn16[] PROGMEM = "sn16";
 static const prog_char str_res_pad[] PROGMEM = "pad";
 static const prog_char str_res_fm[] PROGMEM = "fm";
 static const prog_char str_res_8bits[] PROGMEM = "8bits";
@@ -478,15 +470,7 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_triangle,
   str_res_sine,
   str_res_zsaw,
-  str_res_lpzsaw,
-  str_res_pkzsaw,
-  str_res_bpzsaw,
-  str_res_hpzsaw,
-  str_res_lpzpulse,
-  str_res_pkzpulse,
-  str_res_bpzpulse,
-  str_res_hpzpulse,
-  str_res_ztriangle,
+  str_res_sn16,
   str_res_pad,
   str_res_fm,
   str_res_8bits,
@@ -605,6 +589,7 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_rele,
   str_res_lfo4,
   str_res_vca,
+  str_res_fold,
   str_res_env_1,
   str_res_env_2,
   str_res_env_3,
@@ -653,6 +638,7 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_release,
   str_res_lfo_4,
   str_res_vca,
+  str_res_fold,
   str_res_lp,
   str_res_bp,
   str_res_hp,

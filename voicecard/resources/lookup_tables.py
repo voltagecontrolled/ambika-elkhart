@@ -151,7 +151,3 @@ vca_gain = 10 ** (-1.5 * v_dac)
 lookup_tables.append(
     ('vca_linearization', vca_linearization_table.astype(int))
 )
-
-lookup_tables.append(
-    ('cz_phase_reset', [0, 32768, 16384, 32768])
-)

@@ -133,84 +133,63 @@ void Oscillator::RenderCzSaw(uint8_t* buffer) {
   END_SAMPLE_LOOP
 }
 
-void Oscillator::RenderCzResoSaw(uint8_t* buffer) {
-  uint16_t increment = phase_increment_.integral + (
-      (phase_increment_.integral * uint32_t(parameter_)) >> 2);
-  uint8_t type = shape_ - WAVEFORM_CZ_SAW_LP;
-  uint16_t phase_2 = data_.secondary_phase;
+// Windowed/shaped sine bank. PARA selects one of 8 variants:
+//   0 = full sine
+//   1 = half-wave rectified (positive half only, silence on negative)
+//   2 = absolute / full-wave rectified
+//   3 = quarter sine (rising quarter then silence)
+//   4 = alternating sine (positive half at 2x speed, silence)
+//   5 = camel sine (two abs-sine bumps per cycle)
+//   6 = square (sign of sine)
+//   7 = log saw (crude approximation via half-period sine ramp)
+// Stepped select (PARA >> 4). Crossfading adjacent shapes was tried but
+// compounded the wavetable aliasing — discontinuities from two shapes
+// summed produced pitch-sensitive beating on high notes. Stepped is the
+// cleaner-sounding option on this non-bandlimited bank.
+void Oscillator::RenderSin16Bit(uint8_t* buffer) {
+  uint8_t shape = parameter_ >> 4;
   BEGIN_SAMPLE_LOOP
     UPDATE_PHASE
-    if (phase.carry) {
-      phase_2 = ResourcesManager::Lookup<uint16_t, uint8_t>(
-          lut_res_cz_phase_reset, type & 0x03);
+    uint16_t p = phase.integral;
+    uint8_t sample;
+    switch (shape) {
+      case 0:
+        sample = ReadSample(wav_res_sine, p);
+        break;
+      case 1:
+        sample = (p < 0x8000) ? ReadSample(wav_res_sine, p) : 128;
+        break;
+      case 2:
+        sample = (p < 0x8000)
+            ? ReadSample(wav_res_sine, p)
+            : ReadSample(wav_res_sine, p - 0x8000);
+        break;
+      case 3:
+        sample = (p < 0x4000) ? ReadSample(wav_res_sine, p) : 128;
+        break;
+      case 4:
+        sample = (p < 0x8000) ? ReadSample(wav_res_sine, p << 1) : 128;
+        break;
+      case 5:
+        if (p < 0x4000) {
+          sample = ReadSample(wav_res_sine, p << 2);
+        } else if (p < 0x8000) {
+          sample = 128;
+        } else if (p < 0xC000) {
+          sample = ReadSample(wav_res_sine, (p - 0x8000) << 2);
+        } else {
+          sample = 128;
+        }
+        break;
+      case 6:
+        sample = (p < 0x8000) ? 255 : 0;
+        break;
+      default:  // 7
+        sample = ReadSample(wav_res_sine, p >> 1);
+        break;
     }
-    phase_2 += increment;
-    uint8_t carrier = ReadSample(wav_res_sine, phase_2);
-    uint8_t window = ~(phase.integral >> 8);
-    if (type & 2) {
-      *buffer++ = S8U8MulShift8(carrier + 128, window) + 128;
-    } else {
-      *buffer++ = U8U8MulShift8(carrier, window);
-    }
+    *buffer++ = sample;
   END_SAMPLE_LOOP
-  data_.secondary_phase = phase_2;  
-}
-
-void Oscillator::RenderCzResoPulse(uint8_t* buffer) {
-  uint16_t increment = phase_increment_.integral + (
-      (phase_increment_.integral * uint32_t(parameter_)) >> 2);
-  uint8_t type = shape_ - WAVEFORM_CZ_SAW_LP;
-  uint16_t phase_2 = data_.secondary_phase;
-  BEGIN_SAMPLE_LOOP
-    UPDATE_PHASE
-    if (phase.carry) {
-      phase_2 = ResourcesManager::Lookup<uint16_t, uint8_t>(
-          lut_res_cz_phase_reset, type & 0x03);
-    }
-    phase_2 += increment;
-    uint8_t carrier = ReadSample(wav_res_sine, phase_2);
-    uint8_t window = 0;
-    if (phase.integral < 0x4000) {
-      window = 255;
-    } else if (phase.integral < 0x8000) {
-      window = ~(phase.integral - 0x4000) >> 6;
-    }
-    if (type == 5) {
-      carrier >>= 1;
-      carrier += 128;
-    }
-    if (type & 2) {
-      *buffer++ = S8U8MulShift8(carrier + 128, window) + 128;
-    } else {
-      *buffer++ = U8U8MulShift8(carrier, window);
-    }
-  END_SAMPLE_LOOP
-  data_.secondary_phase = phase_2;  
-}
-
-void Oscillator::RenderCzResoTri(uint8_t* buffer) {
-  uint16_t increment = phase_increment_.integral + (
-      (phase_increment_.integral * uint32_t(parameter_)) >> 2);
-  uint8_t type = shape_ - WAVEFORM_CZ_SAW_LP; //BER:TODO: Explore these latent oscillator variations left out by Emilie
-  uint16_t phase_2 = data_.secondary_phase;
-  BEGIN_SAMPLE_LOOP
-    UPDATE_PHASE
-    if (phase.carry) {
-      phase_2 = ResourcesManager::Lookup<uint16_t, uint8_t>(
-          lut_res_cz_phase_reset, type & 0x03);
-    }
-    phase_2 += increment;
-    uint8_t carrier = ReadSample(wav_res_sine, phase_2);
-    uint8_t window = (phase.integral & 0x8000) ?
-          ~static_cast<uint8_t>(phase.integral >> 7) :
-          phase.integral >> 7;
-    if (type & 2) {
-      *buffer++ = S8U8MulShift8(carrier + 128, window) + 128;
-    } else {
-      *buffer++ = U8U8MulShift8(carrier, window);
-    }
-  END_SAMPLE_LOOP
-  data_.secondary_phase = phase_2;  
 }
 
 // ------- FM ----------------------------------------------------------------
@@ -627,16 +606,8 @@ const Oscillator::RenderFn Oscillator::fn_table_[] PROGMEM = {
   &Oscillator::RenderSimpleWavetable,
 
   &Oscillator::RenderCzSaw,
-  &Oscillator::RenderCzResoSaw,
-  &Oscillator::RenderCzResoSaw,
-  &Oscillator::RenderCzResoSaw,
-  &Oscillator::RenderCzResoSaw,
-  &Oscillator::RenderCzResoPulse,
-  &Oscillator::RenderCzResoPulse,
-  &Oscillator::RenderCzResoPulse,
-  &Oscillator::RenderCzResoPulse,
-  &Oscillator::RenderCzResoTri,
-  
+  &Oscillator::RenderSin16Bit,
+
   &Oscillator::RenderQuad,
   
   &Oscillator::RenderFm,
