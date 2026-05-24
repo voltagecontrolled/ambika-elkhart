@@ -139,16 +139,16 @@ truncated to the 4-char cell width by `Parameter::PrintName`.
 |-------|-----|--------|-------------------|-------------------|----------|-------|
 | top1  | 32  | `rate` | `str_res_rate`    | LFO 4 rate        | 0..142   | Two-zone: 0..14 = sync (1/96..1/1, reversed so the value-14↔15 boundary is musically continuous), 15..142 = free-run |
 | top2  | 33  | `wave` | `str_res_waveform`| LFO 4 waveform    | 0..6 enum| tri / sqr / S&H / ramp / 1exp / 1lin / 1tri. Click toggles `lfo4_retrigger` |
-| top3  | 71  | `dest` | `str_res_dest`    | LFO 4 destination | 0..N enum| Mod matrix slot 7 destination |
-| top4  | 72  | `dept` | `str_res_dept`    | LFO 4 depth       | -63..+63 | Mod matrix slot 7 amount |
+| top3  | 71  | `dest` | `str_res_dest`    | LFO 4 destination | 0..N enum| Patch byte 72; voicecard `ApplyModulations` reads `patch_.modulation[7].destination` directly (mod matrix retired v4.4). |
+| top4  | 72  | `dept` | `str_res_dept`    | LFO 4 depth       | -63..+63 | Patch byte 73; voicecard reads `patch_.modulation[7].amount` directly. |
 | bot1  | 73  | `rate` | `str_res_rate`    | LFO 5 rate        | 0..142   | Same two-zone scheme as LFO 4 |
 | bot2  | 74  | `wave` | `str_res_waveform`| LFO 5 waveform    | 0..6 enum| Same shapes as LFO 4. Click toggles `lfo5_retrigger` |
-| bot3  | 75  | `dest` | `str_res_dest`    | LFO 5 destination | 0..N enum| Mod matrix slot 6 dest (source `MOD_SRC_LFO_2` fixed via `kDefaultMod`) |
-| bot4  | 76  | `dept` | `str_res_dept`    | LFO 5 depth       | -63..+63 | Mod matrix slot 6 amount |
+| bot3  | 75  | `dest` | `str_res_dest`    | LFO 5 destination | 0..N enum| Patch byte 69; voicecard reads `patch_.modulation[6].destination` directly (source `MOD_SRC_LFO_2` hardcoded in `ApplyModulations`). |
+| bot4  | 76  | `dept` | `str_res_dept`    | LFO 5 depth       | -63..+63 | Patch byte 70; voicecard reads `patch_.modulation[6].amount` directly. |
 
 ## S4 — `PAGE_VOICE_LFO` (Group 2)
 
-Shares group 2 with `S3`: pressing `S4` lands on `PAGE_VOICE_LFO` (the LFO 4 / LFO 5 rows above). Mod matrix (#11) was closed unimplemented — per-pot assign on `PAGE_VOICE_LFO` covers the routing surface.
+Shares group 2 with `S3`: pressing `S4` lands on `PAGE_VOICE_LFO` (the LFO 4 / LFO 5 rows above). Mod matrix (#11) was closed unimplemented and the entire matrix machinery was retired in v4.4 — per-pot assign on `PAGE_VOICE_LFO` covers the routing surface, with the voicecard reading dest/amount bytes directly from the patch.
 
 ---
 

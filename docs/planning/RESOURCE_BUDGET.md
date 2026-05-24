@@ -29,6 +29,20 @@ after each landed issue and update both this table and the baseline.
 - **CZ filter-sim removal** dropped 3 render methods + the `wav_res_cz_phase_reset` LUT — ~530 B of voicecard flash reclaimed.
 - **sn16 windowed sine bank** added a single `RenderSin16Bit` (~130 B) — net voicecard reclaim −108 B.
 
+### v4.4 update (2026-05-24, mod-matrix removal + groovebox MIDI trim)
+
+| Target     | Flash used | Flash free | RAM used | RAM free |
+|------------|-----------:|-----------:|---------:|---------:|
+| controller |    59066 B |     6470 B |   3342 B |    754 B |
+| voicecard  |    26608 B |     6160 B |   1077 B |    971 B |
+
+Session entry point: controller **61232 B** (93.8% full, 208 B from cap), voicecard 26664 B. Net session reclaim: controller **−2166 B**, voicecard **−56 B**.
+
+- **Orphaned `wav_res_lfo_waveforms` deleted** from controller. The 2 KB PROGMEM table of Emilie's 16 custom MI LFO shapes (sine harmonics, gurgles, bat/folded, spiky, LP-filtered, stepped) has been orphaned on the controller since before the YAM fork — stock voicecard's table was already a 2-byte stub. Nothing on either side ever read the controller copy. Removed via `controller/resources/waveforms.py` → empty `waveforms = []`. Matching 2-byte voicecard stub also dropped. Net controller reclaim: −1904 B.
+- **Mod matrix retired on voicecard**. `ProcessModulationMatrix()` (14-slot iteration) replaced with `ApplyModulations()` — four hardcoded direct paths (LFO 5 → user dest, LFO 4 → user dest, ENV 1 → VCA, VEL → VCA). Modifier loop in `LoadSources` deleted. `kDefaultMod` PROGMEM table and its `Part::Touch()` ship-loop deleted on the controller. Patch struct `modulation[14]` + `modifier[4]` retained as anonymous padding to preserve SD-card snapshot wire format (no `kVersion` bump).
+- **Groovebox MIDI trim** (no Aftertouch / PitchBend / mod wheel CC). `Part::PitchBend`, `Part::Aftertouch`, `Part::ControlChange` mod-wheel case removed; matching `Multi::*` and `MidiDispatcher::*` handlers removed — parser falls through to empty `midi::MidiDevice` base impls. Dead `MidiDispatcher::SendPitchBend` removed (zero callers, predated cleanup). MIDI Thru / Chain / Full passthrough unaffected (`RawByte` and `RawMidiData` paths independent). Net for this trim: controller −182 B, voicecard −58 B.
+- **`kSystemVersion` deliberately unbumped** per mid-sprint policy.
+
 ### v4.4 delta from v4.3 (full LFO 4 + LFO 5 stack)
 
 | Target     |   Δ Flash |  Δ RAM |
@@ -205,3 +219,41 @@ After each issue lands:
 4. Update the baseline row above to the new used / free numbers.
 5. Strike the issue's row through (or move into a "Landed" section)
    with the actual delta in parentheses next to the projection.
+
+---
+
+## Cleanup possibilities (unprojected)
+
+Captured during the 2026-05-24 mod-matrix cleanup session. These are *not* gated on any planned feature — they're standing reclamation candidates ordered by hunch (high-confidence-quick-win → speculative-but-large). Estimates are rough; verify before committing.
+
+### Quick wins (high confidence, low risk)
+
+**`VOICECARD_DATA_MODULATION` SPI command — likely unused after 2026-05-24.** All three controller-side callers (`Part::PitchBend`, `Part::Aftertouch`, `Part::ControlChange` mod-wheel case) were deleted. If nothing else sends the command, the voicecard's RX dispatch case + `voice.set_modulation_source` glue is dead. Estimate: **~50-150 B voicecard**, ~10 B controller. Verify by grep, then drop the RX case + the SPI command enum slot if also unreferenced.
+
+**`MOD_SRC_*` init writes in `Voice::ResetAllControllers`.** Defensive inits for `PITCH_BEND` / `AFTERTOUCH` / `WHEEL` / `WHEEL_2` / `EXPRESSION` and the `CONSTANT_*` ladder — none of these slots have consumers post-mod-matrix-removal. Estimate: **~20-40 B voicecard**. Cosmetic; safe to drop.
+
+### Discrete trade-offs
+
+**FatFs trim** (`avrlib/third_party/ff/ffconf.h`). Setting `_USE_MKFS=0` drops on-device SD-card format (currently exposed via Card Info page → FORMAT action). Setting `_FS_MINIMIZE=1` additionally drops `f_mkdir` (used by `snapshot.cc:104` `Storage::fs_.Mkdirs(path)`), `f_unlink`, `f_truncate`, `f_rename`, `f_stat`, `f_getfree` (the last one is consumed by the Card Info page's free-space display). Estimate: **~1-2 KB controller** total. Requires removing the FORMAT call site and either pre-creating the snapshot directory tree or working around `Mkdirs` deletion. Free-space display is a separate UX call.
+
+**Parameter table index shift (issue #47, already filed).** Deletes orphan `parameters[]` entries 34..41 (the retired mod-matrix UI parameters), shifts every subsequent ID down by 8, cascades through `kParamLockMap`, hardcoded IDs in `parameter_editor.cc`, MIDI CC/NRPN maps. Unblocks deletion of `UNIT_MODULATION_SOURCE` / `UNIT_MODIFIER` format cases, the now-orphan source/destination/modifier strings (including `lfo 1` / `lfo 3` long labels), and the `MOD_SRC_PITCH_BEND` / `MOD_SRC_WHEEL` / `MOD_SRC_AFTERTOUCH` enum slots. Estimate: **~500-900 B controller**. Mechanical but invasive; needs hardware verification on every patch-page cell.
+
+### Speculative (uncertain magnitude)
+
+**C++ static initializers — `_GLOBAL__I_*` stubs.** `avr-nm` shows ~16 translation units each emitting a ~156 B `_GLOBAL__I_*` static-init stub from non-trivial constructors (event-handler tables, `lcd`, `leds`, `multi`, `sequencer`, page registries). If the offending constructors can be made trivial (BSS zero-init + explicit `Init()` calls), libgcc's per-TU init machinery drops. **Theoretical ceiling ~2.5 KB** controller; realistic recovery probably half that. Needs per-TU disassembly to identify which globals carry the cost.
+
+**`SeqStepsPage` size reduction.** Largest single page in the binary: `UpdateScreen` 2410 B + `OnPot` 2088 B + `OnClick` 998 B = **~5.5 KB combined**. WS1's lockable expansion ballooned the per-cell switch dispatch. PROGMEM dispatch tables or merged display/edit paths could shave **~300-800 B** without behavior change. Big refactor; high test surface.
+
+### Investigative (probably small individually, may add up)
+
+**`controller/voicecard_tx` command audit.** Every `VOICECARD_DATA_*` we no longer send is dead bytes both sides of the SPI wire. After 2026-05-24's deletions, survey which commands have zero remaining callers and prune.
+
+**MIDI Out helpers in `midi_dispatcher.h`.** `SendCc`, `SendSlotCc`, `SendVamtCc`, `SendGlidCc`, `Send3`. Audit each for callers — `SendPitchBend` was already dead before today; sibling helpers might be too.
+
+**`modulation_sources_[]` and `modulation_destinations_[]` array sizing on the voicecard.** `kNumModulationSources = 32` but ~12 slots have zero readers post-mod-matrix removal (LFO_1, LFO_3, OP_1..OP_4, AFTERTOUCH, WHEEL, WHEEL_2, EXPRESSION, PITCH_BEND, the CONSTANT_* ladder). Pruning is gated on the parameter-table shift (issue #47) since the enum slots are addressed by index. Per-slot reclaim is small (1 B RAM + tiny init code) but they accumulate.
+
+**Voicecard's `init_patch` table.** 112 bytes of hardcoded PROGMEM defaults; mod-matrix slots now write to bytes no consumer reads. Zeroing them out is cosmetic (no save) but worth doing for clarity if any of the surrounding cleanup lands.
+
+### Out of bounds
+
+DSP path (oscillators, envelopes, filter), `avrlib/` proper (shared with hypothetical other forks), and audited resource tables (most are load-bearing). Risk/reward is bad in those areas; leave them alone unless a specific feature ask forces a revisit.
