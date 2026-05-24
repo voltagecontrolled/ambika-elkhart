@@ -212,6 +212,15 @@ class Ui {
   static uint16_t last_hold_ms(uint8_t i) { return switch_last_hold_ms_[i]; }
   static void clear_last_hold_ms(uint8_t i) { switch_last_hold_ms_[i] = 0; }
 
+  // Hold duration of the most recent encoder click (#42). Updated on the
+  // release edge alongside the CONTROL_ENCODER_CLICK event. Pages query this
+  // in OnClick to distinguish a short tap from a long-press.
+  static uint16_t encoder_last_hold_ms() { return encoder_last_hold_ms_; }
+  static void clear_encoder_last_hold_ms() { encoder_last_hold_ms_ = 0; }
+  static uint8_t encoder_long_pressed() {
+    return encoder_last_hold_ms_ >= 800 ? 1 : 0;
+  }
+
  private:
   static UiPageNumber active_page_;
   static UiPageNumber most_recent_non_system_page_;
@@ -222,6 +231,8 @@ class Ui {
   static uint8_t inhibit_switch_;
   static uint16_t switch_press_ms_[8];
   static uint16_t switch_last_hold_ms_[8];
+  static uint16_t encoder_press_ms_;
+  static uint16_t encoder_last_hold_ms_;
   // S5 + encoder CCW transport-stop chord: first CCW arms, second within
   // window fires Panic (kill all sound).
   static uint16_t transport_ccw_arm_ms_;

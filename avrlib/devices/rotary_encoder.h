@@ -65,6 +65,7 @@ class RotaryEncoder {
   }
 
   static uint8_t clicked() { return SwitchClick::raised(); }
+  static uint8_t pressed() { return SwitchClick::lowered(); }
   static uint8_t immediate_value() { return SwitchClick::immediate_value(); }
 
  private:

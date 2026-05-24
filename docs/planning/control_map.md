@@ -56,6 +56,8 @@ the encoder skips them.
 |--------------------------|---------------------------------------------------------|
 | Encoder turn             | Walk cursor through current page's parameters           |
 | Encoder click            | On OSC1 wave / LFO4 wave / LFO5 wave cells: toggle the trigger-time reset flag (`osc_phase_reset` / `lfo4_retrigger` / `lfo5_retrigger`) with a transient `rst on/off` overlay. No-op on other cells — pots are the canonical value editor. |
+| Encoder click + step held | **PROB drill-in** on the cursor cell (patch + seq pages) — toggles `(step, lock_index)` armed. Pot on the drilled cell writes a bipolar PROB byte to `LockProbPool` instead of the lock value; cell renders the PROB byte and label uppercases. Disarm: click again, release step, encoder turn, page/track change. |
+| Encoder long-press (≥ 800 ms) | **Clear all locks** for the parameter at the cursor on the active track. Walks 8 steps, calls `Sequencer::ClearTrackLocksForParam` (lock + prob pools). On seq page: SMOD-cell variant clears every step's SMOD nibble + its prob entry; SUBS-cell variant clears SSUB/REPT/substep_bits + its prob entry. Patch-page feedback: `clr locks` cell overlay (~500 ms). |
 | Transport double-Stop    | Second CCW Stop while already stopped broadcasts `COMMAND_LFO_RESET` to all voicecards (aligns synced LFOs to song-position-0). |
 | `S1` + encoder turn      | Voice select — cycle the active track                   |
 | `S2` + encoder turn      | ×8 page-jump multiplier — skip whole page groups        |

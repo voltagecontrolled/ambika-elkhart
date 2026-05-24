@@ -34,46 +34,44 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     // OSC page — page1 defaults
     case 0:  return &tr.defaults[kP1WAVE1];
     case 1:  return &tr.defaults[kP1PARA1];
-    case 2:  return &tr.config[kCfgOSC1R];
-    case 3:  return &tr.defaults[kP1FINE];
+    case 2:  return &tr.defaults[kP1FINE];         // v4.4-WS1: slot 7 reclaimed for OSC1 RANGE (now lockable)
+    case 3:  return NULL;                          // osc1 detune — WS0 soft-dropped, no storage
     case 4:  return &tr.defaults[kP1WAVE2];
     case 5:  return &tr.defaults[kP1PARA2];
     case 6:  return &tr.defaults[8 + kP2TUN2];   // lockable per-step
     case 7:  return &tr.defaults[8 + kP2FIN2];   // lockable per-step
     // Mixer
     case 8:  return &tr.defaults[kP1BLND];
-    case 9:  return &tr.config[kCfgFMOP];
+    case 9:  return &tr.defaults[28];              // WS1: xmod (mix_op), lock 28
     case 10: return &tr.defaults[kP1RTIO];
     case 11: return &tr.defaults[24 + kP3WAVE];    // sub-osc shape (now lockable)
     case 12: return &tr.defaults[8 + kP2SUB];
     case 13: return &tr.defaults[8 + kP2NOIS];
-    case 14: return &tr.config[kCfgFUZZ];
-    case 15: return &tr.config[kCfgBITS];
+    case 14: return &tr.defaults[29];              // WS1: fuzz, lock 29
+    case 15: return &tr.defaults[30];              // WS1: crsh, lock 30
     // Filter
     case 16: return &tr.defaults[24 + kP3FREQ];    // filter cutoff (now lockable)
-    case 17: return &tr.config[kCfgRES];
-    case 18: return &tr.config[kCfgTYPE];
+    case 17: return &tr.defaults[31];              // WS1: reso, lock 31
+    case 18: return &tr.defaults[32];              // WS1: mode, lock 32
     case 22: return &tr.defaults[24 + kP3FAMT];    // ENV2→VCF depth (now lockable)
-    // Envelope attacks (voice-wide config)
-    case 24: return &tr.config[kCfgE1ATK];
-    case 32: return &tr.config[kCfgE2ATK];
-    case 40: return &tr.config[kCfgE3ATK];
-    // Envelope decays (per-step lockable)
-    case 25: return &tr.defaults[8 + kP2E1DEC];
-    case 33: return &tr.defaults[8 + kP2E2DEC];
-    case 41: return &tr.defaults[8 + kP2E3DEC];
-    // Envelope curves (voice-wide, sustain byte repurposed)
-    case 26: return &tr.config[kCfgE1CRV];
-    case 34: return &tr.config[kCfgE2CRV];
-    case 42: return &tr.config[kCfgE3CRV];
-    // LFO4 (voice_lfo on voicecard)
-    case 48: return &tr.config[kCfgLSHP];          // voice_lfo_shape
-    case 49: return &tr.config[kCfgLFOS];          // voice_lfo_rate
+    // Envelopes — all rise/fall/curv/depth now lockable (WS1)
+    case 24: return &tr.defaults[33];              // WS1: E1 rise, lock 33
+    case 25: return &tr.defaults[8 + kP2E1DEC];    // E1 fall, lock 8
+    case 26: return &tr.defaults[34];              // WS1: E1 curv, lock 34
+    case 32: return &tr.defaults[36];              // WS1: E2 rise, lock 36
+    case 33: return &tr.defaults[8 + kP2E2DEC];    // E2 fall, lock 10
+    case 34: return &tr.defaults[37];              // WS1: E2 curv, lock 37
+    case 40: return &tr.defaults[38];              // WS1: E3 rise, lock 38
+    case 41: return &tr.defaults[8 + kP2E3DEC];    // E3 fall, lock 12
+    case 42: return &tr.defaults[39];              // WS1: E3 curv, lock 39
+    // LFO4 (voice_lfo on voicecard) — all four cells lockable (WS1)
+    case 48: return &tr.defaults[41];              // WS1: LFO4 wave (voice_lfo_shape), lock 41
+    case 49: return &tr.defaults[40];              // WS1: LFO4 rate (voice_lfo_rate), lock 40
     // Configurable mod amounts (fixed routing slots)
-    case 58: return &tr.defaults[24 + kP3PAMT];    // ENV3→pitch depth (now lockable)
-    case 72: return &tr.config[kCfgLFO4D];         // slot 7 dest: LFO4 destination
-    case 73: return &tr.config[kCfgLFO4A];         // slot 7 amount: LFO4 amount
-    case 82: return &tr.config[kCfgE1DEPT];        // slot 10 amount: ENV1→VCA depth
+    case 58: return &tr.defaults[24 + kP3PAMT];    // ENV3→pitch depth (PAMT, lock 26)
+    case 72: return &tr.defaults[42];              // WS1: LFO4 dest (mod slot 7), lock 42
+    case 73: return &tr.defaults[43];              // WS1: LFO4 dept (mod slot 7), lock 43
+    case 82: return &tr.defaults[35];              // WS1: E1 depth (ENV1→VCA mod slot 10 amt), lock 35
     case 85:  return &tr.config[kCfgVELAMT];        // slot 11 amount: vel→VCA depth
     case 203: return &tr.config[kCfgSMTH];          // portamento (VOICECARD_DATA_PART)
     // Filter KB tracking
@@ -82,20 +80,17 @@ static uint8_t* PatchAddrToSeqField(SeqTrack& tr, uint8_t address) {
     // LFO4 SHAPE, LFO5 SHAPE cells respectively).
     case 106: return &tr.config[kCfgPHSE];        // osc 1 phase reset
     case 107: return &tr.config[kCfgLFOR];        // LFO4 retrigger
-    // LFO5 — mirrors LFO4 (rate/shape) and lives in mod-matrix slot 6
-    // (source=MOD_SRC_LFO_2 fixed via kDefaultMod; dest/amount configurable
-    // at addresses 69/70).
-    case 69:  return &tr.config[kCfgL5D];         // LFO5 destination
-    case 70:  return &tr.config[kCfgL5A];         // LFO5 amount
-    case 108: return &tr.config[kCfgL5SH];        // LFO5 shape
-    case 109: return &tr.config[kCfgL5FR];        // LFO5 rate
-    case 110: return &tr.config[kCfgL5RT];        // LFO5 retrigger
-    case 111: return &tr.defaults[8 + kP2FOLD];   // pre-filter wavefolder (lockable)
+    // LFO5 — WS1 lockable; storage migrated from config[] to defaults[].
+    case 69:  return &tr.defaults[46];              // WS1: LFO5 dest (mod slot 6), lock 46
+    case 70:  return &tr.defaults[47];              // WS1: LFO5 dept (mod slot 6), lock 47
+    case 108: return &tr.defaults[45];              // WS1: LFO5 wave, lock 45
+    case 109: return &tr.defaults[44];              // WS1: LFO5 rate, lock 44
+    case 110: return &tr.config[kCfgL5RT];          // LFO5 retrigger (toggle only)
+    case 111: return &tr.defaults[8 + kP2FOLD];     // pre-filter wavefolder (lockable)
     // EG depth (virtual; indexed by active_env_lfo; 200=Amp/E1, 201=Filt/E2, 202=Pitch/E3)
-    case 200: return &tr.config[kCfgE1DEPT];
-    case 201: return &tr.config[kCfgE2DEPT];
-    // ENV3→pitch depth (PAMT) lives in page3 defaults, same byte as case 58.
-    case 202: return &tr.defaults[24 + kP3PAMT];
+    case 200: return &tr.defaults[35];              // WS1: E1 depth, same slot as case 82
+    case 201: return &tr.defaults[24 + kP3FAMT];    // E2 depth = FAMT, lock 25
+    case 202: return &tr.defaults[24 + kP3PAMT];    // E3 depth = PAMT, lock 26
     default: return NULL;
   }
 }

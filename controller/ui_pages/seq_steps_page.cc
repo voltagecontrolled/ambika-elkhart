@@ -234,6 +234,43 @@ const prog_EventHandlers SeqStepsPage::event_handlers_ PROGMEM = {
 // stored byte). The inherit sentinel (v==0) is a no-op.
 /* static */
 uint8_t SeqStepsPage::OnClick() {
+  // #42: encoder long-press on the cursor cell clears every step's lock /
+  // PROB / intrinsic state for that parameter on the active track. Runs
+  // before the substep-editor-exit branch so a long-press inside the editor
+  // wipes SSUB/REPT/substep_bits then exits.
+  if (ui.encoder_long_pressed()) {
+    uint8_t lockable = pgm_read_byte(&kCellLockable[cursor_]);
+    uint8_t track = ui.state().active_part;
+    uint8_t handled = 0;
+    if (lockable < 28) {
+      sequencer.ClearTrackLocksForParam(track, lockable);
+      handled = 1;
+    } else if (lockable == kSmodCellSentinel) {
+      SeqTrack* tr = sequencer.mutable_track(track);
+      for (uint8_t s = 0; s < 8; ++s) {
+        SetStepSmod(tr->steps[s], kSmodNone);
+        sequencer.mutable_lock_prob_pool().Clear(track, s, kProbKeySmod);
+      }
+      handled = 1;
+    } else if (lockable == kSubsMergedSentinel) {
+      SeqTrack* tr = sequencer.mutable_track(track);
+      sequencer.ClearTrackLocksForParam(track, 17);  // SSUB
+      sequencer.ClearTrackLocksForParam(track, 18);  // REPT
+      for (uint8_t s = 0; s < 8; ++s) {
+        tr->steps[s].substep_bits = 0;
+        sequencer.mutable_lock_prob_pool().Clear(track, s, kProbKeySubs);
+      }
+      editing_substeps_ = false;
+      handled = 1;
+    }
+    // MRST sentinel and the EXT-row CC# cells have no per-step lock to clear.
+    if (handled) {
+      drill_step_ = 0xff;
+      drill_lockable_ = 0xff;
+      ui.clear_encoder_last_hold_ms();
+      return 1;
+    }
+  }
   if (editing_substeps_) {
     editing_substeps_ = false;
     return 1;
@@ -789,40 +826,6 @@ uint8_t SeqStepsPage::OnKey(uint8_t key) {
   return 1;
 }
 
-// Render a bipolar PROB byte into the 4-char value field at buf[0..3]:
-// NN% / 100 / X:N / !X:N / FILL / !FIL. Shared by step PROB (#6) and per-lock
-// PROB drill-in (#38 slim).
-static void WriteProbByte(char* buf, uint8_t v) {
-  buf[0] = ' '; buf[1] = ' '; buf[2] = ' '; buf[3] = ' ';
-  if (!(v & 0x80)) {
-    uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
-    if (pct > 100) pct = 100;
-    if (pct >= 100) { buf[0] = '1'; buf[1] = '0'; buf[2] = '0'; }
-    else if (pct >= 10) { buf[1] = '0' + (pct / 10); buf[2] = '0' + (pct % 10); }
-    else { buf[2] = '0' + pct; }
-    buf[3] = '%';
-    return;
-  }
-  uint8_t entry = ProbCyclePhaseEntry(v & 0x7F);
-  if (entry == 0) {
-    buf[0] = ' '; buf[1] = '1'; buf[2] = '0'; buf[3] = '0';
-    return;
-  }
-  uint8_t neg = entry & 0x80;
-  if (entry & 0x01) {
-    if (neg) { buf[0] = '!'; buf[1] = 'F'; buf[2] = 'I'; buf[3] = 'L'; }
-    else     { buf[0] = 'F'; buf[1] = 'I'; buf[2] = 'L'; buf[3] = 'L'; }
-    return;
-  }
-  uint8_t X = ((entry >> 4) & 0x07) + 1;  // 1..8
-  uint8_t N = ((entry >> 1) & 0x07) + 1;  // 1..8
-  uint8_t col = 0;
-  if (neg) buf[col++] = '!';
-  buf[col++] = '0' + X;
-  buf[col++] = ':';
-  buf[col++] = '0' + N;
-}
-
 // Write 3-char note name at buf: natural="C 4", sharp="C#4", sub-octave "C-".
 static void WriteNoteName(char* buf, uint8_t note) {
   uint8_t semi = note % 12;
@@ -1016,7 +1019,7 @@ void SeqStepsPage::UpdateScreen() {
     uint8_t prob_key = lockable;
     if (lockable == kSmodCellSentinel) prob_key = kProbKeySmod;
     else if (lockable == kSubsMergedSentinel) prob_key = kProbKeySubs;
-    uint8_t has_prob = (held_step != 0xff && prob_key != 0xff && prob_key < 30 &&
+    uint8_t has_prob = (held_step != 0xff && prob_key != 0xff && prob_key < 66 &&
                        sequencer.lock_prob_pool().Find(track, held_step, prob_key) != 0xff);
     const prog_char* abbr_src = kAbbr + cell_global * 4;
     for (uint8_t c = 0; c < 4; ++c) {

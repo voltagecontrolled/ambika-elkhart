@@ -157,6 +157,12 @@ uint8_t Ui::cycle_;
 uint8_t Ui::inhibit_switch_;
 uint16_t Ui::switch_press_ms_[8];
 uint16_t Ui::switch_last_hold_ms_[8];
+uint16_t Ui::encoder_press_ms_;
+uint16_t Ui::encoder_last_hold_ms_;
+
+// Encoder click held this long fires the long-press handler (#42). Pages
+// detect it in OnClick via ui.encoder_last_hold_ms().
+static const uint16_t kEncoderLongPressMs = 800;
 uint16_t Ui::transport_ccw_arm_ms_;
 uint8_t Ui::transport_ccw_armed_;
 Encoder Ui::encoder_;
@@ -189,7 +195,7 @@ void Ui::Init() {
   display.Init();
   leds.Init();
   lcd.SetCustomCharMapRes(character_table[0], 7, 1);
-  
+
   ShowPage(PAGE_PART_SEQUENCER);
   
   memset(line, ' ', 41);
@@ -202,7 +208,16 @@ void Ui::Poll() {
   ++cycle_;
   // I
   int8_t increment = encoder_.Read();
+  uint8_t encoder_press = encoder_.pressed();
   uint8_t clicked = encoder_.clicked();
+  if (encoder_press) {
+    encoder_press_ms_ = static_cast<uint16_t>(avrlib::milliseconds());
+    encoder_last_hold_ms_ = 0;
+  }
+  if (clicked) {
+    encoder_last_hold_ms_ =
+        static_cast<uint16_t>(avrlib::milliseconds()) - encoder_press_ms_;
+  }
 
   // Hold-S5 + encoder turn = global transport chord.
   // CW = toggle Play/Pause; CCW = Stop, double-CCW within window = Panic
@@ -515,6 +530,10 @@ void Ui::ShowPage(UiPageNumber page, uint8_t initialize) {
   queue_.Flush();
   queue_.Touch();
   pots_.Lock(16);
+  // Encoder long-press is per-page state; reset so a press straddling a
+  // page change can't fire the long-press handler on the new page (#42).
+  encoder_press_ms_ = static_cast<uint16_t>(avrlib::milliseconds());
+  encoder_last_hold_ms_ = 0;
   
   if (page <= PAGE_SEQ_MIXER) {
     most_recent_non_system_page_ = page;

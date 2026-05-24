@@ -26,13 +26,16 @@ static const uint8_t kLockProbPoolFree     = 0xff;  // param sentinel = empty sl
 // Synthetic prob-pool keys for intrinsic fields that aren't in the regular
 // Parameter table. These reuse the (track, step, param) addressing of the
 // pool to attach a PROB byte to non-pool-backed step state.
-//   28 = SMOD nibble (in step_flags). Drill-in via the SFX cell on the
+//   64 = SMOD nibble (in step_flags). Drill-in via the SFX cell on the
 //        step page; fire-time gate suppresses the SMOD effect on roll fail.
-//   29 = SUBS machinery (ratchets/repeats/chord walk). Drill-in via the
+//   65 = SUBS machinery (ratchets/repeats/chord walk). Drill-in via the
 //        SUBS cell; on roll fail the step still fires (subject to step
 //        PROB) but ratchets/repeats/chord-walk are suppressed for that loop.
-static const uint8_t kProbKeySmod = 28;
-static const uint8_t kProbKeySubs = 29;
+// v4.4-WS1: moved from 28/29 to 64/65 because lockable lock_indexes
+// now extend up to 47 (was 27) and would have collided with the
+// synthetic keys' old slots.
+static const uint8_t kProbKeySmod = 64;
+static const uint8_t kProbKeySubs = 65;
 
 struct LockProbEntry {
   uint8_t ts;     // track in bits 0..2, step in bits 3..5 (LockTsPack-compatible)

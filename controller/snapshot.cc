@@ -16,6 +16,12 @@ namespace ambika {
 using namespace avrlib;
 
 static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
+// v0x07 (Elkhart v4.4-WS1, issue #41): SeqTrack defaults[] grows 28→48 to
+// cover every patch-page lockable cell (osc1 rang reclaims slot 7;
+// xmod/fuzz/crsh/reso/mode + full env shape + LFO4/5 controls land at
+// 28..47). config[] shifts later in the struct. v0x06 snapshots load with
+// defaults[0..27] from the file and defaults[28..47] seeded from
+// kDefaultExt (matches a freshly initialized track for those bytes).
 // v0x06 (Elkhart v4.4, issue #45): SeqStep shrinks 7→2 bytes (intrinsic
 // per-step storage retired). LockPool capacity 192→240. v0x05 snapshots
 // are migrated in-place: each step's diverged intrinsic byte becomes a
@@ -23,11 +29,46 @@ static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
 // v0x04 (Elkhart v4.3): adds a per-lock PROB pool serialized after the
 // LockPool. v0x03 loads zero-fill the prob pool. v0x01 / v0x02 reach this
 // via MigrationV41 — neither carries a prob pool either.
-static const uint8_t kVersion = 0x06;
+static const uint8_t kVersion = 0x07;
+// v0x06 on-disk sizes (pre-WS1 layout): defaults was 28 bytes, config still 31.
+static const uint16_t kV06DefaultsArea = 28;
+static const uint16_t kV06TrackPersistentSize =
+    16 + 7 + kV06DefaultsArea + 31;  // steps(16) + pattern(7) + defaults(28) + config(31) = 82
 // v0x05 on-disk sizes (pre-shrink layout): SeqStep was 7 B, LockPool capacity 192.
 static const uint8_t kV05SeqStepSize = 7;
 static const uint16_t kV05LockPoolEntries = 192;
 static const uint16_t kV05LockPoolRawSize = kV05LockPoolEntries * 3;  // = 576
+
+// Shift an OSC waveform byte from the pre-v4.4 enum to the current enum.
+// v4.4 removed 9 CZ filter-sim slots at indices 6..14 (CZ_SAW_LP..CZ_TRI_LP)
+// and inserted WAVEFORM_SIN_16BIT at slot 6 in their place. So:
+//   old 0..5   → unchanged
+//   old 6..14  → was CZ filter-sim, now invalid → fall back to SIN_16BIT (6)
+//   old 15+    → shift down by 8 to land at the new enum position
+static inline uint8_t ShiftOldOscWaveform(uint8_t v) {
+  if (v < 6) return v;
+  if (v <= 14) return 6;  // WAVEFORM_SIN_16BIT
+  return v - 8;
+}
+
+// Apply waveform shift to all pre-v4.4 OSC1/OSC2 wave values in defaults[]
+// and any lock_pool entries for those slots. Walks raw pool bytes directly
+// (LockEntry = ts, param, value at offsets +0/+1/+2) to keep code small.
+static void MigrateOldWaveforms() {
+  for (uint8_t t = 0; t < kNumVoices; ++t) {
+    SeqTrack* tr = sequencer.mutable_track(t);
+    tr->defaults[1] = ShiftOldOscWaveform(tr->defaults[1]);
+    tr->defaults[5] = ShiftOldOscWaveform(tr->defaults[5]);
+  }
+  uint8_t* raw = sequencer.mutable_lock_pool().mutable_raw_entries();
+  for (uint16_t i = 0; i < LockPool::kRawEntriesSize; i += 3) {
+    uint8_t p = raw[i + 1];
+    if (p == 1 || p == 5) {
+      raw[i + 2] = ShiftOldOscWaveform(raw[i + 2]);
+    }
+  }
+}
+
 
 // Persistent prefix = everything before shadow[]. offsetof is bulletproof
 // against any compiler-side struct alignment changes.
@@ -71,8 +112,8 @@ FilesystemStatus Snapshot::Save(uint8_t slot) {
   STATIC_ASSERT(LockProbPool::kRawEntriesSize == 96);
   STATIC_ASSERT(offsetof(SeqTrack, pattern)  == 16);
   STATIC_ASSERT(offsetof(SeqTrack, defaults) == 23);
-  STATIC_ASSERT(offsetof(SeqTrack, config)   == 51);
-  STATIC_ASSERT(offsetof(SeqTrack, shadow)   == 82);
+  STATIC_ASSERT(offsetof(SeqTrack, config)   == 71);   // v4.4-WS1: +20 (defaults 28→48)
+  STATIC_ASSERT(offsetof(SeqTrack, shadow)   == 102);  // v4.4-WS1: +20
   STATIC_ASSERT(sizeof(MultiData) == 61);
 
   // Stop transport so no step-fires queue voicecard SPI traffic during the
@@ -212,11 +253,13 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
-    // v0x06 = native v4.4 (SeqStep shrunk to 2 B, pool capacity 240).
+    // v0x07 = native v4.4-WS1 (defaults[] grew 28→48; config[] shifts later).
+    // v0x06 = v4.4-mid (pre-WS1; defaults[28]).
     // v0x05/v0x04/v0x03 = old layout (7-byte SeqStep, pool capacity 192).
     // v0x01 / v0x02 = v4.1-era dense-lock format (migration TU).
-    if (header[4] != kVersion && header[4] != 0x05 && header[4] != 0x04 &&
-        header[4] != 0x03 && header[4] != 0x02 && header[4] != 0x01) {
+    if (header[4] != kVersion && header[4] != 0x06 && header[4] != 0x05 &&
+        header[4] != 0x04 && header[4] != 0x03 && header[4] != 0x02 &&
+        header[4] != 0x01) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
@@ -229,17 +272,57 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
         Storage::file_.Close();
         return FS_DISK_ERROR;
       }
-    } else if (snapshot_version >= kVersion) {
-      // Native v0x06 layout.
+      // Pre-v4.4 enum shift + new-slot seeding. MigrationV41 doesn't know
+      // about WS1+ changes, so apply the same fixes the v0x03/04/05 path
+      // does below: zero defaults[7] (was osc1 detune, now osc1 range),
+      // seed defaults[28..47] from kDefaultExt, and shift the pre-sn16
+      // OSC waveform values.
       for (uint8_t t = 0; t < kNumVoices; ++t) {
-        uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
-        if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
-            || got != kTrackPersistentSize) {
-          Storage::file_.Close();
-          return FS_DISK_ERROR;
-        }
-        for (uint16_t i = 0; i < kTrackPersistentSize; ++i) checksum += tp[i];
+        SeqTrack* dst = sequencer.mutable_track(t);
+        dst->defaults[7] = 0;
+        SeedExtendedDefaults(*dst);
       }
+      MigrateOldWaveforms();
+    } else if (snapshot_version >= 0x06) {
+      // v0x07 native + v0x06 migration: track block size differs but the
+      // pool/prob blob layout is identical, so share the tail read.
+      if (snapshot_version >= kVersion) {
+        // Native v0x07: read kTrackPersistentSize bytes directly into SeqTrack.
+        for (uint8_t t = 0; t < kNumVoices; ++t) {
+          uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
+          if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
+              || got != kTrackPersistentSize) {
+            Storage::file_.Close();
+            return FS_DISK_ERROR;
+          }
+          for (uint16_t i = 0; i < kTrackPersistentSize; ++i) checksum += tp[i];
+        }
+      } else {
+        // v0x06: read 82-byte persistent block into scratch buffer, unpack
+        // into new layout, seed defaults[28..47] from kDefaultExt.
+        uint8_t buf[82];  // kV06TrackPersistentSize
+        for (uint8_t t = 0; t < kNumVoices; ++t) {
+          if (Storage::file_.Read(buf, kV06TrackPersistentSize, &got) != FS_OK
+              || got != kV06TrackPersistentSize) {
+            Storage::file_.Close();
+            return FS_DISK_ERROR;
+          }
+          for (uint16_t i = 0; i < kV06TrackPersistentSize; ++i) checksum += buf[i];
+
+          SeqTrack* dst = sequencer.mutable_track(t);
+          memcpy(dst->steps,    &buf[0],          16);
+          memcpy(dst->pattern,  &buf[16],          7);
+          memcpy(dst->defaults, &buf[23], kV06DefaultsArea);  // defaults[0..27]
+          memcpy(dst->config,   &buf[51],         31);         // config[0..30]
+          // v0x06 stored OSC1 detune at defaults[7] (cell soft-dropped in WS0).
+          // v0x07 reclaims slot 7 for OSC1 RANGE, so the migrated detune value
+          // would be misinterpreted as a range offset (=> wildly wrong pitch).
+          // Reset to neutral; matches kDefaultPage1[7] = 0.
+          dst->defaults[7] = 0;
+          SeedExtendedDefaults(*dst);                           // defaults[28..47]
+        }
+      }
+      // Shared pool + prob-pool tail.
       uint8_t pool_count;
       if (Storage::file_.Read(&pool_count, 1, &got) != FS_OK || got != 1) {
         Storage::file_.Close();
@@ -395,6 +478,21 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
             sequencer.SetStepLock(t, s, 18, step_rept);
           }
         }
+        // v0x03/04/05 → v0x07: seed the new defaults[28..47] (osc1 rang +
+        // xmod/fuzz/crsh/reso/mode + full env shape + LFO4/5 controls)
+        // from the PROGMEM defaults. Matches the same seeding the v0x06
+        // migration branch does and keeps round-trips deterministic.
+        // Also reset defaults[7]: v0x05 had OSC1 detune there; v0x07 uses
+        // the slot for OSC1 RANGE, so the migrated value would mistune.
+        dst->defaults[7] = 0;
+        SeedExtendedDefaults(*dst);
+      }
+      // v0x03/v0x04 predate the v4.4 sn16/CZ enum break. v0x05 lived briefly
+      // across that change so its waveform values are ambiguous; on balance
+      // we apply the shift here too since the alternative (loading a v4.3-
+      // era preset with FM-as-tampura) is the loudly-wrong common case.
+      if (snapshot_version <= 0x05) {
+        MigrateOldWaveforms();
       }
     }
 

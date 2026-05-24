@@ -142,6 +142,37 @@ uint8_t ProbCyclePhaseEntry(uint8_t slot) {
   return pgm_read_byte(&kProbCyclePhase[slot - 1]);
 }
 
+void WriteProbByte(char* buf, uint8_t v) {
+  buf[0] = ' '; buf[1] = ' '; buf[2] = ' '; buf[3] = ' ';
+  if (!(v & 0x80)) {
+    uint16_t pct = (static_cast<uint16_t>(v) * 100) / 127;
+    if (pct > 100) pct = 100;
+    if (pct >= 100) { buf[0] = '1'; buf[1] = '0'; buf[2] = '0'; }
+    else if (pct >= 10) { buf[1] = '0' + (pct / 10); buf[2] = '0' + (pct % 10); }
+    else { buf[2] = '0' + pct; }
+    buf[3] = '%';
+    return;
+  }
+  uint8_t entry = ProbCyclePhaseEntry(v & 0x7F);
+  if (entry == 0) {
+    buf[0] = ' '; buf[1] = '1'; buf[2] = '0'; buf[3] = '0';
+    return;
+  }
+  uint8_t neg = entry & 0x80;
+  if (entry & 0x01) {
+    if (neg) { buf[0] = '!'; buf[1] = 'F'; buf[2] = 'I'; buf[3] = 'L'; }
+    else     { buf[0] = 'F'; buf[1] = 'I'; buf[2] = 'L'; buf[3] = 'L'; }
+    return;
+  }
+  uint8_t X = ((entry >> 4) & 0x07) + 1;
+  uint8_t N = ((entry >> 1) & 0x07) + 1;
+  uint8_t col = 0;
+  if (neg) buf[col++] = '!';
+  buf[col++] = '0' + X;
+  buf[col++] = ':';
+  buf[col++] = '0' + N;
+}
+
 uint8_t ProbEncodePot(uint8_t pot) {
   // Pot 0..62 → % bytes 0..124 (linear, top ≈ 98%).
   // Pot 63..64 → 0x80 (center dead zone, always fire).
@@ -196,7 +227,34 @@ static const prog_uint8_t kDefaultPage1[] PROGMEM = {
   0,    // RTIO = crossmod/FM amount (reserved for future linear-FM)
   0,    // WAVE2 = none
   0,    // PARA2
-  0,    // FINE = OSC1 detune (0 = centered, int8_t)
+  0,    // RANG = OSC1 range (v4.4-WS1; slot 7 reclaimed from dead OSC1 detune)
+};
+
+// v4.4-WS1: defaults for the 20 newly lockable slots (li 28..47). Values
+// mirror what kDefaultConfig was already shipping for these patch bytes so
+// boot-time behavior is unchanged; subsequent track-default edits write
+// here instead of the now-vestigial config[] bytes.
+static const prog_uint8_t kDefaultExt[] PROGMEM = {
+  0,    // 28 xmod    = mix_op = no FM/cross
+  0,    // 29 fuzz    = off
+  0,    // 30 crsh    = off (BITS)
+  0,    // 31 reso    = no resonance
+  0,    // 32 mode    = LP
+  0,    // 33 E1 rise = fast attack
+  64,   // 34 E1 curv = centered
+  127,  // 35 E1 dept = full ENV1→VCA
+  0,    // 36 E2 rise
+  64,   // 37 E2 curv
+  0,    // 38 E3 rise
+  64,   // 39 E3 curv
+  128,  // 40 LFO4 rate
+  0,    // 41 LFO4 wave (triangle)
+  0,    // 42 LFO4 dest
+  0,    // 43 LFO4 dept
+  128,  // 44 LFO5 rate
+  0,    // 45 LFO5 wave (triangle)
+  0,    // 46 LFO5 dest
+  0,    // 47 LFO5 dept
 };
 
 static const prog_uint8_t kDefaultPage2[] PROGMEM = {
@@ -301,41 +359,74 @@ void Sequencer::ClearStepLock(
   lock_prob_pool_.Clear(t, s, lock_index);
 }
 
-// Parameter-table id → sequencer lock_index 0..27 (0xff = not lockable).
-// Only the patch params with an existing lock slot are mapped here;
-// expanding the lockable set requires claiming the reserved page2[5]
-// slot or extending the 28-lock namespace.
+// Parameter-table id → sequencer lock_index 0..47 (0xff = not lockable).
+// v4.4-WS1: expanded to 77 entries to cover every patch-page cell that has
+// a per-step DSP byte. Slot 7 reclaims OSC1 RANGE; slots 28..47 host the
+// formerly config-only params (xmod/fuzz/crsh/reso/mode, full env shape,
+// LFO4/5 controls). Mapping fixes for E2/E3 fall + depth at params 64/66/68/70
+// route patch-page cells to existing slots 10/25/12/26 (FAMT/PAMT/fdec/pdec).
 static const prog_uint8_t kParamLockMap[] PROGMEM = {
   /* 0  OSC1_SHAPE   */ 1,
   /* 1  OSC1_PWM     */ 2,
-  /* 2  OSC1_RANGE   */ 0xff,
-  /* 3  OSC1_DETUNE  */ 7,
+  /* 2  OSC1_RANGE   */ 7,        // WS1: reclaims dead OSC1_DETUNE slot
+  /* 3  OSC1_DETUNE  */ 0xff,     // WS0 soft-dropped; no UI cell
   /* 4  OSC2_SHAPE   */ 5,
   /* 5  OSC2_PWM     */ 6,
   /* 6  OSC2_RANGE   */ 9,
   /* 7  OSC2_DETUNE  */ 11,
   /* 8  MIX_BALANCE  */ 3,
-  /* 9  MIX_OPERATOR */ 0xff,
+  /* 9  MIX_OPERATOR */ 28,       // WS1: xmod
   /* 10 MIX_PARAMETER*/ 4,
   /* 11 MIX_SUB_SHAPE*/ 27,
   /* 12 MIX_SUB_LEVEL*/ 15,
   /* 13 MIX_NOISE_LV */ 14,
-  /* 14 MIX_FUZZ     */ 0xff,
-  /* 15 MIX_CRUSH    */ 0xff,
+  /* 14 MIX_FUZZ     */ 29,       // WS1
+  /* 15 MIX_CRUSH    */ 30,       // WS1
   /* 16 FILTER1_CUT  */ 24,
-  /* 17 FILTER1_RES  */ 0xff,
-  /* 18 FILTER1_MODE */ 0xff,
+  /* 17 FILTER1_RES  */ 31,       // WS1
+  /* 18 FILTER1_MODE */ 32,       // WS1
   /* 19 FILTER2_CUT  */ 0xff,
   /* 20 FILTER2_RES  */ 0xff,
   /* 21 FILTER2_MODE */ 0xff,
-  /* 22 FILTER1_ENV  */ 25,
+  /* 22 FILTER1_ENV  */ 25,       // orphaned param (no cell); shares slot 25 with param 66
   /* 23 FILTER1_LFO  */ 0xff,
-  /* 24 E1 rise      */ 0xff,
+  /* 24 E1 rise      */ 33,       // WS1
   /* 25 E1 fall      */ 8,
-  /* 26 E1 curv      */ 0xff,
-  /* 27 E1 depth     */ 0xff,
-  /* 28 E2 rise      */ 0xff,
-  // Params 29..72 are LFO/mod/part/multi/system — none lockable today.
+  /* 26 E1 curv      */ 34,       // WS1
+  /* 27 E1 depth     */ 35,       // WS1
+  /* 28 E2 rise      */ 36,       // WS1
+  /* 29 LFO_SYNC     */ 0xff,
+  /* 30 LFO_RATE     */ 0xff,
+  /* 31 LFO_SHAPE    */ 0xff,
+  /* 32 VOICE_LFO_RATE  */ 40,    // WS1: LFO4 rate
+  /* 33 VOICE_LFO_SHAPE */ 41,    // WS1: LFO4 wave
+  /* 34 UI_ACTIVE_MOD */ 0xff,
+  /* 35 MOD_SOURCE   */ 0xff,
+  /* 36 MOD_DEST     */ 0xff,
+  /* 37 MOD_AMOUNT   */ 0xff,
+  /* 38 UI_ACTIVE_MODIFIER */ 0xff,
+  /* 39 MOD_OPERAND1 */ 0xff,
+  /* 40 MOD_OPERAND2 */ 0xff,
+  /* 41 MOD_OPERATOR */ 0xff,
+  /* 42..63 — PART / MULTI / SYSTEM / filter velo/kbt — not lockable */
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,    /* 42..48 PART */
+  0xff, 0xff, 0xff,                            /* 49..51 PART seq lengths */
+  0xff, 0xff, 0xff,                            /* 52..54 MULTI */
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,    /* 55..61 SYSTEM */
+  0xff, 0xff,                                  /* 62..63 filter velo/kbt */
+  /* 64 E2 fall      */ 10,       // mapping fix: patch-page cell → existing slot
+  /* 65 E2 curv      */ 37,       // WS1
+  /* 66 E2 depth     */ 25,       // mapping fix: shares slot with FILTER1_ENV/22
+  /* 67 E3 rise      */ 38,       // WS1
+  /* 68 E3 fall      */ 12,       // mapping fix
+  /* 69 E3 curv      */ 39,       // WS1
+  /* 70 E3 depth     */ 26,       // mapping fix
+  /* 71 LFO4 dest    */ 42,       // WS1
+  /* 72 LFO4 dept    */ 43,       // WS1
+  /* 73 LFO5 rate    */ 44,       // WS1
+  /* 74 LFO5 wave    */ 45,       // WS1
+  /* 75 LFO5 dest    */ 46,       // WS1
+  /* 76 LFO5 dept    */ 47,       // WS1
 };
 static const uint8_t kParamLockMapSize =
     sizeof(kParamLockMap) / sizeof(kParamLockMap[0]);
@@ -348,9 +439,27 @@ uint8_t ParamIdToLockIndex(uint8_t param_id, uint8_t /*instance*/) {
   return pgm_read_byte(&kParamLockMap[param_id]);
 }
 
+void SeedExtendedDefaults(SeqTrack& tr) {
+  memcpy_P(&tr.defaults[28], kDefaultExt, 20);
+}
+
+void Sequencer::ClearTrackLocksForParam(uint8_t t, uint8_t lock_index) {
+  for (uint8_t s = 0; s < kNumStepsPerTrack; ++s) {
+    lock_pool_.Clear(t, s, lock_index);
+    lock_prob_pool_.Clear(t, s, lock_index);
+  }
+}
+
 void Sequencer::ClearAllStepLocks(uint8_t t, uint8_t s) {
   lock_pool_.ClearStep(t, s);
   lock_prob_pool_.ClearStep(t, s);
+  // Also reset per-step editable surfaces that don't live in the pool:
+  // SMOD (step_flags bits 2..5) and the substep_bits bitfield. Preserve
+  // bit 0 (step on/off) — the user's first tap of the double-tap already
+  // toggled it; the second tap is the clear gesture, not a force-off.
+  SeqStep& step = tracks_[t].steps[s];
+  step.step_flags &= kStepFlagOn;
+  step.substep_bits = 0;
 }
 
 
@@ -374,6 +483,7 @@ void Sequencer::Init() {
     memcpy_P(&tr.defaults[8],  kDefaultPage2,    8);
     memcpy_P(&tr.defaults[16], kDefaultStepPage, 8);
     memcpy_P(&tr.defaults[24], kDefaultPage3,    4);
+    SeedExtendedDefaults(tr);
     memcpy_P(tr.config,        kDefaultConfig,   kCfgSIZE);
     memset(tr.shadow, 0, kShdwSIZE);
 
@@ -660,13 +770,16 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
   // there on tr.shadow[kShdwPROB], so by the time FireStep runs the decision
   // has already been made and we always fire.
 
-  // Resolve 20-byte snapshot: page1[8] || page2[8] || page3[4].
-  // Seed with track defaults, then iterate the lock pool ONCE and overlay
-  // any pool entries matching (t, step_index). NOTE (li 0) flows through
-  // the same path as every other lock.
-  uint8_t snapshot[20];
-  for (uint8_t i = 0; i < 16; ++i) snapshot[i]      = tr.defaults[i];
-  for (uint8_t i = 0; i <  4; ++i) snapshot[16 + i] = tr.defaults[24 + i];
+  // Resolve 40-byte snapshot (v4.4-WS1): page1[8] || page2[8] || page3[4] ||
+  // ext[20]. Seed with track defaults, then iterate the lock pool ONCE and
+  // overlay any pool entries matching (t, step_index). NOTE (li 0) flows
+  // through the same path as every other lock. Intrinsic step-page slots
+  // (16..23 PROB/SSUB/REPT/RATE/VEL/GLID/MINT/MDIR) live outside the
+  // snapshot; their fire-time effects are dispatched separately below.
+  uint8_t snapshot[40];
+  for (uint8_t i = 0; i < 16; ++i) snapshot[i]       = tr.defaults[i];
+  for (uint8_t i = 0; i <  4; ++i) snapshot[16 + i]  = tr.defaults[24 + i];
+  for (uint8_t i = 0; i < 20; ++i) snapshot[20 + i]  = tr.defaults[28 + i];
   {
     uint8_t ts = LockTsPack(t, step_index);
     uint8_t loop = tr.shadow[kShdwLOOP];
@@ -685,6 +798,8 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
         snapshot[li] = e.value;
       } else if (li >= 24 && li < 28) {
         snapshot[16 + (li - 24)] = e.value;
+      } else if (li >= 28 && li < 48) {
+        snapshot[20 + (li - 28)] = e.value;  // [20..39] covers li 28..47
       }
     }
   }

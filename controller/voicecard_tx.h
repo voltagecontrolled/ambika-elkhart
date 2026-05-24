@@ -62,8 +62,11 @@ class VoicecardProtocolTx {
       uint8_t velocity,
       uint8_t legato);
 
-  // Sends a 16-byte param snapshot atomically followed by note/vel/legato.
-  // snapshot layout matches voicecard kSnapshotAddrs[]: page1[0..7] then page2[0..7].
+  // Sends a 40-byte param snapshot atomically followed by note/vel/legato.
+  // snapshot layout matches voicecard kSnapshotAddrs[]: page1[0..7] (li 0..7),
+  // page2[0..7] (li 8..15), page3[0..3] (li 24..27), then ext[0..19] (li 28..47).
+  // Step-page intrinsics (li 16..23) are NOT in the snapshot — fire path
+  // dispatches them separately.
   static void TriggerWithSnapshot(
       uint8_t voice_id,
       uint16_t note,

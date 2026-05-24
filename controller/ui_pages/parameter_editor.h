@@ -62,6 +62,20 @@ class ParameterEditor : public UiPage {
   static uint8_t feedback_cell_;
   static uint8_t feedback_state_;
 
+  // Per-lock PROB drill-in (v4.4, #41) — patch-page port of the
+  // seq_steps_page gesture. Armed by encoder click on a lockable cell while
+  // a step is held. While armed, the matching pot writes to LockProbPool
+  // instead of the lock value, and the cell renders the PROB byte. Cleared
+  // on: step release (poll), encoder turn (cursor move), track change,
+  // page change (OnInit), second click on the same (step, cell).
+  // drill_step_ == 0xff means inactive.
+  static uint8_t drill_step_;
+  static uint8_t drill_lock_index_;
+  static uint8_t drill_track_;
+
+  // Clear drill if drilled step no longer held or active track changed.
+  static void ReleaseDrillIfStale();
+
   DISALLOW_COPY_AND_ASSIGN(ParameterEditor);
 };
 

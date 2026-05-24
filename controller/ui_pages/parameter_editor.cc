@@ -55,8 +55,24 @@ uint16_t ParameterEditor::feedback_start_ms_;
 uint8_t ParameterEditor::feedback_cell_;
 /* static */
 uint8_t ParameterEditor::feedback_state_;
+/* static */
+uint8_t ParameterEditor::drill_step_ = 0xff;
+/* static */
+uint8_t ParameterEditor::drill_lock_index_ = 0xff;
+/* static */
+uint8_t ParameterEditor::drill_track_ = 0xff;
 
 static const uint16_t kFeedbackDurationMs = 500;
+
+/* static */
+void ParameterEditor::ReleaseDrillIfStale() {
+  if (drill_step_ == 0xff) return;
+  uint8_t sr = 7 - drill_step_;
+  if (drill_track_ != ui.state().active_part || !ui.switch_held(sr)) {
+    drill_step_ = 0xff;
+    drill_lock_index_ = 0xff;
+  }
+}
 
 /* static */
 uint8_t ParameterEditor::parameter_index(uint8_t control_id) {
@@ -89,6 +105,8 @@ void ParameterEditor::OnInit(PageInfo* info) {
   UiPage::OnInit(info);
   SetActiveControl(ACTIVE_CONTROL_FIRST);
   snapped_ = 0;
+  drill_step_ = 0xff;
+  drill_lock_index_ = 0xff;
 }
 
 /* static */
@@ -113,6 +131,63 @@ uint8_t ParameterEditor::OnClick() {
     return 1;
   }
   uint8_t parameter_id = info_->data[active_control_];
+
+  // PROB drill-in (#41): encoder click on a lockable cell while a step is
+  // held arms or toggles drill for that (step, lock_index). Pre-empts the
+  // OSC1/LFO phase-reset toggle below — phase-reset only fires when no
+  // step is held. Mirrors the seq_steps_page gesture (cursor first, then
+  // hold step, then click).
+  if (parameter_id != 0xff) {
+    const Parameter& click_param = parameter_manager.parameter(parameter_id);
+    if (click_param.level == PARAMETER_LEVEL_PATCH) {
+      uint8_t lock_index = ParamIdToLockIndex(
+          parameter_id, instance_index(active_control_));
+      if (lock_index != 0xff) {
+        uint8_t held_sr = 0xff;
+        for (uint8_t s = 0; s < 8; ++s) {
+          if (ui.switch_held(s)) { held_sr = s; break; }
+        }
+        if (held_sr != 0xff) {
+          uint8_t held_step = 7 - held_sr;
+          uint8_t track = ui.state().active_part;
+          if (drill_step_ == held_step && drill_lock_index_ == lock_index &&
+              drill_track_ == track) {
+            drill_step_ = 0xff;
+            drill_lock_index_ = 0xff;
+          } else {
+            drill_step_ = held_step;
+            drill_lock_index_ = lock_index;
+            drill_track_ = track;
+          }
+          ui.inhibit_switch(1 << held_sr);
+          return 1;
+        }
+      }
+    }
+  }
+
+  // #42: encoder long-press on a lockable cell (no step held) clears every
+  // step's lock + prob entry for this parameter on the active track. The
+  // 'clr' overlay (rendered via feedback_state_ = 2) provides visual feedback.
+  if (parameter_id != 0xff && ui.encoder_long_pressed()) {
+    const Parameter& long_param = parameter_manager.parameter(parameter_id);
+    if (long_param.level == PARAMETER_LEVEL_PATCH) {
+      uint8_t lock_index = ParamIdToLockIndex(
+          parameter_id, instance_index(active_control_));
+      if (lock_index != 0xff) {
+        sequencer.ClearTrackLocksForParam(
+            ui.state().active_part, lock_index);
+        ui.clear_encoder_last_hold_ms();
+        uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+        if (now == 0) now = 1;
+        feedback_start_ms_ = now;
+        feedback_cell_ = active_control_;
+        feedback_state_ = 2;
+        return 1;
+      }
+    }
+  }
+
   uint8_t patch_addr;
   if (parameter_id == 0) {                // OSC1 SHAPE cell
     patch_addr = 106;                     // osc_phase_reset
@@ -151,6 +226,9 @@ uint8_t ParameterEditor::OnIdle() {
 
 /* static */
 uint8_t ParameterEditor::OnIncrement(int8_t increment) {
+  // Encoder turn cancels any armed drill (cursor move / value edit gesture).
+  drill_step_ = 0xff;
+  drill_lock_index_ = 0xff;
   if (edit_mode_ != EDIT_IDLE) {
     parameter_manager.Increment(
         parameter_index(active_control_),
@@ -212,14 +290,26 @@ uint8_t ParameterEditor::OnPot(uint8_t index, uint8_t value) {
   for (uint8_t s = 0; s < 8; ++s) {
     if (ui.switch_held(s)) { held_step = 7 - s; break; }
   }
+  // Stale-drill cleanup: if the previously-drilled step is no longer held
+  // or the active track changed, abandon the drill before the pot routes.
+  ReleaseDrillIfStale();
+
   if (held_step != 0xff) {
     ui.inhibit_switch(1 << (7 - held_step));
     if (parameter.level == PARAMETER_LEVEL_PATCH) {
       uint8_t lock_index = ParamIdToLockIndex(
           parameter_id, instance_index(index));
       if (lock_index != 0xff) {
-        uint8_t scaled = parameter.Scale(value);
         uint8_t track  = part_index(active_control_);
+        // Drill-in: pot on the drilled-in cell writes a bipolar PROB byte
+        // into LockProbPool instead of the lock value itself (#41).
+        if (drill_step_ == held_step && drill_lock_index_ == lock_index &&
+            drill_track_ == track) {
+          sequencer.mutable_lock_prob_pool().Set(
+              track, held_step, lock_index, ProbEncodePot(value));
+          return 1;
+        }
+        uint8_t scaled = parameter.Scale(value);
         sequencer.SetStepLock(track, held_step, lock_index, scaled);
         return 1;
       }
@@ -244,10 +334,12 @@ void ParameterEditor::UpdateScreen() {
   // If a step button is held, render the per-step locked value (lock pool or
   // intrinsic) so the user can see what the step will play. No step held →
   // render the live patch value.
+  ReleaseDrillIfStale();
   uint8_t held_step = 0xff;
   for (uint8_t s = 0; s < 8; ++s) {
     if (ui.switch_held(s)) { held_step = 7 - s; break; }
   }
+  uint8_t track = ui.state().active_part;
   uint8_t paramLength = 0;
   for (uint8_t i = 0; i < kNumParametersPerPage; ++i) {
     uint8_t parameter_id = parameter_index(i);
@@ -267,20 +359,39 @@ void ParameterEditor::UpdateScreen() {
                             && parameter.level == PARAMETER_LEVEL_PATCH)
           ? ParamIdToLockIndex(parameter_id, instance_index(i))
           : 0xff;
-      if (lock_index != 0xff) {
-        value = sequencer.StepLockedValue(part_index(i), held_step, lock_index);
-      } else {
-        value = parameter_manager.GetValue(
-            parameter, part_index(i), instance_index(i));
-      }
-      if (parameter.level == PARAMETER_LEVEL_UI) {
-        parameter.Print(value, &buffer[1], 6, 2);
-        paramLength = 6;
-      } else {
-        parameter.Print(value, &buffer[1], 4, 4);
+      // Drill-in cell: render the PROB byte from LockProbPool in a 4-char
+      // field; bypass the parameter's normal Print path. Mirrors the
+      // seq_steps_page rendering at the drilled (step, lock_index).
+      uint8_t drilled = (held_step != 0xff && lock_index != 0xff &&
+                         drill_step_ == held_step &&
+                         drill_lock_index_ == lock_index &&
+                         drill_track_ == track) ? 1 : 0;
+      if (drilled) {
+        // Clear the full 9-char cell interior, then render PROB at the
+        // value field. Label is uppercased below (drill-in indicator).
+        for (uint8_t c = 1; c < 10; ++c) buffer[c] = ' ';
+        WriteProbByte(&buffer[5],
+                      sequencer.lock_prob_pool().GetProb(
+                          track, held_step, lock_index));
         paramLength = 4;
+      } else {
+        if (lock_index != 0xff) {
+          value = sequencer.StepLockedValue(track, held_step, lock_index);
+        } else {
+          value = parameter_manager.GetValue(
+              parameter, part_index(i), instance_index(i));
+        }
+        if (parameter.level == PARAMETER_LEVEL_UI) {
+          parameter.Print(value, &buffer[1], 6, 2);
+          paramLength = 6;
+        } else {
+          parameter.Print(value, &buffer[1], 4, 4);
+          paramLength = 4;
+        }
       }
-      if (i == active_control_) {
+      // Cursor cell and drilled cell render their label uppercase so the
+      // drill-in armed state is visible at a glance (matches seq_steps_page).
+      if (i == active_control_ || drilled) {
         for (uint8_t c = 1; c < paramLength+1 ; ++c) {
           if (buffer[c] >= 'a' && buffer[c] <= 'z') {
             buffer[c] -= 0x20;
@@ -310,7 +421,8 @@ void ParameterEditor::UpdateScreen() {
       uint8_t line = feedback_cell_ < 4 ? 0 : 1;
       uint8_t row = (feedback_cell_ & 3) * 10;
       char* buffer = display.line_buffer(line) + row + 1;
-      const char* label = feedback_state_ ? "rst on " : "rst off";
+      const char* label = (feedback_state_ == 2) ? "clr locks"
+                          : (feedback_state_ ? "rst on " : "rst off");
       for (uint8_t c = 0; c < 9; ++c) buffer[c] = ' ';
       for (uint8_t c = 0; label[c]; ++c) buffer[c] = label[c];
     } else {

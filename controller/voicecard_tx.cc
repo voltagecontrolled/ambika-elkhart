@@ -104,7 +104,10 @@ void VoicecardProtocolTx::TriggerWithSnapshot(
     const uint8_t* snapshot) {
   voice_status_[voice_id] = velocity;
   Write(voice_id, COMMAND_NOTE_ON_WITH_SNAPSHOT + legato);
-  for (uint8_t i = 0; i < 20; ++i) {
+  // v4.4-WS1: snapshot grew from 20 to 40 bytes (kNumLockableParams 28→48 with
+  // step-page intrinsics 16..23 still excluded). Voicecard kSnapshotAddrs[]
+  // must match this count in lockstep.
+  for (uint8_t i = 0; i < 40; ++i) {
     Write(voice_id, snapshot[i]);
   }
   Write(voice_id, note >> 8);

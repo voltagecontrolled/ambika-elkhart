@@ -543,7 +543,7 @@ as page selectors do not apply while sequencer mode is active.
 |-----------------------------|-----------------------------------------------------------------------------------------|
 | Tap (≤ 250 ms)              | Toggle the step on or off.                                                              |
 | Hold (> 250 ms), no pot     | **Peek.** The LCD shows that step's locked values. Releasing does **not** toggle the step — peeking is non-destructive. |
-| Double-tap (within 300 ms)  | **Clear all locks** for that step. The first tap's toggle is undone, so the step's on/off state is unchanged — only the locks are cleared, returning the step to track defaults. |
+| Double-tap (within 300 ms)  | **Clear all locks** for that step. The first tap's toggle is undone, so the step's on/off state is unchanged — only the locks (value + PROB), SMOD, and substep_bits are cleared, returning the step to track defaults. |
 | Hold + turn a pot           | Write a per-step lock for that pot's parameter. (Covered in detail in the lock-pages section.) |
 
 Step LEDs: each `S1`–`S8` LED lights **green** for steps that are
@@ -651,6 +651,8 @@ pdec  20 | pamt +24 | sub   48 | wave squ1
 
 Any per-step lock can carry its own probability gate. When the gate passes the lock applies; when it fails, the step plays through with that parameter's track default for the loop. Each gate uses the same bipolar PROB encoding as the step's main `prob` cell — random % roll on the CCW side, "always" at centre, or iterative `X:N` / `!X:N` patterns on the CW side. Gates roll independently of step PROB, so a step can fire on every other loop *and* have its FREQ override apply on every third loop.
 
+The drill-in gesture works on **both** the sequencer locks page and the synth patch pages (OSC / MIXER / FILTER / ENV/LFO). Patch pages are the canonical lock-write surface: hold a step while turning any lockable pot to write the value lock, then use the drill-in below to add a PROB gate on the same cell.
+
 #### How to set a per-lock PROB
 
 1. Turn the encoder so the cursor sits on the cell whose lock you want to gate.
@@ -662,6 +664,10 @@ Any per-step lock can carry its own probability gate. When the gate passes the l
 The cell's label renders **UPPERCASE** any time that step has a non-default PROB attached, as a "this lock is gated" indicator.
 
 **Order matters.** Cursor first, then hold the step. Holding the step first and turning the encoder doesn't move the cursor — step buttons act as encoder modifiers for shortcut handling, so the turn is consumed elsewhere.
+
+#### Clear every lock for one parameter on a track
+
+Hold the encoder click for ≥ 800 ms with no step button pressed, while the cursor is on a lockable cell. Every step's lock (value + PROB) for that parameter on the active track is wiped, and the cell briefly shows `clr locks` as feedback. Works on the same set of cells the drill-in works on, plus the sequencer page's `sfx` (clears every step's SMOD nibble) and `subs` (clears SSUB, REPT, and `substep_bits` on every step).
 
 #### What can be gated
 
