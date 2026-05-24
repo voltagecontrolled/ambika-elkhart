@@ -59,7 +59,6 @@ extern const prog_uint8_t wav_res_bandlimited_saw_5[] PROGMEM;
 extern const prog_uint8_t wav_res_vowel_data[] PROGMEM;
 extern const prog_uint8_t wav_res_distortion[] PROGMEM;
 extern const prog_uint8_t wav_res_fold[] PROGMEM;
-extern const prog_uint8_t wav_res_lfo_waveforms[] PROGMEM;
 extern const prog_uint8_t wav_res_env_expo[] PROGMEM;
 extern const prog_uint8_t wav_res_division_table[] PROGMEM;
 extern const prog_uint8_t wav_res_blep_table[] PROGMEM;
@@ -102,17 +101,15 @@ extern const prog_uint8_t wav_res_wavetables[] PROGMEM;
 #define WAV_RES_DISTORTION_SIZE 256
 #define WAV_RES_FOLD 12
 #define WAV_RES_FOLD_SIZE 256
-#define WAV_RES_LFO_WAVEFORMS 13
-#define WAV_RES_LFO_WAVEFORMS_SIZE 2
-#define WAV_RES_ENV_EXPO 14
+#define WAV_RES_ENV_EXPO 13
 #define WAV_RES_ENV_EXPO_SIZE 257
-#define WAV_RES_DIVISION_TABLE 15
+#define WAV_RES_DIVISION_TABLE 14
 #define WAV_RES_DIVISION_TABLE_SIZE 128
-#define WAV_RES_BLEP_TABLE 16
+#define WAV_RES_BLEP_TABLE 15
 #define WAV_RES_BLEP_TABLE_SIZE 128
-#define WAV_RES_WAVES 17
+#define WAV_RES_WAVES 16
 #define WAV_RES_WAVES_SIZE 10320
-#define WAV_RES_WAVETABLES 18
+#define WAV_RES_WAVETABLES 17
 #define WAV_RES_WAVETABLES_SIZE 288
 typedef avrlib::ResourcesManager<
     ResourceId,

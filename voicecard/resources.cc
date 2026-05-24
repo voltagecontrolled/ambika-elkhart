@@ -524,9 +524,6 @@ const prog_uint8_t wav_res_fold[] PROGMEM = {
        1,      9,     17,     25,     33,     41,     48,     56,
       64,     72,     80,     88,     96,    104,    112,    120,
 };
-const prog_uint8_t wav_res_lfo_waveforms[] PROGMEM = {
-       1,    254,
-};
 const prog_uint8_t wav_res_env_expo[] PROGMEM = {
        0,      4,      7,     11,     15,     19,     23,     26,
       30,     34,     37,     41,     44,     47,     51,     54,
@@ -1944,7 +1941,6 @@ const prog_uint8_t* const waveform_table[] = {
   wav_res_vowel_data,
   wav_res_distortion,
   wav_res_fold,
-  wav_res_lfo_waveforms,
   wav_res_env_expo,
   wav_res_division_table,
   wav_res_blep_table,

@@ -83,7 +83,6 @@ extern const prog_uint16_t lut_res_groove_lag[] PROGMEM;
 extern const prog_uint16_t lut_res_groove_human[] PROGMEM;
 extern const prog_uint16_t lut_res_groove_monkey[] PROGMEM;
 extern const prog_uint8_t chr_res_special_characters[] PROGMEM;
-extern const prog_uint8_t wav_res_lfo_waveforms[] PROGMEM;
 #define STR_RES_WAVEFORM 0  // waveform
 #define STR_RES_PARAMETER 1  // parameter
 #define STR_RES_RANGE 2  // range
@@ -556,8 +555,6 @@ extern const prog_uint8_t wav_res_lfo_waveforms[] PROGMEM;
 #define LUT_RES_GROOVE_MONKEY_SIZE 16
 #define CHR_RES_SPECIAL_CHARACTERS 0
 #define CHR_RES_SPECIAL_CHARACTERS_SIZE 56
-#define WAV_RES_LFO_WAVEFORMS 0
-#define WAV_RES_LFO_WAVEFORMS_SIZE 2064
 typedef avrlib::ResourcesManager<
     ResourceId,
     avrlib::ResourcesTables<
