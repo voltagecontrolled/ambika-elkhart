@@ -120,12 +120,10 @@ void Part::SetValue(uint8_t address, uint8_t value, uint8_t) {
 }
 
 void Part::Touch() {
-  // Send fixed mod routing base (42 bytes) from PROGMEM, then override amounts.
-  for (uint8_t i = 0; i < 42; ++i) {
-    voicecard_tx.WriteData(voice_id_, VOICECARD_DATA_PATCH, 50 + i,
-        pgm_read_byte(&kDefaultMod[i]));
-  }
-  // All other patch addresses (configurable amounts override kDefaultMod slots).
+  // Mod matrix retired in v4.4: voicecard's ApplyModulations() reads only
+  // dest/amount bytes for the four surviving plumbing slots (6/7/10/11).
+  // kSyncAddresses ships exactly those bytes; the rest of modulation[] /
+  // modifier[] is anonymous padding on the voicecard side.
   static const uint8_t kSyncAddresses[] = {
     0, 1, 2, 3, 4, 5, 6, 7,
     8, 9, 10, 11, 12, 13, 14, 15,

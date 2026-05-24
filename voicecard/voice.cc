@@ -260,8 +260,6 @@ void Voice::Release() {
 
 /* static */
 inline void Voice::LoadSources() {
-  static uint8_t ops[9];
-  
   // Rescale the value of each modulation sources. Envelopes are in the
   // 0-16383 range ; just like pitch. All are scaled to 0-255.
   modulation_sources_[MOD_SRC_NOISE] = Random::GetByte();
@@ -280,45 +278,6 @@ inline void Voice::LoadSources() {
   // and the LFO would simply use a small increment.
   if (renders_since_lfo_tick_ < 255) {
     ++renders_since_lfo_tick_;
-  }
-
-  // Apply the modulation operators
-  for (uint8_t i = 0; i < kNumModifiers; ++i) {
-    if (!patch_.modifier[i].op) {
-      continue;
-    }
-    uint8_t x = patch_.modifier[i].operands[0];
-    uint8_t y = patch_.modifier[i].operands[1];
-    x = modulation_sources_[x];
-    y = modulation_sources_[y];
-    uint8_t op = patch_.modifier[i].op;
-    if (op <= MODIFIER_LE) {
-      if (x > y) {
-        ops[4] = x;  ops[7] = 255;
-        ops[5] = y;  ops[8] = 0;
-      } else {
-        ops[4] = y;  ops[7] = 0;
-        ops[5] = x;  ops[8] = 255;
-      }
-      ops[1] = (x >> 1) + (y >> 1);
-      ops[2] = U8U8MulShift8(x, y);
-      ops[3] = S8U8MulShift8(x + 128, y) + 128;
-      ops[6] = x ^ y;
-      modulation_sources_[MOD_SRC_OP_1 + i] = ops[op];
-    } else if (op == MODIFIER_QUANTIZE) {
-      uint8_t mask = 0;
-      while (y >>= 1) {
-        mask >>= 1;
-        mask |= 0x80;
-      }
-      modulation_sources_[MOD_SRC_OP_1 + i] = x & mask;
-    } else if (op == MODIFIER_LAG_PROCESSOR) {
-      y >>= 2;
-      ++y;
-      uint16_t v = U8U8Mul(256 - y, modulation_sources_[MOD_SRC_OP_1 + i]);
-      v += U8U8Mul(y, x);
-      modulation_sources_[MOD_SRC_OP_1 + i] = v >> 8;
-    }
   }
 
   modulation_destinations_[MOD_DST_VCA] = part_.volume << 1;
@@ -356,47 +315,76 @@ inline void Voice::LoadSources() {
 
 
 /* static */
-inline void Voice::ProcessModulationMatrix() {
-  // Apply the modulations in the modulation matrix.
-  for (uint8_t i = 0; i < kNumModulations; ++i) {
-    // Row 2 is the dedicated ENV3 → pitch path; applied directly in
-    // RenderOscillators with wider scaling than the matrix coarse-pitch bus.
-    if (i == 2) continue;
-    int8_t amount = patch_.modulation[i].amount;
+inline void Voice::ApplyModulations() {
+  // The full mod matrix is retired; only the four routings that survived as
+  // plumbing remain, as direct paths. Dest/amount bytes still live in
+  // patch_.modulation[i] (kept as anonymous padding so SD-card wire format is
+  // unchanged); the slot indices are vestigial.
+  //   slot 6  — LFO 5  → user-selected destination (L5D / L5A)
+  //   slot 7  — LFO 4  → user-selected destination (LFO4D / LFO4A)
+  //   slot 10 — ENV 1  → VCA, amount E1DEPT
+  //   slot 11 — VEL    → VCA, amount byte 85
+  // ENV3 → pitch is still handled directly in RenderOscillators (was always
+  // a dedicated path bypassing the matrix).
 
-    // The rate of the last modulation is adjusted by the wheel.
-    if (i == kNumModulations - 1) {
-      amount = S8U8MulShift8(amount, modulation_sources_[MOD_SRC_WHEEL]);
-    }
-    uint8_t source = patch_.modulation[i].source;
-    uint8_t destination = patch_.modulation[i].destination;
-    uint8_t source_value = modulation_sources_[source];
-    if (destination != MOD_DST_VCA) {
-      int16_t modulation = dst_[destination];
-      if ((source >= MOD_SRC_LFO_1 && source <= MOD_SRC_LFO_4) ||
-           source == MOD_SRC_PITCH_BEND ||
-           source == MOD_SRC_NOTE) {
-        // These sources are "AC-coupled" (128 = no modulation).
-        modulation += S8S8Mul(amount, source_value + 128);
+  // LFO 5 → user destination.
+  {
+    int8_t amount = patch_.modulation[6].amount;
+    if (amount) {
+      uint8_t dest = patch_.modulation[6].destination;
+      uint8_t src = modulation_sources_[MOD_SRC_LFO_2];
+      if (dest != MOD_DST_VCA) {
+        dst_[dest] = S16ClipU14(dst_[dest] + S8S8Mul(amount, src + 128));
       } else {
-        modulation += S8U8Mul(amount, source_value);
+        if (amount < 0) { amount = -amount; src = 255 - src; }
+        if (amount != 127) src = U8Mix(255, src, amount << 1);
+        modulation_destinations_[MOD_DST_VCA] = U8U8MulShift8(
+            modulation_destinations_[MOD_DST_VCA], src);
       }
-      dst_[destination] = S16ClipU14(modulation);
-    } else {
-      // The VCA modulation is multiplicative, not additive. Yet another
-      // Special case :(.
-      if (amount < 0) {
-        amount = -amount;
-        source_value = 255 - source_value;
-      }
-      if (amount != 127) {
-        source_value = U8Mix(255, source_value, amount << 1);
-      }
-      modulation_destinations_[MOD_DST_VCA] = U8U8MulShift8(
-            modulation_destinations_[MOD_DST_VCA],
-            source_value);
     }
   }
+
+  // LFO 4 → user destination.
+  {
+    int8_t amount = patch_.modulation[7].amount;
+    if (amount) {
+      uint8_t dest = patch_.modulation[7].destination;
+      uint8_t src = modulation_sources_[MOD_SRC_LFO_4];
+      if (dest != MOD_DST_VCA) {
+        dst_[dest] = S16ClipU14(dst_[dest] + S8S8Mul(amount, src + 128));
+      } else {
+        if (amount < 0) { amount = -amount; src = 255 - src; }
+        if (amount != 127) src = U8Mix(255, src, amount << 1);
+        modulation_destinations_[MOD_DST_VCA] = U8U8MulShift8(
+            modulation_destinations_[MOD_DST_VCA], src);
+      }
+    }
+  }
+
+  // ENV 1 → VCA.
+  {
+    int8_t amount = patch_.modulation[10].amount;
+    if (amount) {
+      uint8_t src = modulation_sources_[MOD_SRC_ENV_1];
+      if (amount < 0) { amount = -amount; src = 255 - src; }
+      if (amount != 127) src = U8Mix(255, src, amount << 1);
+      modulation_destinations_[MOD_DST_VCA] = U8U8MulShift8(
+          modulation_destinations_[MOD_DST_VCA], src);
+    }
+  }
+
+  // VELOCITY → VCA.
+  {
+    int8_t amount = patch_.modulation[11].amount;
+    if (amount) {
+      uint8_t src = modulation_sources_[MOD_SRC_VELOCITY];
+      if (amount < 0) { amount = -amount; src = 255 - src; }
+      if (amount != 127) src = U8Mix(255, src, amount << 1);
+      modulation_destinations_[MOD_DST_VCA] = U8U8MulShift8(
+          modulation_destinations_[MOD_DST_VCA], src);
+    }
+  }
+
 }
 
 /* static */
@@ -550,7 +538,7 @@ inline void Voice::RenderOscillators() {
 /* static */
 void Voice::ProcessBlock() {
   LoadSources();
-  ProcessModulationMatrix();
+  ApplyModulations();
   UpdateDestinations();
   
   // Skip the oscillator rendering code if the VCA output has converged to

@@ -283,12 +283,15 @@ struct Patch {
   uint8_t voice_lfo_shape;
   uint8_t voice_lfo_rate;
 
-  // Offset: 50-92
+  // Offset: 50-92 — anonymous padding since v4.4 (mod matrix retired).
+  // Voicecard's ApplyModulations() reads dest/amount for slots 6/7/10/11
+  // (LFO 4/5 routing, ENV1→VCA, VEL→VCA); other bytes ignored. Kept as
+  // padding to preserve struct size and SD-card snapshot wire format.
   Modulation modulation[kNumModulations];
-  
-  // Offset: 92-104
+
+  // Offset: 92-104 — anonymous padding since v4.4 (modifier feature retired).
   Modifier modifier[kNumModifiers];
-  
+
   // Offset: 104-106
   int8_t filter_velo;
   int8_t filter_kbt;

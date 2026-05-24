@@ -320,24 +320,6 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // L5A = LFO5 amount (mod slot 6 amount)
 };
 
-// Fixed mod routing sent by Part::Touch() — amounts at bytes 58/72/73/82 come from config[].
-const prog_uint8_t kDefaultMod[42] PROGMEM = {
-  0, 0, 0,    // slot  0: cleared
-  0, 0, 0,    // slot  1: cleared
-  0, 0, 0,    // slot  2: cleared (ENV3→pitch is now a dedicated path on voicecard, bypasses matrix)
-  0, 0, 0,    // slot  3: cleared
-  0, 0, 0,    // slot  4: cleared
-  0, 0, 0,    // slot  5: cleared
-  4, 0, 0,    // slot  6: LFO_5 (MOD_SRC_LFO_2 slot) → dest/amount from L5D/L5A
-  6, 0, 0,    // slot  7: LFO_4 → dest/amount from LFO4D/LFO4A
-  11, 0, 0,   // slot  8: SEQ_1 → PARAMETER_1
-  12, 1, 0,   // slot  9: SEQ_2 → PARAMETER_2
-  0, 18, 63,  // slot 10: ENV_1 → VCA (amount from E1DEPT)
-  14, 18, 127, // slot 11: VELOCITY → VCA (round 5a-1: was 0 — vel was inert)
-  16, 4, 0,   // slot 12: PITCH_BEND → OSC_1_2_COARSE
-  0, 0, 0,    // slot 13: cleared
-};
-
 uint8_t Sequencer::StepLockedValue(
     uint8_t t, uint8_t s, uint8_t lock_index) const {
   return lock_pool_.Get(t, s, lock_index, tracks_[t].defaults[lock_index]);

@@ -305,7 +305,6 @@ class Sequencer {
 };
 
 extern Sequencer sequencer;
-extern const uint8_t kDefaultMod[42];
 
 // Map a (Parameter table id, instance_index) to a sequencer lock_index 0..47.
 // Returns 0xff if the parameter is not lockable. `instance` is used only for
