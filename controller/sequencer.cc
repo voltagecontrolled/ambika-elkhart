@@ -190,7 +190,7 @@ static uint8_t QuantizeToScale(uint8_t note, uint8_t scale_idx, uint8_t root) {
 
 static const prog_uint8_t kDefaultPage1[] PROGMEM = {
   60,   // NOTE = middle C
-  1,    // WAVE1 = polyblep_saw (index 1 in waveform enum)
+  WAVEFORM_FM,  // WAVE1 = FM
   0,    // PARA1
   0,    // BLND = 0 (Osc 1 only, no FM)
   0,    // RTIO = crossmod/FM amount (reserved for future linear-FM)
@@ -211,8 +211,8 @@ static const prog_uint8_t kDefaultPage2[] PROGMEM = {
 };
 
 static const prog_uint8_t kDefaultPage3[] PROGMEM = {
-  96,   // FREQ = cutoff at 3/4 open (matches kDefaultConfig[kCfgFREQ])
-  64,   // FAMT = ENV2→VCF depth mid (matches kDefaultConfig[kCfgE2DEPT])
+  127,  // FREQ = cutoff fully open / filter inactive (matches kDefaultConfig[kCfgFREQ])
+  0,    // FAMT = ENV2→VCF depth off (matches kDefaultConfig[kCfgE2DEPT])
   0,    // PAMT = ENV3→pitch depth off
   0,    // WAVE = WAVEFORM_SUB_OSC_SQUARE_1
 };
@@ -229,7 +229,7 @@ static const prog_uint8_t kDefaultStepPage[] PROGMEM = {
 };
 
 static const prog_uint8_t kDefaultConfig[] PROGMEM = {
-  96,   // FREQ = cutoff at 3/4 open
+  127,  // FREQ = cutoff fully open / filter inactive (mirrors kDefaultPage3 FREQ)
   0,    // RES = no resonance
   0,    // TYPE = LP mode
   0,    // DRIV = no drive
@@ -255,7 +255,7 @@ static const prog_uint8_t kDefaultConfig[] PROGMEM = {
   0,    // FMOP = no FM
   0,    // FUZZ = no fuzz
   127,  // E1DEPT = ENV1→VCA full depth (round 5: 0..127 unipolar)
-  64,   // E2DEPT = ENV2→VCF depth (round 5 mid; can push higher now)
+  0,    // E2DEPT = ENV2→VCF depth off (mirrors kDefaultPage3 FAMT)
   0,    // L5RT (was E3DEPT) — LFO5 retrigger off
   0,    // WSUB = WAVEFORM_SUB_OSC_SQUARE_1
   0,    // L5D = LFO5 destination (mod slot 6 dest)

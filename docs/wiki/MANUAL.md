@@ -64,6 +64,7 @@ any page, including pages that have taken over the buttons.
 |------------------------------|-----------------------------------------------------|
 | `S1` + turn                  | Select active voice (1–6)                           |
 | `S2` + turn                  | Step between settings pages (multi-page step)       |
+| `S3` + turn                  | Jump to / cycle synth pages (Osc/Mix → Filter → Env/LFO → Voice LFO) |
 | `S4` + turn                  | Jump to Sequencer mode                              |
 | `S6` + turn                  | Jump to Per-track settings                          |
 | `S7` + turn                  | Jump to Performance mixer                           |
@@ -134,9 +135,9 @@ in the per-page sections below.
 
 | Page                         | Reached by                                     | Cells (top row / bottom row)                                                  |
 |------------------------------|------------------------------------------------|-------------------------------------------------------------------------------|
-| Oscillators                  | `S2` + turn (Osc/Mixer group, page 1)          | `wave para rang tune` / `wave para rang tune`                                 |
-| Mixer                        | `S2` + turn (Osc/Mixer group, page 2)          | `mix nois sub wave` / `xmod amnt fuzz crsh`                                   |
-| Filter                       | `S2` + turn (Filter group)                     | `freq reso — mode` / `rise fall curv flt`                                     |
+| Oscillators                  | `S2` + turn (Osc/Mixer group, page 1)          | `wave para rang mix ` / `wave para rang tune`                                 |
+| Mixer                        | `S2` + turn (Osc/Mixer group, page 2)          | `fold nois sub wave` / `xmod amnt fuzz crsh`                                  |
+| Filter                       | `S2` + turn (Filter group)                     | `freq reso —    mode` / `rise fall curv flt`                                  |
 | Amp + Pitch envelopes        | `S2` + turn (Envelopes group, page 1) / `S3`   | `rise fall curv amp` / `rise fall curv pitc`                                  |
 | Voice LFOs (LFO 4 + LFO 5)   | `S2` + turn (Envelopes group, page 2) / `S4`*  | `rate wave dest dept` / `rate wave dest dept`                                 |
 | Sequencer Step page          | `S4` + turn (Sequencer mode, lock page 1)      | `note vel vamt rate` / `subs prob glid sfx`                                   |
@@ -169,11 +170,11 @@ Lock-vs-default behaviour:
 
 ```
 Oscillators                       Mixer
-wave saw  | para  64 | rang  +0 | tune   +0     mix   32 | nois  16 | sub   48 | wave  squ1
+wave saw  | para  64 | rang  +0 | mix    32     fold  16 | nois  16 | sub   48 | wave  squ1
 wave fm   | para  90 | rang +12 | tune  -05     xmod env | amnt  20 | fuzz  18 | crsh   4
 
 Filter                            Amp + Pitch envelopes
-freq  64 | reso  18 | --       | mode  LP       rise   2 | fall  64 | curv  90 | amp  127
+freq 127 | reso  18 | --       | mode  LP       rise   2 | fall  64 | curv  90 | amp  127
 rise   8 | fall  72 | curv  40 | flt   48       rise   0 | fall  20 | curv 100 | pitc  +24
 
 Voice LFOs (LFO 4 + LFO 5)        Per-track settings
@@ -205,7 +206,7 @@ Each oscillator has the same four controls: waveform algorithm,
 algorithm parameter, coarse range, and fine tune.
 
 ```
-wave saw  | para  64 | rang  +0 | tune   +0      ← Osc 1
+wave saw  | para  64 | rang  +0 | mix    32      ← Osc 1 (osc1 fine tune retired in v4.4)
 wave fm   | para  90 | rang +12 | tune  -05      ← Osc 2
 ```
 
@@ -214,7 +215,8 @@ wave fm   | para  90 | rang +12 | tune  -05      ← Osc 2
 | `wave` | 44 algorithms    | Selects the oscillator algorithm. Lockable per step.                  |
 | `para` | 0–127            | Algorithm-specific parameter (PWM amount, formant, FM index, …). Lockable per step. |
 | `rang` | ±24 semitones    | Coarse pitch offset. On Osc 2, lockable per step.                     |
-| `tune` | ±64 cents        | Fine detune. On Osc 2, lockable per step.                             |
+| `tune` | ±64 cents        | Fine detune. On Osc 2 only — osc1 fine tune retired in v4.4 (relative detune from Osc 2 covers it). Lockable per step. |
+| `mix`  | 0–63             | Osc 1 ↔ Osc 2 balance (0 = Osc 1 only, 63 = Osc 2 only). Moved here from the Mixer page in v4.4 — sits where osc1 `tune` used to. Lockable per step. |
 
 Knob writes here set the **track default** for that parameter — the
 value used on every step that doesn't have a per-step lock for it.
@@ -249,13 +251,13 @@ noise, sub-osc, cross-modulation, and the post-oscillator character
 controls.
 
 ```
-mix   32 | nois  16 | sub   48 | wave  squ1
+fold  16 | nois  16 | sub   48 | wave  squ1
 xmod env | amnt  20 | fuzz  18 | crsh   4
 ```
 
 | Cell   | Range          | Notes                                                                                                |
 |--------|----------------|------------------------------------------------------------------------------------------------------|
-| `mix`  | 0–63           | Crossfade between Osc 1 and Osc 2 in the audio path (0 = Osc 1 only, 63 = Osc 2 only). Lockable per step. |
+| `fold` | 0–70           | Pre-filter wavefolder drive. Moved here from the Filter page in v4.4 to group with the other XMOD operators. Folds the post-mix signal (Osc 1 + Osc 2 + sub) before the filter. `0` is dry; values above add progressively more folded harmonics. The 70 cap keeps drive below the inharmonic-aliasing zone. Lockable per step. |
 | `nois` | 0–63           | Noise generator level into the audio path. Lockable per step.                                        |
 | `sub`  | 0–63           | Sub-oscillator / transient layer level. Lockable per step.                                           |
 | `wave` | 11 shapes      | Sub-oscillator shape (see *Sub-oscillator and transient layer*). Lockable per step.                  |
@@ -305,7 +307,7 @@ the filter cells; the bottom row hosts Env 2 (filter envelope) so it
 sits next to the cutoff it shapes.
 
 ```
-freq  64 | reso  18 | fold  24 | mode  LP
+freq 127 | reso  18 | --       | mode  LP
 rise   8 | fall  72 | curv  40 | flt   48     ← Env 2 (Filter)
 ```
 
@@ -313,15 +315,14 @@ rise   8 | fall  72 | curv  40 | flt   48     ← Env 2 (Filter)
 |--------|----------------------|-------------------------------------------------------------------------------------------------------------------------|
 | `freq` | 0–127                | Cutoff frequency. Lockable per step.                                                                                    |
 | `reso` | 0–63                 | Resonance. High resonance near a strong harmonic produces ringing, near-self-oscillation tones.                         |
-| `fold` | 0–70                 | Pre-filter wavefolder drive. Folds the post-mix signal (Osc 1 + Osc 2 + sub) before the filter. `0` is dry; values above add progressively more folded harmonics. Hold a step button while turning to lock per step. The upper range cap (70) keeps drive below the inharmonic-aliasing zone. |
+| —      | —                    | Blank cell. `fold` moved to the Mixer page in v4.4 to group with the other XMOD operators.                              |
 | `mode` | LP / BP / HP / Notch | Filter response. **LP** for body and warmth, **HP** for hats and air, **BP** for nasal / metallic character, **Notch** for phaser-like rejection. |
 | `rise` | 0–127                | Env 2 attack rate.                                                                                                      |
 | `fall` | 0–127                | Env 2 decay/release rate. Lockable per step (as `fdec`).                                                                |
 | `curv` | 0–127                | Linear-to-exponential fall blend (0=linear, 127=expo).                                                                  |
 | `flt`  | 0–63                 | Env 2 → cutoff depth. Lockable per step (as `famt`). FLT and FAMT now write the same patch byte — edits in either place agree. |
 
-For an effectively open / passthrough sound, set `freq` to maximum
-and `reso` to `0`.
+The default patch ships with `freq` at 127 and `flt` at 0 — a fully open, env-bypassed filter that passes the voice unaltered. Lower `freq` and raise `flt` to engage filter sweeps.
 
 ## Envelopes and LFOs (`S3` / `S4`)
 

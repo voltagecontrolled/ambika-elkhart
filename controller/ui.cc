@@ -44,23 +44,25 @@ namespace ambika {
 const prog_PageInfo page_registry[] PROGMEM = {
   { PAGE_OSCILLATORS,
     &ParameterEditor::event_handlers_,
-    { 0, 1, 2, 3, 4, 5, 6, 7 },
+    // osc1 TUNE soft-dropped (was index 3); MIX (index 8) takes that slot.
+    { 0, 1, 2, 8, 4, 5, 6, 7 },
     PAGE_MIXER, 0, 0xf0,
   },
-  
+
   { PAGE_MIXER,
     &ParameterEditor::event_handlers_,
-    { 8, 13, 12, 11, 9, 10, 14, 15 },
+    // MIX vacated cell 0; FOLD (index 77) lands here, beside the other XMOD ops.
+    { 77, 13, 12, 11, 9, 10, 14, 15 },
     PAGE_OSCILLATORS, 0, 0x0f,
   },
-  
+
   { PAGE_FILTER,
     &ParameterEditor::event_handlers_,
-    // top: cutoff | reso | fold | mode
+    // top: cutoff | reso | (blank) | mode
     // bot: E2 rise | E2 fall | E2 curv | E2 depth (filter env)
     // NOTE: ids are array indices into parameters[], NOT the `// N`
     // comment labels — those count past gaps left by removed entries.
-    { 16, 17, 77, 18, 28, 64, 65, 66 },
+    { 16, 17, 0xff, 18, 28, 64, 65, 66 },
     PAGE_FILTER, 1, 0xf0,
   },
 
@@ -130,6 +132,12 @@ const prog_PageInfo page_registry[] PROGMEM = {
   },
 };
 
+// Synth-page cycle for the Hold-S3 + ENC shortcut. Order matches the synth
+// cluster's natural progression: oscillators → mixer/xmod → filter → env/LFO.
+static const prog_uint8_t synth_page_cycle[5] PROGMEM = {
+  PAGE_OSCILLATORS, PAGE_MIXER, PAGE_FILTER, PAGE_ENV_LFO, PAGE_VOICE_LFO,
+};
+
 static const prog_uint8_t default_most_recent_page_in_group[9] PROGMEM = {
   PAGE_OSCILLATORS,        // S1
   PAGE_FILTER,             // S2
@@ -182,7 +190,7 @@ void Ui::Init() {
   leds.Init();
   lcd.SetCustomCharMapRes(character_table[0], 7, 1);
   
-  ShowPage(PAGE_FILTER);
+  ShowPage(PAGE_PART_SEQUENCER);
   
   memset(line, ' ', 41);
   line[40] = '\0';
@@ -225,7 +233,7 @@ void Ui::Poll() {
 
   // Hold-Sn + encoder turn = direct jump to a view.
   // SR-index mapping: control = SWITCH_8 - i, so SR 0 = S8, SR 1 = S7,
-  // SR 2 = S6, SR 4 = S4.
+  // SR 2 = S6, SR 4 = S4, SR 5 = S3.
   if (increment != 0) {
     UiPageNumber jump_to = active_page_;
     uint8_t jump_sr = 0xff;
@@ -233,6 +241,26 @@ void Ui::Poll() {
     else if (switches_.low(1)) { jump_to = PAGE_SEQ_MIXER;      jump_sr = 1; }
     else if (switches_.low(2)) { jump_to = PAGE_PART;           jump_sr = 2; }
     else if (switches_.low(4)) { jump_to = PAGE_PART_SEQUENCER; jump_sr = 4; }
+    else if (switches_.low(5)) {
+      // S3+ENC: from a non-synth page, jump to OSC. From a synth page,
+      // step to the next/prev page in the synth cluster.
+      uint8_t idx = 0xff;
+      for (uint8_t i = 0; i < 5; ++i) {
+        if (pgm_read_byte(&synth_page_cycle[i]) == active_page_) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx == 0xff) {
+        jump_to = PAGE_OSCILLATORS;
+      } else {
+        int8_t step = (increment > 0) ? 1 : -1;
+        idx = (idx + 5 + step) % 5;
+        jump_to = static_cast<UiPageNumber>(
+            pgm_read_byte(&synth_page_cycle[idx]));
+      }
+      jump_sr = 5;
+    }
     if (jump_sr != 0xff) {
       inhibit_switch_ |= (1 << jump_sr);
       display.Clear();

@@ -59,6 +59,7 @@ the encoder skips them.
 | Transport double-Stop    | Second CCW Stop while already stopped broadcasts `COMMAND_LFO_RESET` to all voicecards (aligns synced LFOs to song-position-0). |
 | `S1` + encoder turn      | Voice select — cycle the active track                   |
 | `S2` + encoder turn      | ×8 page-jump multiplier — skip whole page groups        |
+| `S3` + encoder turn      | Jump to `PAGE_OSCILLATORS` from non-synth pages; from any synth-cluster page, cycle to next/prev page in `synth_page_cycle[]` (OSC → MIXER → FILTER → ENV_LFO → VOICE_LFO) in the direction of the encoder turn. Implemented at `controller/ui.cc:241-260`. |
 | `S8` + encoder turn      | ×8 page-jump multiplier (same as `S2`)                  |
 | `S8` hold                | System-wide SHIFT prefix (Copy / Swap / Paste / Snapshot in `Ui::Poll`) |
 | `S5` (button-press)      | Toggle between sequencer mode and normal mode (symmetric) |
@@ -67,17 +68,17 @@ the encoder skips them.
 
 ## S1a — `PAGE_OSCILLATORS` (Group 0, top half)
 
-**Handler:** `ParameterEditor`  ·  **Param indices:** `{0, 1, 2, 3, 4, 5, 6, 7}`
+**Handler:** `ParameterEditor`  ·  **Param indices:** `{0, 1, 2, 8, 4, 5, 6, 7}`
 
 Cell labels are the `short_name` resource string (`controller/resources.cc`)
 truncated to the 4-char cell width by `Parameter::PrintName`.
 
 | Slot  | Idx | Label  | short_name str         | Name           | Range           | Notes |
 |-------|-----|--------|------------------------|----------------|-----------------|-------|
-| top1  | 0   | `wave` | `str_res_waveform`     | Osc 1 waveform | 0..35 enum      | CZ filter-sim variants stripped in v4.4; slot 6 = `WAVEFORM_SIN_16BIT` (8 windowed sine variants stepped via PARA) |
+| top1  | 0   | `wave` | `str_res_waveform`     | Osc 1 waveform | 0..35 enum      | CZ filter-sim variants stripped in v4.4; slot 6 = `WAVEFORM_SIN_16BIT` (8 windowed sine variants stepped via PARA). Default = `WAVEFORM_FM` (v4.4 WS0). |
 | top2  | 1   | `para` | `str_res_parameter`    | Osc 1 parameter| 0..127          | Algorithm-dependent (PWM, formant, FM index, fold depth, …) |
 | top3  | 2   | `rang` | `str_res_range`        | Osc 1 range    | -24..+24 semis  | Coarse pitch offset |
-| top4  | 3   | `tune` | `str_res_tune`         | Osc 1 detune   | -64..+64 cents  | Fine pitch offset |
+| top4  | 8   | `mix ` | `str_res_mix`          | Osc balance / BLND | 0..63       | v4.4 WS0: MIX moved here from S1b cell 0; osc1 fine tune (was idx 3) soft-dropped, byte stays anonymous in patch struct. |
 | bot1  | 4   | `wave` | `str_res_waveform`     | Osc 2 waveform | 0..35 enum      | |
 | bot2  | 5   | `para` | `str_res_parameter`    | Osc 2 parameter| 0..127          | |
 | bot3  | 6   | `rang` | `str_res_range`        | Osc 2 range    | -24..+24 semis  | |
@@ -85,11 +86,11 @@ truncated to the 4-char cell width by `Parameter::PrintName`.
 
 ## S1b — `PAGE_MIXER` (Group 0, bottom half)
 
-**Handler:** `ParameterEditor`  ·  **Param indices:** `{8, 13, 12, 11, 9, 10, 14, 15}`
+**Handler:** `ParameterEditor`  ·  **Param indices:** `{77, 13, 12, 11, 9, 10, 14, 15}`
 
 | Slot  | Idx | Label  | short_name str         | Name              | Range  | Notes |
 |-------|-----|--------|------------------------|-------------------|--------|-------|
-| top1  | 8   | `mix ` | `str_res_mix`          | Osc balance / BLND| 0..63  | BLND ≥ 64 FM zone clamped in default builds |
+| top1  | 77  | `fold` | `str_res_fold`         | Wavefolder drive  | 0..70  | v4.4 WS0: moved here from S2 cell 2 to group with the other XMOD operators. Pre-filter iterative reflection. Range capped at 70 to avoid the aliasing zone. |
 | top2  | 13  | `nois` | `str_res_noise`        | Noise level       | 0..63  | |
 | top3  | 12  | `sub ` | `str_res_sub_osc_`     | Sub-osc level     | 0..63  | "sub osc." truncated |
 | top4  | 11  | `wave` | `str_res_waveform`     | Sub-osc waveform  | 0..10  | 6 traditional + 5 transient |
@@ -100,13 +101,13 @@ truncated to the 4-char cell width by `Parameter::PrintName`.
 
 ## S2 — `PAGE_FILTER` (Group 1)
 
-**Handler:** `ParameterEditor`  ·  **Param indices:** `{16, 17, 77, 18, 28, 64, 65, 66}`
+**Handler:** `ParameterEditor`  ·  **Param indices:** `{16, 17, 0xff, 18, 28, 64, 65, 66}`
 
 | Slot  | Idx  | Label  | short_name str        | Name           | Range   | Notes |
 |-------|------|--------|-----------------------|----------------|---------|-------|
-| top1  | 16   | `freq` | `str_res_frequency`   | Cutoff         | 0..127  | Lockable per-step on S5c |
+| top1  | 16   | `freq` | `str_res_frequency`   | Cutoff         | 0..127  | Lockable per-step on S5c. Default = 127 (v4.4 WS0: filter inactive on init). |
 | top2  | 17   | `reso` | `str_res_resonance`   | Resonance      | 0..63   | |
-| top3  | 77   | `fold` | `str_res_fold`        | Wavefolder drive | 0..70 | Pre-filter iterative reflection. Lockable via drill-in (no S5 cell). Range capped at 70 to avoid the aliasing zone. |
+| top3  | 0xff | —      | —                     | (blank)        | —       | v4.4 WS0: `fold` moved to S1b cell 0; sentinel `0xff` leaves the cell inert. |
 | top4  | 18   | `mode` | `str_res_mode`        | Filter mode    | 0..3    | LP / BP / HP / Notch |
 | bot1  | 28   | `rise` | `str_res_rise`        | Env 2 rise     | 0..127  | Filter env attack |
 | bot2  | 64   | `fall` | `str_res_fall`        | Env 2 fall     | 0..127  | (= `fdec` lockable on S5c) |

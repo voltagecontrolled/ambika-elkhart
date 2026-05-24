@@ -85,8 +85,8 @@ static const prog_Patch init_patch PROGMEM = {
   // Mixer
   32, OP_SUM, 0, WAVEFORM_SUB_OSC_SQUARE_1, 0, 0, 0, 0, 
 
-  // Filter
-  127, 0, 0, 0, 0, 0, 63, 0,
+  // Filter — cutoff fully open + env amount 0 = neutral "off" filter on init.
+  127, 0, 0, 0, 0, 0, 0, 0,
   // ADSR
   0, 40, 20, 60, 0, 0, 0, 0,
   0, 40, 20, 60, 0, 0, 0, 0,
