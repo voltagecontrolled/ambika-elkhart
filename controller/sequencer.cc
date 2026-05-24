@@ -603,6 +603,7 @@ void Sequencer::Clock(uint8_t ticks) {
           // before firing. Only applied when PROB passes.
           uint8_t fire_now = 1;
           uint8_t jumped = 0;
+          uint8_t pre_jump_fired = 0;
           uint8_t guard;
           for (guard = 0; guard < len; ++guard) {
             uint8_t smod = StepSmod(tr.steps[fired]);
@@ -636,12 +637,14 @@ void Sequencer::Clock(uint8_t ticks) {
                   (tr.pattern[kPatDIRN] == kDirnRev) ? kDirnFwd : kDirnRev;
             } else if (smod == kSmodRjmp) {
               uint8_t target = Random::GetByte() % len;
+              pre_jump_fired = fired;
               tr.shadow[kShdwSTEP] = target;
               fired = (target + tr.pattern[kPatROTA]) % len;
               jumped = 1;
             } else if (smod >= kSmodJmp1 && smod <= kSmodJmp8) {
               uint8_t target = smod - kSmodJmp1;
               if (target >= len) target = len - 1;
+              pre_jump_fired = fired;
               tr.shadow[kShdwSTEP] = target;
               fired = (target + tr.pattern[kPatROTA]) % len;
               jumped = 1;
@@ -667,12 +670,29 @@ void Sequencer::Clock(uint8_t ticks) {
               FireStep(t, fired, 0);
             }
           }
-          // Increment kShdwLOOP for jumps AFTER FireStep so step PROB and
-          // per-lock PROB both evaluate against the same loop count this
-          // iteration. The bump still keeps iterative gates on jump steps
-          // alternating across visits (the jump itself prevents the natural
-          // wrap that would otherwise advance the counter).
-          if (jumped) ++tr.shadow[kShdwLOOP];
+          // Bump kShdwLOOP only when the jump prevents natural wrap from
+          // firing this pass — i.e. backward jumps in Fwd, forward jumps in
+          // Rev, direction-aware in Pend. Forward jumps in Fwd (and the
+          // mirror in Rev) still reach the end of the pattern and trigger
+          // the wrap bump in AdvanceStep — bumping here too would
+          // double-count, causing iterative gates (e.g. 4:4 on a jmp step
+          // with REPT on the target) to drift after the first jump cycle.
+          // Rnd: AdvanceStep never sets looped, so the manual bump is the
+          // only source of LOOP advancement — keep it unconditional there.
+          if (jumped) {
+            uint8_t dir = tr.pattern[kPatDIRN];
+            uint8_t bump = 1;
+            if (dir == kDirnFwd) {
+              bump = (fired < pre_jump_fired) ? 1 : 0;
+            } else if (dir == kDirnRev) {
+              bump = (fired > pre_jump_fired) ? 1 : 0;
+            } else if (dir == kDirnPend) {
+              bump = (tr.shadow[kShdwDIR] == 0)
+                  ? ((fired < pre_jump_fired) ? 1 : 0)
+                  : ((fired > pre_jump_fired) ? 1 : 0);
+            }
+            if (bump) ++tr.shadow[kShdwLOOP];
+          }
           if (fire_now) {
             // SUBS PROB suppresses repeats this loop — set REPT to 0 so the
             // step doesn't re-fire even though the intrinsic REPT field is
