@@ -81,16 +81,6 @@ class MidiDispatcher : public midi::MidiDevice {
       multi.ControlChange(channel, controller, value);
     }
   }
-  static inline void PitchBend(uint8_t channel, uint16_t pitch_bend) {
-    display.set_status('\x02');
-    multi.PitchBend(channel, pitch_bend);
-  }
-  static void Aftertouch(uint8_t channel, uint8_t note, uint8_t velocity) {
-    multi.Aftertouch(channel, note, velocity);
-  }
-  static void Aftertouch(uint8_t channel, uint8_t velocity) {
-    multi.Aftertouch(channel, velocity);
-  }
   static void AllSoundOff(uint8_t channel) {
     multi.AllSoundOff(channel);
   }
@@ -218,13 +208,6 @@ class MidiDispatcher : public midi::MidiDevice {
   // tracks. Caller supplies channel and value (already in 0..127).
   static inline void SendCc(uint8_t channel, uint8_t cc, uint8_t value7bit) {
     Send3(0xb0 | (channel & 0x0f), cc & 0x7f, value7bit & 0x7f);
-  }
-
-  // 14-bit Pitch Bend. value14bit: 0=full down, 8192=center, 16383=full up.
-  static inline void SendPitchBend(uint8_t channel, uint16_t value14bit) {
-    Send3(0xe0 | (channel & 0x0f),
-          static_cast<uint8_t>(value14bit & 0x7f),
-          static_cast<uint8_t>((value14bit >> 7) & 0x7f));
   }
 
   // Fire-time EXT emit helpers. We emit the resolved value (lock-or-default)

@@ -154,12 +154,8 @@ void Part::NoteOff(uint8_t) {
   voicecard_tx.Release(voice_id_);
 }
 
-void Part::ControlChange(uint8_t controller, uint8_t value) {
+void Part::ControlChange(uint8_t controller, uint8_t /*value*/) {
   switch (controller) {
-    case midi::kModulationWheelMsb:
-      voicecard_tx.WriteData(
-          voice_id_, VOICECARD_DATA_MODULATION, MOD_SRC_WHEEL, value << 1);
-      break;
     case 0x78:  // All Sound Off
       AllSoundOff();
       break;
@@ -167,17 +163,6 @@ void Part::ControlChange(uint8_t controller, uint8_t value) {
       AllNotesOff();
       break;
   }
-}
-
-void Part::PitchBend(uint16_t pitch_bend) {
-  voicecard_tx.WriteData(
-      voice_id_, VOICECARD_DATA_MODULATION,
-      MOD_SRC_PITCH_BEND, U14ShiftRight6(pitch_bend));
-}
-
-void Part::Aftertouch(uint8_t velocity) {
-  voicecard_tx.WriteData(
-      voice_id_, VOICECARD_DATA_MODULATION, MOD_SRC_AFTERTOUCH, velocity);
 }
 
 void Part::AllSoundOff() {

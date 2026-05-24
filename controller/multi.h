@@ -68,16 +68,6 @@ class Multi {
   static void ControlChange(uint8_t channel, uint8_t controller, uint8_t value) {
     if (channel < kNumParts) { parts_[channel].ControlChange(controller, value); }
   }
-  static void PitchBend(uint8_t channel, uint16_t pitch_bend) {
-    if (channel < kNumParts) { parts_[channel].PitchBend(pitch_bend); }
-  }
-  static void Aftertouch(uint8_t channel, uint8_t note, uint8_t velocity) {
-    // Per-note aftertouch: use velocity, route to voice on that channel.
-    if (channel < kNumParts) { parts_[channel].Aftertouch(velocity); }
-  }
-  static void Aftertouch(uint8_t channel, uint8_t velocity) {
-    if (channel < kNumParts) { parts_[channel].Aftertouch(velocity); }
-  }
   static void AllSoundOff(uint8_t channel) {
     if (channel < kNumParts) { parts_[channel].AllSoundOff(); }
   }
