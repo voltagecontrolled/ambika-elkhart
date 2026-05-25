@@ -228,6 +228,8 @@ Captured during the 2026-05-24 mod-matrix cleanup session. These are *not* gated
 
 ### Quick wins (high confidence, low risk)
 
+**Groove templates — fully dead since transport-page SWNG removal.** Six `lut_res_groove_*` PROGMEM tables (192 B), `MultiData` fields `clock_groove_template` / `clock_groove_amount` (always zero, no consumers), parameter rows 63–64, `UNIT_GROOVE_TEMPLATE` slot, and the swing/shuffle/push/human/monkey + `groove` strings. Mirror the mod-matrix pattern: keep the two `MultiData` bytes as anonymous padding so wire format stays at 61 B (no snapshot migration). Estimate: **~260–320 B controller**. Voicecard untouched.
+
 **`VOICECARD_DATA_MODULATION` SPI command — likely unused after 2026-05-24.** All three controller-side callers (`Part::PitchBend`, `Part::Aftertouch`, `Part::ControlChange` mod-wheel case) were deleted. If nothing else sends the command, the voicecard's RX dispatch case + `voice.set_modulation_source` glue is dead. Estimate: **~50-150 B voicecard**, ~10 B controller. Verify by grep, then drop the RX case + the SPI command enum slot if also unreferenced.
 
 **`MOD_SRC_*` init writes in `Voice::ResetAllControllers`.** Defensive inits for `PITCH_BEND` / `AFTERTOUCH` / `WHEEL` / `WHEEL_2` / `EXPRESSION` and the `CONSTANT_*` ladder — none of these slots have consumers post-mod-matrix-removal. Estimate: **~20-40 B voicecard**. Cosmetic; safe to drop.
