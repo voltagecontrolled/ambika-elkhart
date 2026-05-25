@@ -937,6 +937,127 @@ Standard 5-pin DIN MIDI in and out are on the back panel.
 | Clock (`0xF8`)        | Advances the sequencer when `clk` (System page) is `EXT` or `THR`.                  |
 | Start/Stop/Continue   | Drives transport when slaved to external clock.                                     |
 | Notes on ch 10        | Notes 36–41 trigger voices 1–6 (fixed General-MIDI-style drum map).                 |
+| Control Change        | Patch parameters per the CC table below.                                            |
+| NRPN                  | Patch parameters by raw patch-byte address (see NRPN table below).                  |
+
+Inbound CC and NRPN both target the **active part's patch**. Aftertouch, pitch bend, and mod wheel (CC#1) are intentionally not handled — elkhart is a groovebox and those channel messages are stripped at the parser.
+
+#### CC reference
+
+Listed by panel section. The "alias" column notes additional CC numbers that hit the same parameter (legacy/duplicate mappings from the stock Ambika map, retained for compatibility with existing controller presets). Authoritative source: `midi_cc_map[]` in `controller/parameter.cc`.
+
+**Oscillators**
+
+| CC# | Parameter            | Alias |
+|----:|----------------------|-------|
+|  14 | OSC1 RANGE           |       |
+|  15 | OSC1 DETUNE          |       |
+|  16 | OSC1 SHAPE           |       |
+|  17 | OSC1 PWM             |       |
+|  18 | OSC2 SHAPE           |       |
+|  19 | OSC2 PWM             |       |
+|  20 | OSC2 RANGE           |       |
+|  21 | OSC2 DETUNE          |       |
+
+**Mixer / XMOD**
+
+| CC# | Parameter            | Alias |
+|----:|----------------------|-------|
+|  22 | MIX (balance)        |       |
+|  23 | XMOD (operator)      |       |
+|  24 | AMNT (XMOD amount)   |       |
+|  25 | SUB shape            |       |
+|  26 | SUB level            |       |
+|  27 | NOISE                |       |
+|  12 | FUZZ                 |       |
+|  13 | CRSH (bit crush)     |       |
+|  90 | FOLD (wavefolder)    |       |
+
+**Filter 1**
+
+| CC# | Parameter            | Alias              |
+|----:|----------------------|--------------------|
+|  74 | FREQ (cutoff)        |                    |
+|  71 | RESO (resonance)     |                    |
+|  28 | MODE                 |                    |
+|   3 | ENV (env→cutoff)     |                    |
+|   9 | LFO (lfo→cutoff)     |                    |
+| 108 | VELO (vel→cutoff)    |                    |
+| 109 | KBT (keytrack)       |                    |
+
+**Filter 2** (currently unused on elkhart — controls accepted but the patch surface is single-filter)
+
+| CC# | Parameter            |
+|----:|----------------------|
+|  29 | FREQ                 |
+|  30 | RESO                 |
+|  31 | MODE                 |
+
+**Envelopes (E1 / E2 / E3)** — the stock 3-envelope, single-shape Ambika exposed only a few of the envelope cells over CC. Elkhart's expanded RISE / FALL / CURV / DEPTH surface is reachable via NRPN for the cells without a stock CC. Inbound CCs mirror across multiple slot ranges (stock convention — older controllers reach the same param via different CCs).
+
+| CC#   | Parameter            | Alias        |
+|------:|----------------------|--------------|
+|  73   | E1 FALL              | 81 / 89      |
+|  75   | E1 CURV              | 83 / 91      |
+|  70   | E1 DEPTH             | 78 / 86      |
+|  72   | E2 RISE              | 80 / 88      |
+| *—*   | E1 RISE              | *NRPN only*  |
+| *—*   | E2 FALL/CURV/DEPTH   | *NRPN only*  |
+| *—*   | E3 RISE/FALL/CURV/DEPTH | *NRPN only* |
+
+**Env / LFO 1–3 (modulation LFO)**
+
+| CC# | Parameter            | Alias              |
+|----:|----------------------|--------------------|
+|  44 | TRIG (sync mode)     | 52 / 60            |
+|  45 | RATE                 | 53 / 61            |
+|  46 | WAVE                 | 54 / 62            |
+
+**Voice LFO 4 / 5** (LFO 4 only — LFO 5 reachable via NRPN)
+
+| CC# | Parameter            |
+|----:|----------------------|
+|  47 | LFO4 RATE            |
+|  48 | LFO4 SHAPE           |
+
+**Part**
+
+| CC# | Parameter            |
+|----:|----------------------|
+|   7 | VOLUME               |
+|   5 | PORTAMENTO time      |
+|  68 | LEGATO               |
+|  94 | TUNING               |
+|  95 | SPREAD               |
+
+**Sequencer / clock / system**
+
+| CC# | Parameter            |
+|----:|----------------------|
+| 102 | seq1 LEN             |
+| 103 | seq2 LEN             |
+| 104 | patt LEN             |
+| 105 | BPM                  |
+| 106 | GROOVE template      |
+| 107 | HELP toggle          |
+
+#### NRPN reference
+
+NRPN gives access to patch parameters that have no inbound CC mapping — including most of E2/E3 fall/curv/depth, LFO 5, and FOLD. The address space is the raw patch-byte address (0–127), but the elkhart relabel means a given NRPN address doesn't always land where its stock Ambika name would suggest. The authoritative map is `midi_nrpn_map[]` in `controller/parameter.cc`.
+
+A few NRPN addresses worth knowing:
+
+| NRPN addr | Parameter            |
+|----------:|----------------------|
+| 111       | FOLD                 |
+| 119       | seq1 LEN             |
+| 120       | seq2 LEN             |
+| 121       | patt LEN             |
+| 122       | BPM                  |
+
+Addresses 50–103 are intentionally unmapped (`255`) — that range was the retired mod matrix.
+
+Send an NRPN as a standard 4-CC sequence: `CC#99` = address MSB (always `0` for elkhart's single-page parameter space), `CC#98` = address LSB (the target byte), `CC#6` = value MSB (the 7-bit value), `CC#38` = value LSB (ignored — elkhart uses 7-bit values throughout).
 
 ### MIDI out
 
