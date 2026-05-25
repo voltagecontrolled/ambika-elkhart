@@ -24,6 +24,7 @@ namespace ambika {
 /* static */ uint16_t SystemPage::feedback_start_ms_;
 /* static */ uint8_t  SystemPage::new_slot_occupied_cached_;
 /* static */ uint8_t  SystemPage::new_slot_occupied_for_ = 0xff;
+/* static */ uint8_t  SystemPage::card_present_ = 0;
 
 // Hold-to-confirm: 300 ms arm → fast blink, 900 ms fire. Feedback runs
 // for 600 ms after fire — two slow blinks (~3 Hz) of green (success) or
@@ -57,7 +58,11 @@ void SystemPage::OnInit(PageInfo* info) {
   feedback_button_ = kHoldNone;
   feedback_status_ = kFbNone;
   if (new_slot_ >= Snapshot::kNumSlots) new_slot_ = 0;
-  storage.InitFilesystem();
+  // Single mount probe per page entry — capture for save/load gating + UI.
+  // Drop the slot-occupancy cache so the next render either re-queries
+  // (card present) or shows `?` (card absent) without another mount.
+  card_present_ = (storage.InitFilesystem() == FS_OK) ? 1 : 0;
+  new_slot_occupied_for_ = 0xff;
 }
 
 /* static */
@@ -71,6 +76,11 @@ uint8_t SystemPage::OnIncrement(int8_t increment) {
 
 /* static */
 void SystemPage::RefreshOccupancyCache() {
+  if (!card_present_) {
+    new_slot_occupied_cached_ = 0;
+    new_slot_occupied_for_    = new_slot_;
+    return;
+  }
   if (new_slot_occupied_for_ != new_slot_) {
     new_slot_occupied_cached_ = Snapshot::SlotOccupied(new_slot_);
     new_slot_occupied_for_    = new_slot_;
@@ -92,9 +102,13 @@ uint8_t SystemPage::OnPot(uint8_t index, uint8_t value) {
 
 /* static */
 void SystemPage::DoSave() {
-  FilesystemStatus s = Snapshot::Save(pending_slot_);
   feedback_button_    = kHoldSave;
   feedback_start_ms_  = static_cast<uint16_t>(avrlib::milliseconds());
+  if (!card_present_) {
+    feedback_status_  = kFbFail;
+    return;
+  }
+  FilesystemStatus s = Snapshot::Save(pending_slot_);
   if (s == FS_OK) {
     cur_slot_         = pending_slot_;
     feedback_status_  = kFbSuccess;
@@ -106,10 +120,14 @@ void SystemPage::DoSave() {
 
 /* static */
 void SystemPage::DoLoad() {
-  FilesystemStatus s = (Snapshot::SlotOccupied(new_slot_))
-      ? Snapshot::Load(new_slot_) : FS_DISK_ERROR;
   feedback_button_    = kHoldLoad;
   feedback_start_ms_  = static_cast<uint16_t>(avrlib::milliseconds());
+  if (!card_present_) {
+    feedback_status_  = kFbFail;
+    return;
+  }
+  FilesystemStatus s = (Snapshot::SlotOccupied(new_slot_))
+      ? Snapshot::Load(new_slot_) : FS_DISK_ERROR;
   if (s == FS_OK) {
     cur_slot_         = new_slot_;
     feedback_status_  = kFbSuccess;
@@ -212,7 +230,9 @@ void SystemPage::UpdateScreen() {
   memcpy_P(&l0[10], PSTR("Next:"), 5);
   RenderSlot(&l0[15], new_slot_);
   RefreshOccupancyCache();
-  l0[18] = new_slot_occupied_cached_ ? '*' : ' ';
+  // Slot marker: '*' = occupied, '?' = card absent, space = empty slot.
+  l0[18] = !card_present_ ? '?'
+         : new_slot_occupied_cached_ ? '*' : ' ';
   l0[19] = kDelimiter;
   memcpy_P(&l0[20], PSTR("BPM"), 3);
   {
@@ -248,8 +268,9 @@ void SystemPage::UpdateLeds() {
   // slow blink (green = success, red = fail).
   uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
 
-  uint8_t s1 = 0xf0;
-  uint8_t s3 = 0xf0;
+  // Base color: red when actionable, off when no card (inert state).
+  uint8_t s1 = card_present_ ? 0xf0 : 0x00;
+  uint8_t s3 = card_present_ ? 0xf0 : 0x00;
 
   // Hold-arming blink (~5 Hz) on the actively-held button.
   if (hold_arm_ms_ != 0 && !hold_fired_) {

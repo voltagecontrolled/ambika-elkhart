@@ -42,6 +42,12 @@ class SystemPage : public UiPage {
   static uint8_t new_slot_occupied_for_;
   static void RefreshOccupancyCache();
 
+  // SD card presence cached on page entry (#39). One InitFilesystem mount
+  // probe per page entry; absent card → save/load buttons inert, slot
+  // indicator renders `?` instead of `*`/(space). Re-checked on every
+  // OnInit so re-inserting + re-entering the page picks the card up.
+  static uint8_t card_present_;
+
   // Hold-to-confirm state for save (S1) and load (S3). Both go through the
   // same arm-then-fire timeline: 300 ms → fast-blink armed, 900 ms → fire,
   // then ~600 ms feedback blink (green = success, red = fail).

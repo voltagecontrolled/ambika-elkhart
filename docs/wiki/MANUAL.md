@@ -800,7 +800,7 @@ save     load     info     exit
 | Cell    | Source  | Notes                                                        |
 |---------|---------|--------------------------------------------------------------|
 | `Cur:`  | RAM     | Slot the running state was last loaded from / saved to.      |
-| `Next:` | Encoder | Target slot for save / load. `*` marks occupied slots.       |
+| `Next:` | Encoder | Target slot for save / load. `*` marks occupied slots; `?` means no SD card present. |
 | `BPM`   | Pot 3   | Master tempo (40–240).                                       |
 | `CLK`   | Pot 4   | Clock mode: INT / EXT / OUT / THR.                           |
 
@@ -858,6 +858,17 @@ remaps the retired `kPatBPCH` slot.
 
 Save and Load both interrupt sounding voices. After Load, transport is
 stopped and voices are silent — press play to hear the loaded patch.
+
+### No SD card
+
+The System page probes for the SD card once on entry. If no card is detected:
+
+- The slot indicator next to `Next:` shows `?` instead of `*`/(space).
+- The save (`S1`) and load (`S3`) button LEDs go dark, signalling the buttons are inert.
+- Holding either button still arms and "fires" through the normal timeline, but the action returns immediately with a red-blink failure — no SD access is attempted.
+- BPM and CLK remain fully editable; the page is usable for tempo / clock tweaks without a card inserted.
+
+Re-insert the card and re-enter the page (`S8` from anywhere) to pick it up — the probe runs on every page entry.
 
 ## Firmware update
 
