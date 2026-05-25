@@ -16,6 +16,10 @@ namespace ambika {
 using namespace avrlib;
 
 static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
+// v0x08 (Elkhart v4.4-WS2): WAVEFORM_FM_FB and the new FM_CA..FM_CD entries
+// relocated next to WAVEFORM_FM in the oscillator enum, so all 6 FM family
+// shapes are contiguous in the scroll wheel. On-disk shape bytes in v0x07
+// snapshots use the old enum positions and are remapped on load.
 // v0x07 (Elkhart v4.4-WS1, issue #41): SeqTrack defaults[] grows 28→48 to
 // cover every patch-page lockable cell (osc1 rang reclaims slot 7;
 // xmod/fuzz/crsh/reso/mode + full env shape + LFO4/5 controls land at
@@ -29,7 +33,7 @@ static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
 // v0x04 (Elkhart v4.3): adds a per-lock PROB pool serialized after the
 // LockPool. v0x03 loads zero-fill the prob pool. v0x01 / v0x02 reach this
 // via MigrationV41 — neither carries a prob pool either.
-static const uint8_t kVersion = 0x07;
+static const uint8_t kVersion = 0x08;
 // v0x06 on-disk sizes (pre-WS1 layout): defaults was 28 bytes, config still 31.
 static const uint16_t kV06DefaultsArea = 28;
 static const uint16_t kV06TrackPersistentSize =
@@ -65,6 +69,43 @@ static void MigrateOldWaveforms() {
     uint8_t p = raw[i + 1];
     if (p == 1 || p == 5) {
       raw[i + 2] = ShiftOldOscWaveform(raw[i + 2]);
+    }
+  }
+}
+
+// v0x07 → v0x08 OSC waveform shift. v0x08 clusters FM_FB and FM_CA..FM_CE
+// next to FM in the enum, displacing 8BITLAND..QUAD_PWM and POLYBLEP_CSAW/
+// VOWEL_2 downward by 6. A short-lived intermediate firmware shipped
+// FM_CA..CD at the *tail* (35..38) — handle that case too so any snapshots
+// saved in that window survive.
+//
+//   old 0..8        → unchanged (NONE..FM)
+//   old 9..31       → +6 (8BITLAND..QUAD_PWM bumped by the FM family)
+//   old 32 (FM_FB)  → 9
+//   old 33 (CSAW)   → 38
+//   old 34 (VOWEL2) → 39
+//   old 35..38      → 10..13 (intermediate-build FM_CA..CD)
+static inline uint8_t ShiftFmReorderWaveform(uint8_t v) {
+  if (v <= 8) return v;
+  if (v == 32) return 9;
+  if (v == 33) return 38;
+  if (v == 34) return 39;
+  if (v >= 35 && v <= 38) return v - 25;
+  if (v <= 31) return v + 6;
+  return v;
+}
+
+static void MigrateFmReorderedWaveforms() {
+  for (uint8_t t = 0; t < kNumVoices; ++t) {
+    SeqTrack* tr = sequencer.mutable_track(t);
+    tr->defaults[1] = ShiftFmReorderWaveform(tr->defaults[1]);
+    tr->defaults[5] = ShiftFmReorderWaveform(tr->defaults[5]);
+  }
+  uint8_t* raw = sequencer.mutable_lock_pool().mutable_raw_entries();
+  for (uint16_t i = 0; i < LockPool::kRawEntriesSize; i += 3) {
+    uint8_t p = raw[i + 1];
+    if (p == 1 || p == 5) {
+      raw[i + 2] = ShiftFmReorderWaveform(raw[i + 2]);
     }
   }
 }
@@ -253,13 +294,14 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
-    // v0x07 = native v4.4-WS1 (defaults[] grew 28→48; config[] shifts later).
+    // v0x08 = native (FM family clustered in osc enum).
+    // v0x07 = v4.4-WS1 (FM_FB/FM_CA..CD live at different enum positions).
     // v0x06 = v4.4-mid (pre-WS1; defaults[28]).
     // v0x05/v0x04/v0x03 = old layout (7-byte SeqStep, pool capacity 192).
     // v0x01 / v0x02 = v4.1-era dense-lock format (migration TU).
-    if (header[4] != kVersion && header[4] != 0x06 && header[4] != 0x05 &&
-        header[4] != 0x04 && header[4] != 0x03 && header[4] != 0x02 &&
-        header[4] != 0x01) {
+    if (header[4] != kVersion && header[4] != 0x07 && header[4] != 0x06 &&
+        header[4] != 0x05 && header[4] != 0x04 && header[4] != 0x03 &&
+        header[4] != 0x02 && header[4] != 0x01) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
@@ -284,10 +326,12 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       }
       MigrateOldWaveforms();
     } else if (snapshot_version >= 0x06) {
-      // v0x07 native + v0x06 migration: track block size differs but the
-      // pool/prob blob layout is identical, so share the tail read.
-      if (snapshot_version >= kVersion) {
-        // Native v0x07: read kTrackPersistentSize bytes directly into SeqTrack.
+      // v0x07/v0x08 native + v0x06 migration: track block size differs but
+      // the pool/prob blob layout is identical, so share the tail read.
+      // v0x07 and v0x08 use the same on-disk layout — only the OSC waveform
+      // enum positions differ. The remap happens at the end of Load.
+      if (snapshot_version >= 0x07) {
+        // Native v0x07/v0x08: read kTrackPersistentSize bytes directly into SeqTrack.
         for (uint8_t t = 0; t < kNumVoices; ++t) {
           uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
           if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
@@ -540,6 +584,13 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
     }
     d->midi_only_mask = 0;
     d->midi_clock_mode = 2;  // OUT
+  }
+
+  // v0x07-or-older snapshots use the pre-WS2 OSC waveform enum. Remap
+  // OSC1/OSC2 shape bytes (in defaults[] and lock_pool) into the new
+  // positions before pushing to voicecards.
+  if (snapshot_version < kVersion) {
+    MigrateFmReorderedWaveforms();
   }
 
   // Discard transient playhead state and re-sync transport.

@@ -220,6 +220,66 @@ void Oscillator::RenderFm(uint8_t* buffer) {
   data_.output_sample = last_output;
 }
 
+// ------- 2-op PM with sin16-derived carrier shape, FB on PARA upper half ---
+// Modeled on RenderFm. Sine modulator; carrier read replaced by a 4-way
+// switch over the sin16 bank. RANGE drives ratio (via fm_parameter_),
+// PARA drives mod depth + feedback amount (upper half), same convention as
+// WAVEFORM_FM_FB. Shape index derived from shape_.
+void Oscillator::RenderFmSin16(uint8_t* buffer) {
+  uint8_t offset = fm_parameter_ < 24 ? 0 :
+    (fm_parameter_ > 48 ? 24 : fm_parameter_ - 24);
+  uint16_t multiplier = ResourcesManager::Lookup<uint16_t, uint8_t>(
+      lut_res_fm_frequency_ratios, offset);
+  uint16_t increment = (
+      static_cast<int32_t>(phase_increment_.integral) * multiplier) >> 8;
+  parameter_ <<= 1;
+
+  uint8_t carrier_shape = shape_ - WAVEFORM_FM_CA;
+  uint16_t phase_2 = data_.secondary_phase;
+  uint8_t last_output = data_.output_sample;
+  uint8_t fb_phase_mod = parameter_ < 128 ? 0 : parameter_ - 128;
+  BEGIN_SAMPLE_LOOP
+    UPDATE_PHASE
+    phase_2 += increment;
+    uint8_t modulator = ReadSample(wav_res_sine,
+        phase_2 + fb_phase_mod * last_output);
+    uint16_t modulation = modulator * parameter_;
+    uint16_t p = phase.integral + modulation;
+    uint8_t sample;
+    switch (carrier_shape) {
+      case 0:  // fmca = half-wave rectified
+        sample = (p < 0x8000) ? ReadSample(wav_res_sine, p) : 128;
+        break;
+      case 1:  // fmcb = absolute
+        sample = (p < 0x8000)
+            ? ReadSample(wav_res_sine, p)
+            : ReadSample(wav_res_sine, p - 0x8000);
+        break;
+      case 2:  // fmcc = camel sine
+        if (p < 0x4000) {
+          sample = ReadSample(wav_res_sine, p << 2);
+        } else if (p < 0x8000) {
+          sample = 128;
+        } else if (p < 0xC000) {
+          sample = ReadSample(wav_res_sine, (p - 0x8000) << 2);
+        } else {
+          sample = 128;
+        }
+        break;
+      case 3:  // fmcd = square
+        sample = (p < 0x8000) ? 255 : 0;
+        break;
+      default:  // fmce = alternating (2× sine, silence)
+        sample = (p < 0x8000) ? ReadSample(wav_res_sine, p << 1) : 128;
+        break;
+    }
+    last_output = sample;
+    *buffer++ = last_output;
+  END_SAMPLE_LOOP
+  data_.secondary_phase = phase_2;
+  data_.output_sample = last_output;
+}
+
 // ------- 8-bit land --------------------------------------------------------
 void Oscillator::Render8BitLand(uint8_t* buffer) {
   BEGIN_SAMPLE_LOOP
@@ -609,19 +669,24 @@ const Oscillator::RenderFn Oscillator::fn_table_[] PROGMEM = {
   &Oscillator::RenderSin16Bit,
 
   &Oscillator::RenderQuad,
-  
-  &Oscillator::RenderFm,
-  
+
+  &Oscillator::RenderFm,         // FM
+  &Oscillator::RenderFm,         // FM_FB
+  &Oscillator::RenderFmSin16,    // FM_CA
+  &Oscillator::RenderFmSin16,    // FM_CB
+  &Oscillator::RenderFmSin16,    // FM_CC
+  &Oscillator::RenderFmSin16,    // FM_CD
+  &Oscillator::RenderFmSin16,    // FM_CE
+
   &Oscillator::Render8BitLand,
   &Oscillator::RenderDirtyPwm,
   &Oscillator::RenderFilteredNoise,
   &Oscillator::RenderVowel,
-  
+
   &Oscillator::RenderInterpolatedWavetable,
-  
+
   &Oscillator::RenderSimpleWavetable,
   &Oscillator::RenderQuad,
-  &Oscillator::RenderFm,
   &Oscillator::RenderPolyBlepCSaw,
   &Oscillator::RenderVowel
 };

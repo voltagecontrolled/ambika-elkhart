@@ -74,7 +74,19 @@ enum OscillatorAlgorithm {
   // shape lands at the shifted enum positions 7..14.
   WAVEFORM_SIN_16BIT,
   WAVEFORM_QUAD_SAW_PAD,
+  // FM family clustered together. WAVEFORM_FM_FB and WAVEFORM_FM_CA..FM_CD
+  // were relocated up from later enum positions in v4.4-WS2; on-disk shape
+  // bytes from v0x07 snapshots are remapped by Snapshot::Load.
   WAVEFORM_FM,
+  WAVEFORM_FM_FB,
+  // sin16-carrier 2-op PM operators with feedback (fmfb-derived).
+  // Sine modulator; carrier waveshape from the sin16 bank. RANGE → ratio,
+  // PARA → mod depth + feedback (upper half).
+  WAVEFORM_FM_CA,  // carrier = sin16 half-wave rectified
+  WAVEFORM_FM_CB,  // carrier = sin16 absolute
+  WAVEFORM_FM_CC,  // carrier = sin16 camel
+  WAVEFORM_FM_CD,  // carrier = sin16 square
+  WAVEFORM_FM_CE,  // carrier = sin16 alternating (2× speed sine, silence)
   WAVEFORM_8BITLAND,
   WAVEFORM_DIRTY_PWM,
   WAVEFORM_FILTERED_NOISE,
@@ -84,7 +96,6 @@ enum OscillatorAlgorithm {
   WAVEFORM_WAVEQUENCE,
   WAVEFORM_OLD_SAW,
   WAVEFORM_QUAD_PWM,
-  WAVEFORM_FM_FB,
   WAVEFORM_POLYBLEP_CSAW,
   WAVEFORM_VOWEL_2,
   WAVEFORM_LAST

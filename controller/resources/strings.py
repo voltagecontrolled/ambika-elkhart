@@ -97,6 +97,12 @@ zsaw
 sn16
 pad
 fm
+fmfb
+fmca
+fmcb
+fmcc
+fmcd
+fmce
 8bits
 pwm
 noise
@@ -120,7 +126,6 @@ bell
 wavquence
 oldsaw
 qpwm
-fmfb
 csaw
 vowel 2
 
