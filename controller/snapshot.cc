@@ -16,8 +16,14 @@ namespace ambika {
 using namespace avrlib;
 
 static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
-// v0x08 (Elkhart v4.4-WS2): WAVEFORM_FM_FB and the new FM_CA..FM_CD entries
-// relocated next to WAVEFORM_FM in the oscillator enum, so all 6 FM family
+// v0x0a (Elkhart v4.4-WS2): WAVEFORM_HRM3 dropped during testing; only HRM1
+// (detune) and HRM2 (cascade PM) remain. v0x09 test snapshots remap shape
+// bytes >= 16 down by 1 (HRM2→HRM1, HRM3→HRM2, 8BITLAND etc. shift down).
+// v0x09 (test only, never publicly released): HRM1/HRM2/HRM3 (4-partial
+// additive) inserted between FM_CE and 8BITLAND. Shape bytes at enum
+// positions >= 15 in v0x08 snapshots shift +3 to make room.
+// v0x08 (Elkhart v4.4-WS2): WAVEFORM_FM_FB and the new FM_CA..FM_CE entries
+// relocated next to WAVEFORM_FM in the oscillator enum, so all 7 FM family
 // shapes are contiguous in the scroll wheel. On-disk shape bytes in v0x07
 // snapshots use the old enum positions and are remapped on load.
 // v0x07 (Elkhart v4.4-WS1, issue #41): SeqTrack defaults[] grows 28→48 to
@@ -33,7 +39,7 @@ static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
 // v0x04 (Elkhart v4.3): adds a per-lock PROB pool serialized after the
 // LockPool. v0x03 loads zero-fill the prob pool. v0x01 / v0x02 reach this
 // via MigrationV41 — neither carries a prob pool either.
-static const uint8_t kVersion = 0x08;
+static const uint8_t kVersion = 0x0A;
 // v0x06 on-disk sizes (pre-WS1 layout): defaults was 28 bytes, config still 31.
 static const uint16_t kV06DefaultsArea = 28;
 static const uint16_t kV06TrackPersistentSize =
@@ -106,6 +112,50 @@ static void MigrateFmReorderedWaveforms() {
     uint8_t p = raw[i + 1];
     if (p == 1 || p == 5) {
       raw[i + 2] = ShiftFmReorderWaveform(raw[i + 2]);
+    }
+  }
+}
+
+// v0x08 → v0x09 OSC waveform shift. HRM1/HRM2/HRM3 inserted at enum positions
+// 15..17 (3-HRM testing layout), displacing 8BITLAND and everything past it
+// downward by 3.
+static inline uint8_t ShiftHrmInsertWaveform(uint8_t v) {
+  return v <= 14 ? v : v + 3;
+}
+
+static void MigrateHrmInsertedWaveforms() {
+  for (uint8_t t = 0; t < kNumVoices; ++t) {
+    SeqTrack* tr = sequencer.mutable_track(t);
+    tr->defaults[1] = ShiftHrmInsertWaveform(tr->defaults[1]);
+    tr->defaults[5] = ShiftHrmInsertWaveform(tr->defaults[5]);
+  }
+  uint8_t* raw = sequencer.mutable_lock_pool().mutable_raw_entries();
+  for (uint16_t i = 0; i < LockPool::kRawEntriesSize; i += 3) {
+    uint8_t p = raw[i + 1];
+    if (p == 1 || p == 5) {
+      raw[i + 2] = ShiftHrmInsertWaveform(raw[i + 2]);
+    }
+  }
+}
+
+// v0x09 → v0x0a: HRM3 dropped. Old HRM1 (15) stays as new HRM1 (15, now
+// detune — closest behavior match). Old HRM2 (16, detune) maps to new HRM1.
+// Old HRM3 (17, PM) maps to new HRM2. Everything >= 18 shifts -1.
+static inline uint8_t ShiftHrm3DropWaveform(uint8_t v) {
+  return (v >= 16) ? (uint8_t)(v - 1) : v;
+}
+
+static void MigrateHrm3DroppedWaveforms() {
+  for (uint8_t t = 0; t < kNumVoices; ++t) {
+    SeqTrack* tr = sequencer.mutable_track(t);
+    tr->defaults[1] = ShiftHrm3DropWaveform(tr->defaults[1]);
+    tr->defaults[5] = ShiftHrm3DropWaveform(tr->defaults[5]);
+  }
+  uint8_t* raw = sequencer.mutable_lock_pool().mutable_raw_entries();
+  for (uint16_t i = 0; i < LockPool::kRawEntriesSize; i += 3) {
+    uint8_t p = raw[i + 1];
+    if (p == 1 || p == 5) {
+      raw[i + 2] = ShiftHrm3DropWaveform(raw[i + 2]);
     }
   }
 }
@@ -294,14 +344,17 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
-    // v0x08 = native (FM family clustered in osc enum).
+    // v0x0a = native (HRM1 detune + HRM2 PM, 2 additive shapes).
+    // v0x09 = test-only 3-HRM layout (HRM1 sine sum + HRM2 detune + HRM3 PM).
+    // v0x08 = pre-HRM (FM family clustered, no additive shapes).
     // v0x07 = v4.4-WS1 (FM_FB/FM_CA..CD live at different enum positions).
     // v0x06 = v4.4-mid (pre-WS1; defaults[28]).
     // v0x05/v0x04/v0x03 = old layout (7-byte SeqStep, pool capacity 192).
     // v0x01 / v0x02 = v4.1-era dense-lock format (migration TU).
-    if (header[4] != kVersion && header[4] != 0x07 && header[4] != 0x06 &&
-        header[4] != 0x05 && header[4] != 0x04 && header[4] != 0x03 &&
-        header[4] != 0x02 && header[4] != 0x01) {
+    if (header[4] != kVersion && header[4] != 0x09 && header[4] != 0x08 &&
+        header[4] != 0x07 && header[4] != 0x06 && header[4] != 0x05 &&
+        header[4] != 0x04 && header[4] != 0x03 && header[4] != 0x02 &&
+        header[4] != 0x01) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
@@ -326,12 +379,12 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
       }
       MigrateOldWaveforms();
     } else if (snapshot_version >= 0x06) {
-      // v0x07/v0x08 native + v0x06 migration: track block size differs but
+      // v0x07..v0x0a native + v0x06 migration: track block size differs but
       // the pool/prob blob layout is identical, so share the tail read.
-      // v0x07 and v0x08 use the same on-disk layout — only the OSC waveform
-      // enum positions differ. The remap happens at the end of Load.
+      // v0x07..v0x0a use the same on-disk layout — only the OSC waveform
+      // enum positions differ. The remaps happen at the end of Load.
       if (snapshot_version >= 0x07) {
-        // Native v0x07/v0x08: read kTrackPersistentSize bytes directly into SeqTrack.
+        // Native v0x07..v0x0a: read kTrackPersistentSize bytes directly into SeqTrack.
         for (uint8_t t = 0; t < kNumVoices; ++t) {
           uint8_t* tp = reinterpret_cast<uint8_t*>(sequencer.mutable_track(t));
           if (Storage::file_.Read(tp, kTrackPersistentSize, &got) != FS_OK
@@ -586,11 +639,18 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
     d->midi_clock_mode = 2;  // OUT
   }
 
-  // v0x07-or-older snapshots use the pre-WS2 OSC waveform enum. Remap
-  // OSC1/OSC2 shape bytes (in defaults[] and lock_pool) into the new
-  // positions before pushing to voicecards.
-  if (snapshot_version < kVersion) {
+  // Chained waveform-enum migrations. v0x07-or-older snapshots use the
+  // pre-WS2 enum (FM family scattered); v0x08-or-older predates HRM; v0x09
+  // had a 3-HRM test layout we dropped. Apply each shift in order so any
+  // older snapshot lands at the current enum positions.
+  if (snapshot_version < 0x08) {
     MigrateFmReorderedWaveforms();
+  }
+  if (snapshot_version < 0x09) {
+    MigrateHrmInsertedWaveforms();
+  }
+  if (snapshot_version < 0x0a) {
+    MigrateHrm3DroppedWaveforms();
   }
 
   // Discard transient playhead state and re-sync transport.

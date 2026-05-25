@@ -212,7 +212,7 @@ wave fm   | para  90 | rang +12 | tune  -05      ← Osc 2
 
 | Cell   | Range            | Notes                                                                 |
 |--------|------------------|-----------------------------------------------------------------------|
-| `wave` | 44 algorithms    | Selects the oscillator algorithm. Lockable per step.                  |
+| `wave` | 42 algorithms    | Selects the oscillator algorithm. Lockable per step.                  |
 | `para` | 0–127            | Algorithm-specific parameter (PWM amount, formant, FM index, …). Lockable per step. |
 | `rang` | ±24 semitones    | Coarse pitch offset. On Osc 2, lockable per step.                     |
 | `tune` | ±64 cents        | Fine detune. On Osc 2 only — osc1 fine tune retired in v4.4 (relative detune from Osc 2 covers it). Lockable per step. |
@@ -225,24 +225,60 @@ sequencer-mode pages.
 
 #### Wave palette
 
-The 44 algorithms span several families. The `para` knob means
-something different in each family:
+The 42 algorithms span several families. The `para` knob means
+something different in each — and so does `rang` for the FM and
+HRM families, which repurpose it as a ratio / spread control.
 
-- **Analog-style.** Saw and PWM (modern PolyBLEP), sine, triangle.
-  `para` controls pulse width on PWM.
-- **FM.** A two-operator FM voice and an FM-with-feedback variant.
-  `para` is FM index.
-- **Vowel synthesis.** Formant-based vowel sounds. `para` selects
-  the vowel.
-- **Wavetables.** Sixteen wavetable banks plus a wavequence mode.
-  `para` scans through the table.
-- **Filtered noise.** Coloured noise sources. `para` shapes the
-  filter.
-- **Period-grit.** A "dirty PWM" with intentional aliasing, the
-  pre-PolyBLEP saw kept for character, and `sn16` — a bank of eight
-  windowed sine variants morphed by `para` (full sine, half-rectified,
-  absolute, quarter, alternating, camel, square, log saw). `para`
-  shapes the timbral character of each.
+**Analog-style.** Saw and PWM (modern PolyBLEP), sine, triangle.
+`para` controls pulse width on PWM.
+
+**CZ-style.** Casio-CZ-inspired `zsaw` and `csaw` (PolyBLEP variant);
+the pre-PolyBLEP `oldsaw` kept around for character; `pad` (quad-saw
+pad) and `qpwm` (quad PWM) for thick stacked-osc textures.
+
+**16-bit voice family.** Inspired by the synthesis chips of classic
+90s sound cards and home consoles.
+
+- `sn16` — eight windowed sine variants stepped by `para` (full sine,
+  half-rectified, absolute, quarter, alternating, camel, square, log
+  saw).
+- `fm` / `fmfb` — classic two-operator FM (with optional feedback on
+  `fmfb`). `para` is mod depth + feedback amount (upper half of the
+  knob, on the feedback variant); `rang` sets the FM ratio.
+- `fmca` / `fmcb` / `fmcc` / `fmcd` / `fmce` — FM variants where the
+  carrier is shaped by one of the sn16 windows (half-wave, absolute,
+  camel, square, alternating respectively). Sine modulator, shaped
+  carrier — OPL/OPN-flavored tones. Same `para` / `rang` semantics
+  as `fmfb`.
+
+**Additive harmonic family.** Four parallel sine partials per voice,
+ideal for generating a wide variety of percussion sounds — especially
+in combination with the pre-filter wavefolder (`fold` on the Mixer
+page), which folds the sine partials into clean rich harmonics.
+
+`rang` drives partial spread bidirectionally for both: `0` = harmonic
+series (1, 2, 3, 4); positive sweeps toward an octave stack
+(1, 2, 4, 8); negative toward a sub-octave stack (1, ½, ¼, ⅛).
+
+- `hrm1` — `para` detunes partials 1-3 by per-partial offsets,
+  producing chorus/swarm character.
+- `hrm2` — `para` cascades phase modulation from partial to partial
+  (partial *n* modulates *n+1*), producing bell/clang character.
+
+**Use solo per voice.** Pairing an `hrm*` shape with another
+oscillator on the same voice degrades both — this is a documented
+limitation of the current implementation.
+
+**Vowel synthesis.** Formant-based vowel sounds (`vowel`, `vowel 2`).
+`para` selects the vowel.
+
+**Wavetables.** Sixteen wavetable banks plus a wavequence mode.
+`para` scans through the table.
+
+**Filtered noise.** Coloured noise source. `para` shapes the filter.
+
+**Period-grit.** `8bits` and `pwm` — pre-PolyBLEP variants with
+intentional aliasing for crunchy, lo-fi character.
 
 ### Mixer page
 

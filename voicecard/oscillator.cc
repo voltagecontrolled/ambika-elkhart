@@ -280,6 +280,125 @@ void Oscillator::RenderFmSin16(uint8_t* buffer) {
   data_.output_sample = last_output;
 }
 
+// ------- 4-partial additive (HRM1 detune / HRM2 cascade PM) ----------------
+// RANGE drives spread for both: positive → octave stack (1,2,4,8); negative →
+// sub-octave stack (1, ½, ¼, ⅛); zero → harmonic series.
+//
+// Two separate render functions (rather than mode-branched) to keep the
+// per-sample inner loop tight — voicecard CPU budget is the binding
+// constraint when paired with another oscillator on the same voice.
+static const prog_uint16_t kHrmDeltaUp[4]   PROGMEM = { 0,   0, 256, 1024 };
+static const prog_uint16_t kHrmDeltaDown[4] PROGMEM = { 0, 384, 704,  992 };
+
+// HRM1 — PARA detunes partials 1-3 by per-partial offsets (~±150-200 cents
+// at PARA=127). Detune scales with current ratio so cent-amount stays
+// consistent regardless of spread.
+void Oscillator::RenderHrm1(uint8_t* buffer) {
+  int8_t range_signed = (int8_t)((int16_t)fm_parameter_ - 36);
+  uint8_t up_dir = (range_signed >= 0) ? 1 : 0;
+  uint8_t mag = up_dir ? (uint8_t)range_signed : (uint8_t)(-range_signed);
+  if (mag > 24) mag = 24;
+  uint8_t norm = (mag >= 24) ? 255 : (uint8_t)(((uint16_t)mag * 171) >> 4);
+
+  static const prog_int8_t kDetune[4] PROGMEM = { 0, +20, -28, +32 };
+  uint16_t base_inc = phase_increment_.integral;
+  uint16_t inc[4];
+  for (uint8_t n = 0; n < 4; ++n) {
+    uint16_t ratio = (uint16_t)(n + 1) << 8;
+    uint16_t delta_word = pgm_read_word(
+        up_dir ? &kHrmDeltaUp[n] : &kHrmDeltaDown[n]);
+    uint16_t adj = (uint16_t)(((uint32_t)norm * delta_word) >> 8);
+    if (up_dir) ratio += adj;
+    else ratio -= adj;
+    int8_t det = (int8_t)pgm_read_byte(&kDetune[n]);
+    int16_t coef = ((int16_t)det * parameter_) >> 7;
+    int32_t adj_d = ((int32_t)ratio * coef) >> 8;
+    ratio = (uint16_t)((int32_t)ratio + adj_d);
+    uint32_t r = (uint32_t)base_inc * ratio;
+    r >>= 8;
+    inc[n] = (r > 0xFFFFUL) ? 0xFFFFU : (uint16_t)r;
+  }
+
+  uint16_t p0 = data_.ad.phase[0];
+  uint16_t p1 = data_.ad.phase[1];
+  uint16_t p2 = data_.ad.phase[2];
+  uint16_t p3 = data_.ad.phase[3];
+
+  BEGIN_SAMPLE_LOOP
+    UPDATE_PHASE
+    p0 += inc[0];
+    p1 += inc[1];
+    p2 += inc[2];
+    p3 += inc[3];
+    uint8_t s0 = ReadSample(wav_res_sine, p0);
+    uint8_t s1 = ReadSample(wav_res_sine, p1);
+    uint8_t s2 = ReadSample(wav_res_sine, p2);
+    uint8_t s3 = ReadSample(wav_res_sine, p3);
+    int16_t s = ((int16_t)s0 - 128) + ((int16_t)s1 - 128) +
+                ((int16_t)s2 - 128) + ((int16_t)s3 - 128);
+    s >>= 2;
+    *buffer++ = (uint8_t)(s + 128);
+  END_SAMPLE_LOOP
+
+  data_.ad.phase[0] = p0;
+  data_.ad.phase[1] = p1;
+  data_.ad.phase[2] = p2;
+  data_.ad.phase[3] = p3;
+}
+
+// HRM2 — PARA cascades partial-to-partial PM (partial n modulates n+1).
+void Oscillator::RenderHrm2(uint8_t* buffer) {
+  int8_t range_signed = (int8_t)((int16_t)fm_parameter_ - 36);
+  uint8_t up_dir = (range_signed >= 0) ? 1 : 0;
+  uint8_t mag = up_dir ? (uint8_t)range_signed : (uint8_t)(-range_signed);
+  if (mag > 24) mag = 24;
+  uint8_t norm = (mag >= 24) ? 255 : (uint8_t)(((uint16_t)mag * 171) >> 4);
+
+  uint16_t base_inc = phase_increment_.integral;
+  uint16_t inc[4];
+  for (uint8_t n = 0; n < 4; ++n) {
+    uint16_t ratio = (uint16_t)(n + 1) << 8;
+    uint16_t delta_word = pgm_read_word(
+        up_dir ? &kHrmDeltaUp[n] : &kHrmDeltaDown[n]);
+    uint16_t adj = (uint16_t)(((uint32_t)norm * delta_word) >> 8);
+    if (up_dir) ratio += adj;
+    else ratio -= adj;
+    uint32_t r = (uint32_t)base_inc * ratio;
+    r >>= 8;
+    inc[n] = (r > 0xFFFFUL) ? 0xFFFFU : (uint16_t)r;
+  }
+
+  uint16_t p0 = data_.ad.phase[0];
+  uint16_t p1 = data_.ad.phase[1];
+  uint16_t p2 = data_.ad.phase[2];
+  uint16_t p3 = data_.ad.phase[3];
+  uint8_t pm_depth = parameter_;
+
+  BEGIN_SAMPLE_LOOP
+    UPDATE_PHASE
+    p0 += inc[0];
+    p1 += inc[1];
+    p2 += inc[2];
+    p3 += inc[3];
+    uint8_t s0 = ReadSample(wav_res_sine, p0);
+    uint16_t m = (uint16_t)s0 * pm_depth;
+    uint8_t s1 = ReadSample(wav_res_sine, p1 + m);
+    m = (uint16_t)s1 * pm_depth;
+    uint8_t s2 = ReadSample(wav_res_sine, p2 + m);
+    m = (uint16_t)s2 * pm_depth;
+    uint8_t s3 = ReadSample(wav_res_sine, p3 + m);
+    int16_t s = ((int16_t)s0 - 128) + ((int16_t)s1 - 128) +
+                ((int16_t)s2 - 128) + ((int16_t)s3 - 128);
+    s >>= 2;
+    *buffer++ = (uint8_t)(s + 128);
+  END_SAMPLE_LOOP
+
+  data_.ad.phase[0] = p0;
+  data_.ad.phase[1] = p1;
+  data_.ad.phase[2] = p2;
+  data_.ad.phase[3] = p3;
+}
+
 // ------- 8-bit land --------------------------------------------------------
 void Oscillator::Render8BitLand(uint8_t* buffer) {
   BEGIN_SAMPLE_LOOP
@@ -677,6 +796,9 @@ const Oscillator::RenderFn Oscillator::fn_table_[] PROGMEM = {
   &Oscillator::RenderFmSin16,    // FM_CC
   &Oscillator::RenderFmSin16,    // FM_CD
   &Oscillator::RenderFmSin16,    // FM_CE
+
+  &Oscillator::RenderHrm1,       // HRM1 (detune)
+  &Oscillator::RenderHrm2,       // HRM2 (cascade PM)
 
   &Oscillator::Render8BitLand,
   &Oscillator::RenderDirtyPwm,

@@ -71,10 +71,15 @@ struct QuadState {
   uint16_t phase[3];
 };
 
+struct AdditiveState {
+  uint16_t phase[4];
+};
+
 union OscillatorState {
   VowelSynthesizerState vw;
   FilteredNoiseState no;
   QuadState qs;
+  AdditiveState ad;
   uint8_t qsbytes[6];
   uint16_t secondary_phase;
   uint8_t output_sample;
@@ -160,6 +165,8 @@ class Oscillator {
   void RenderSin16Bit(uint8_t* buffer);
   void RenderFm(uint8_t* buffer);
   void RenderFmSin16(uint8_t* buffer);
+  void RenderHrm1(uint8_t* buffer);
+  void RenderHrm2(uint8_t* buffer);
   void Render8BitLand(uint8_t* buffer);
   void RenderVowel(uint8_t* buffer);
   void RenderNewTriangle(uint8_t* buffer);

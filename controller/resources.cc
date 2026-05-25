@@ -106,6 +106,8 @@ static const prog_char str_res_fmcb[] PROGMEM = "fmcb";
 static const prog_char str_res_fmcc[] PROGMEM = "fmcc";
 static const prog_char str_res_fmcd[] PROGMEM = "fmcd";
 static const prog_char str_res_fmce[] PROGMEM = "fmce";
+static const prog_char str_res_hrm1[] PROGMEM = "hrm1";
+static const prog_char str_res_hrm2[] PROGMEM = "hrm2";
 static const prog_char str_res_8bits[] PROGMEM = "8bits";
 static const prog_char str_res_pwm[] PROGMEM = "pwm";
 static const prog_char str_res_noise[] PROGMEM = "noise";
@@ -138,7 +140,6 @@ static const prog_char str_res_ramp[] PROGMEM = "ramp";
 static const prog_char str_res_1exp[] PROGMEM = "1exp";
 static const prog_char str_res_1lin[] PROGMEM = "1lin";
 static const prog_char str_res_1tri[] PROGMEM = "1tri";
-static const prog_char str_res_hrm2[] PROGMEM = "hrm2";
 static const prog_char str_res_hrm3[] PROGMEM = "hrm3";
 static const prog_char str_res_hrm5[] PROGMEM = "hrm5";
 static const prog_char str_res_grg1[] PROGMEM = "grg1";
@@ -466,6 +467,8 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_fmcc,
   str_res_fmcd,
   str_res_fmce,
+  str_res_hrm1,
+  str_res_hrm2,
   str_res_8bits,
   str_res_pwm,
   str_res_noise,

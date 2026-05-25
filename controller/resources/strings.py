@@ -103,6 +103,8 @@ fmcb
 fmcc
 fmcd
 fmce
+hrm1
+hrm2
 8bits
 pwm
 noise

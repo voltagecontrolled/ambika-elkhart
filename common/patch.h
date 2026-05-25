@@ -87,6 +87,14 @@ enum OscillatorAlgorithm {
   WAVEFORM_FM_CC,  // carrier = sin16 camel
   WAVEFORM_FM_CD,  // carrier = sin16 square
   WAVEFORM_FM_CE,  // carrier = sin16 alternating (2× speed sine, silence)
+  // 4-partial additive oscillators. RANGE drives partial spread for both
+  // (positive → octave stack 1,2,4,8; negative → sub-octave stack 1, ½, ¼, ⅛).
+  //   HRM1: PARA detunes partials 1-3 by per-partial offsets (~±150-200 cents).
+  //   HRM2: PARA cascades partial-to-partial PM (partial n modulates n+1).
+  // Best used solo — pairing with another oscillator on the same voice
+  // degrades both due to voicecard CPU budget.
+  WAVEFORM_HRM1,
+  WAVEFORM_HRM2,
   WAVEFORM_8BITLAND,
   WAVEFORM_DIRTY_PWM,
   WAVEFORM_FILTERED_NOISE,
