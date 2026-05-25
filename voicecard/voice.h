@@ -77,10 +77,6 @@ class Voice {
     return modulation_destinations_[i];
   }
   
-  static inline void set_modulation_source(uint8_t i, uint8_t value) {
-    modulation_sources_[i] = value;
-  }
-  
   static void set_patch_data(uint8_t address, uint8_t value);
   static void set_part_data(uint8_t address, uint8_t value) {
     part_data_[address + 1] = value;

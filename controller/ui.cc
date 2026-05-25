@@ -51,8 +51,8 @@ const prog_PageInfo page_registry[] PROGMEM = {
 
   { PAGE_MIXER,
     &ParameterEditor::event_handlers_,
-    // MIX vacated cell 0; FOLD (index 77) lands here, beside the other XMOD ops.
-    { 77, 13, 12, 11, 9, 10, 14, 15 },
+    // MIX vacated cell 0; FOLD (index 69) lands here, beside the other XMOD ops.
+    { 69, 13, 12, 11, 9, 10, 14, 15 },
     PAGE_OSCILLATORS, 0, 0x0f,
   },
 
@@ -60,9 +60,8 @@ const prog_PageInfo page_registry[] PROGMEM = {
     &ParameterEditor::event_handlers_,
     // top: cutoff | reso | (blank) | mode
     // bot: E2 rise | E2 fall | E2 curv | E2 depth (filter env)
-    // NOTE: ids are array indices into parameters[], NOT the `// N`
-    // comment labels — those count past gaps left by removed entries.
-    { 16, 17, 0xff, 18, 28, 64, 65, 66 },
+    // NOTE: ids are array indices into parameters[].
+    { 16, 17, 0xff, 18, 28, 56, 57, 58 },
     PAGE_FILTER, 1, 0xf0,
   },
 
@@ -70,7 +69,7 @@ const prog_PageInfo page_registry[] PROGMEM = {
     &ParameterEditor::event_handlers_,
     // top: E1 (amp env) — rise | fall | curv | depth
     // bot: E3 (pitch env) — rise | fall | curv | depth
-    { 24, 25, 26, 27, 67, 68, 69, 70 },
+    { 24, 25, 26, 27, 59, 60, 61, 62 },
     PAGE_VOICE_LFO, 2, 0xf0,
   },
 
@@ -78,7 +77,7 @@ const prog_PageInfo page_registry[] PROGMEM = {
     &ParameterEditor::event_handlers_,
     // top: LFO4 — rate | wave | dest | dept   (click wave = lfo4 retrig toggle)
     // bot: LFO5 — rate | wave | dest | dept   (click wave = lfo5 retrig toggle)
-    { 32, 33, 71, 72, 73, 74, 75, 76 },
+    { 32, 33, 63, 64, 65, 66, 67, 68 },
     PAGE_ENV_LFO, 2, 0x0f,
   },
 
@@ -121,7 +120,7 @@ const prog_PageInfo page_registry[] PROGMEM = {
 
   { PAGE_SYSTEM_SETTINGS,
     &ParameterEditor::event_handlers_,
-    { 55, 56, 60, 61, 57, 58, 0xff, 59, },
+    { 47, 48, 52, 53, 49, 50, 0xff, 51, },
     PAGE_SYSTEM_SETTINGS, 8, 0xf0,
   },
 

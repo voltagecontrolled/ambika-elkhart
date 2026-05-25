@@ -56,7 +56,7 @@ enum ProtocolCommands {
 
   COMMAND_WRITE_PATCH_DATA = 0x20,
   COMMAND_WRITE_PART_DATA = 0x30,
-  COMMAND_WRITE_MOD_MATRIX = 0x40,
+  // 0x40 retired (was COMMAND_WRITE_MOD_MATRIX — mod matrix removed v4.4).
 
   COMMAND_RELEASE = 0x60,
   COMMAND_KILL = 0x70,

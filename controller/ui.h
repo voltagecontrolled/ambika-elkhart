@@ -36,15 +36,11 @@ using namespace avrlib;
 
 struct UiState {
   uint8_t active_env_lfo;
-  uint8_t active_modulation;
-  uint8_t active_modifier;
   uint8_t active_part;
 };
 
 enum UIStateParameter {
   PRM_UI_ACTIVE_ENV_LFO,
-  PRM_UI_ACTIVE_MODULATION,
-  PRM_UI_ACTIVE_MODIFIER,
   PRM_UI_ACTIVE_PART
 };
 

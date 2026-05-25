@@ -42,7 +42,6 @@ enum Unit {
   UNIT_LFO_SHAPE,
   UNIT_MODULATION_SOURCE,
   UNIT_MODULATION_DESTINATION,
-  UNIT_MODIFIER,
   UNIT_RAGA,
   UNIT_NOTE,
   UNIT_TEMPO,
@@ -115,7 +114,7 @@ struct Parameter {
   static void PrintNote(uint8_t note, char* buffer);
 };
 
-const uint8_t kNumParameters = 78;
+const uint8_t kNumParameters = 70;
 typedef Parameter PROGMEM prog_Parameter;
 
 // The parameter manager is the class who knows how to apply a parameter change

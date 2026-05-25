@@ -27,7 +27,6 @@ tune
 osc mix
 sub osc.
 crossmod.
-operator
 amount
 resonance
 mode
@@ -45,13 +44,6 @@ lfo/eg
 voice lfo
 source
 destination
-in1
-in2
-modulation
-modul.
-modulation
-modifier
-modif.
 volume
 octave
 spread
@@ -89,7 +81,6 @@ ext
 
 omni
 amnt
-srce
 oct
 sprd
 a/sq
@@ -232,9 +223,9 @@ fold
 env 1
 env 2
 env 3
-lfo 1
+lfo .
 lfo 2
-lfo 3
+lfo .
 lfo 4
 mod. 1
 mod. 2

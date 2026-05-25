@@ -143,11 +143,9 @@ void Voice::Init() {
 
 /* static */
 void Voice::ResetAllControllers() {
-  modulation_sources_[MOD_SRC_PITCH_BEND] = 128;
-  modulation_sources_[MOD_SRC_AFTERTOUCH] = 0;
-  modulation_sources_[MOD_SRC_WHEEL] = 0;
-  modulation_sources_[MOD_SRC_WHEEL_2] = 0;
-  modulation_sources_[MOD_SRC_EXPRESSION] = 0;
+  // Mod-matrix retirement (v4.4) removed every reader of the PITCH_BEND /
+  // AFTERTOUCH / WHEEL / WHEEL_2 / EXPRESSION source slots; the CONSTANT_*
+  // ladder retained pending dedicated audit.
   modulation_sources_[MOD_SRC_CONSTANT_4] = 4;
   modulation_sources_[MOD_SRC_CONSTANT_8] = 8;
   modulation_sources_[MOD_SRC_CONSTANT_16] = 16;

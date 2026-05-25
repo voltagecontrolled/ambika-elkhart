@@ -342,11 +342,13 @@ void Sequencer::ClearStepLock(
 }
 
 // Parameter-table id → sequencer lock_index 0..47 (0xff = not lockable).
-// v4.4-WS1: expanded to 77 entries to cover every patch-page cell that has
-// a per-step DSP byte. Slot 7 reclaims OSC1 RANGE; slots 28..47 host the
-// formerly config-only params (xmod/fuzz/crsh/reso/mode, full env shape,
-// LFO4/5 controls). Mapping fixes for E2/E3 fall + depth at params 64/66/68/70
-// route patch-page cells to existing slots 10/25/12/26 (FAMT/PAMT/fdec/pdec).
+// v4.4-WS1: expanded to cover every patch-page cell that has a per-step
+// DSP byte. Slot 7 reclaims OSC1 RANGE; slots 28..47 host the formerly
+// config-only params (xmod/fuzz/crsh/reso/mode, full env shape, LFO4/5
+// controls). Mapping fixes for E2/E3 fall + depth route patch-page cells
+// to existing slots 10/25/12/26 (FAMT/PAMT/fdec/pdec).
+// Post #47 (mod-matrix entries deleted): 8 entries removed at old positions
+// 34..41; everything below shifted down by 8.
 static const prog_uint8_t kParamLockMap[] PROGMEM = {
   /* 0  OSC1_SHAPE   */ 1,
   /* 1  OSC1_PWM     */ 2,
@@ -370,7 +372,7 @@ static const prog_uint8_t kParamLockMap[] PROGMEM = {
   /* 19 FILTER2_CUT  */ 0xff,
   /* 20 FILTER2_RES  */ 0xff,
   /* 21 FILTER2_MODE */ 0xff,
-  /* 22 FILTER1_ENV  */ 25,       // orphaned param (no cell); shares slot 25 with param 66
+  /* 22 FILTER1_ENV  */ 25,       // orphaned param (no cell); shares slot 25 with param 58
   /* 23 FILTER1_LFO  */ 0xff,
   /* 24 E1 rise      */ 33,       // WS1
   /* 25 E1 fall      */ 8,
@@ -382,41 +384,33 @@ static const prog_uint8_t kParamLockMap[] PROGMEM = {
   /* 31 LFO_SHAPE    */ 0xff,
   /* 32 VOICE_LFO_RATE  */ 40,    // WS1: LFO4 rate
   /* 33 VOICE_LFO_SHAPE */ 41,    // WS1: LFO4 wave
-  /* 34 UI_ACTIVE_MOD */ 0xff,
-  /* 35 MOD_SOURCE   */ 0xff,
-  /* 36 MOD_DEST     */ 0xff,
-  /* 37 MOD_AMOUNT   */ 0xff,
-  /* 38 UI_ACTIVE_MODIFIER */ 0xff,
-  /* 39 MOD_OPERAND1 */ 0xff,
-  /* 40 MOD_OPERAND2 */ 0xff,
-  /* 41 MOD_OPERATOR */ 0xff,
-  /* 42..63 — PART / MULTI / SYSTEM / filter velo/kbt — not lockable */
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,    /* 42..48 PART */
-  0xff, 0xff, 0xff,                            /* 49..51 PART seq lengths */
-  0xff, 0xff, 0xff,                            /* 52..54 MULTI */
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,    /* 55..61 SYSTEM */
-  0xff, 0xff,                                  /* 62..63 filter velo/kbt */
-  /* 64 E2 fall      */ 10,       // mapping fix: patch-page cell → existing slot
-  /* 65 E2 curv      */ 37,       // WS1
-  /* 66 E2 depth     */ 25,       // mapping fix: shares slot with FILTER1_ENV/22
-  /* 67 E3 rise      */ 38,       // WS1
-  /* 68 E3 fall      */ 12,       // mapping fix
-  /* 69 E3 curv      */ 39,       // WS1
-  /* 70 E3 depth     */ 26,       // mapping fix
-  /* 71 LFO4 dest    */ 42,       // WS1
-  /* 72 LFO4 dept    */ 43,       // WS1
-  /* 73 LFO5 rate    */ 44,       // WS1
-  /* 74 LFO5 wave    */ 45,       // WS1
-  /* 75 LFO5 dest    */ 46,       // WS1
-  /* 76 LFO5 dept    */ 47,       // WS1
+  /* 34..55 — PART / MULTI / SYSTEM / filter velo/kbt — not lockable */
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,    /* 34..40 PART */
+  0xff, 0xff, 0xff,                            /* 41..43 PART seq lengths */
+  0xff, 0xff, 0xff,                            /* 44..46 MULTI */
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,    /* 47..53 SYSTEM */
+  0xff, 0xff,                                  /* 54..55 filter velo/kbt */
+  /* 56 E2 fall      */ 10,       // mapping fix: patch-page cell → existing slot
+  /* 57 E2 curv      */ 37,       // WS1
+  /* 58 E2 depth     */ 25,       // mapping fix: shares slot with FILTER1_ENV/22
+  /* 59 E3 rise      */ 38,       // WS1
+  /* 60 E3 fall      */ 12,       // mapping fix
+  /* 61 E3 curv      */ 39,       // WS1
+  /* 62 E3 depth     */ 26,       // mapping fix
+  /* 63 LFO4 dest    */ 42,       // WS1
+  /* 64 LFO4 dept    */ 43,       // WS1
+  /* 65 LFO5 rate    */ 44,       // WS1
+  /* 66 LFO5 wave    */ 45,       // WS1
+  /* 67 LFO5 dest    */ 46,       // WS1
+  /* 68 LFO5 dept    */ 47,       // WS1
 };
 static const uint8_t kParamLockMapSize =
     sizeof(kParamLockMap) / sizeof(kParamLockMap[0]);
 
 uint8_t ParamIdToLockIndex(uint8_t param_id, uint8_t /*instance*/) {
-  // FOLD lives at parameters[] array index 77 (last entry), past the
+  // FOLD lives at parameters[] array index 69 (last entry), past the
   // contiguous map. Reclaim the page2 reserved slot (lock_index 13).
-  if (param_id == 77) return 13;
+  if (param_id == 69) return 13;
   if (param_id >= kParamLockMapSize) return 0xff;
   return pgm_read_byte(&kParamLockMap[param_id]);
 }

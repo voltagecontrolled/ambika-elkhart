@@ -32,7 +32,6 @@ static const prog_char str_res_tune[] PROGMEM = "tune";
 static const prog_char str_res_osc_mix[] PROGMEM = "osc mix";
 static const prog_char str_res_sub_osc_[] PROGMEM = "sub osc.";
 static const prog_char str_res_crossmod_[] PROGMEM = "crossmod.";
-static const prog_char str_res_operator[] PROGMEM = "operator";
 static const prog_char str_res_amount[] PROGMEM = "amount";
 static const prog_char str_res_resonance[] PROGMEM = "resonance";
 static const prog_char str_res_mode[] PROGMEM = "mode";
@@ -50,12 +49,6 @@ static const prog_char str_res_lfo_eg[] PROGMEM = "lfo/eg";
 static const prog_char str_res_voice_lfo[] PROGMEM = "voice lfo";
 static const prog_char str_res_source[] PROGMEM = "source";
 static const prog_char str_res_destination[] PROGMEM = "destination";
-static const prog_char str_res_in1[] PROGMEM = "in1";
-static const prog_char str_res_in2[] PROGMEM = "in2";
-static const prog_char str_res_modulation[] PROGMEM = "modulation";
-static const prog_char str_res_modul_[] PROGMEM = "modul.";
-static const prog_char str_res_modifier[] PROGMEM = "modifier";
-static const prog_char str_res_modif_[] PROGMEM = "modif.";
 static const prog_char str_res_volume[] PROGMEM = "volume";
 static const prog_char str_res_octave[] PROGMEM = "octave";
 static const prog_char str_res_spread[] PROGMEM = "spread";
@@ -92,7 +85,6 @@ static const prog_char str_res_outp_mode[] PROGMEM = "outp mode";
 static const prog_char str_res_ext[] PROGMEM = "ext";
 static const prog_char str_res_omni[] PROGMEM = "omni";
 static const prog_char str_res_amnt[] PROGMEM = "amnt";
-static const prog_char str_res_srce[] PROGMEM = "srce";
 static const prog_char str_res_oct[] PROGMEM = "oct";
 static const prog_char str_res_sprd[] PROGMEM = "sprd";
 static const prog_char str_res_a_sq[] PROGMEM = "a/sq";
@@ -222,9 +214,8 @@ static const prog_char str_res_vca[] PROGMEM = "vca";
 static const prog_char str_res_env_1[] PROGMEM = "env 1";
 static const prog_char str_res_env_2[] PROGMEM = "env 2";
 static const prog_char str_res_env_3[] PROGMEM = "env 3";
-static const prog_char str_res_lfo_1[] PROGMEM = "lfo 1";
+static const prog_char str_res_lfo__[] PROGMEM = "lfo .";
 static const prog_char str_res_lfo_2[] PROGMEM = "lfo 2";
-static const prog_char str_res_lfo_3[] PROGMEM = "lfo 3";
 static const prog_char str_res_lfo_4[] PROGMEM = "lfo 4";
 static const prog_char str_res_mod__1[] PROGMEM = "mod. 1";
 static const prog_char str_res_mod__2[] PROGMEM = "mod. 2";
@@ -396,7 +387,6 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_osc_mix,
   str_res_sub_osc_,
   str_res_crossmod_,
-  str_res_operator,
   str_res_amount,
   str_res_resonance,
   str_res_mode,
@@ -414,13 +404,6 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_voice_lfo,
   str_res_source,
   str_res_destination,
-  str_res_in1,
-  str_res_in2,
-  str_res_modulation,
-  str_res_modul_,
-  str_res_modulation,
-  str_res_modifier,
-  str_res_modif_,
   str_res_volume,
   str_res_octave,
   str_res_spread,
@@ -457,7 +440,6 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_ext,
   str_res_omni,
   str_res_amnt,
-  str_res_srce,
   str_res_oct,
   str_res_sprd,
   str_res_a_sq,
@@ -593,9 +575,9 @@ PROGMEM const prog_char* const string_table[] = {
   str_res_env_1,
   str_res_env_2,
   str_res_env_3,
-  str_res_lfo_1,
+  str_res_lfo__,
   str_res_lfo_2,
-  str_res_lfo_3,
+  str_res_lfo__,
   str_res_lfo_4,
   str_res_mod__1,
   str_res_mod__2,

@@ -47,7 +47,6 @@ static const prog_uint16_t units_definitions[UNIT_LAST] PROGMEM = {
   STR_RES_TRI,        // UNIT_LFO_SHAPE
   STR_RES_ENV1,       // UNIT_MODULATION_SOURCE
   STR_RES_PRM1,       // UNIT_MODULATION_DESTINATION
-  STR_RES__OFF,       // UNIT_MODIFIER
   STR_RES_EQUAL,      // UNIT_RAGA
   0,                  // UNIT_NOTE
   0,                  // UNIT_TEMPO
@@ -272,9 +271,13 @@ void Parameter::Print(
 }
 
 
+// Inbound CC# → parameters[] array index. 255 = unmapped.
+// Post mod-matrix retirement (#47): values >= 42 in the old table
+// were shifted down by 8 to reflect the deletion of the 8 mod-matrix
+// entries at old positions 34..41. CC#90 newly mapped to FOLD (idx 69).
 static const prog_char midi_cc_map[128] PROGMEM = {
    // 0-15
-   255, 255, 255,  22, 255,  48, 255,  42,
+   255, 255, 255,  22, 255,  40, 255,  34,
    255,  23, 255, 255,  14,  15,   2,   3,
    // 16-31
      0,   1,   4,   5,   6,   7,   8,   9,
@@ -286,19 +289,25 @@ static const prog_char midi_cc_map[128] PROGMEM = {
     33, 255, 255, 255,  29,  30,  31, 255,
    255, 255, 255, 255,  29,  30,  31, 255,
    // 64-79
-   255, 255, 255, 255,  47, 255,  27,  17,
+   255, 255, 255, 255,  39, 255,  27,  17,
     28,  25,  16,  26, 255, 255,  27, 255,
    // 80-95
     28,  25, 255,  26, 255, 255,  27, 255,
-    28,  25, 255,  26, 255, 255,  44,  45,
+    28,  25,  69,  26, 255, 255,  36,  37,
    // 96-111
-   255, 255, 255, 255, 255, 255,  49,  50,
-    51,  52,  53,  57,  73,  74, 255, 255,
+   255, 255, 255, 255, 255, 255,  41,  42,
+    43,  44,  45,  49,  65,  66, 255, 255,
    // 112-127
    255, 255, 255, 255, 255, 255, 255, 255,
    255, 255, 255, 255, 255, 255, 255, 255
 };
 
+// Inbound NRPN address → parameters[] array index. 255 = unmapped,
+// 254 = pseudo-handled (legacy). Post mod-matrix retirement (#47):
+// addresses that targeted the 8 deleted entries (old indices 35..37
+// for MOD_SOURCE/DEST/AMOUNT and 39..41 for MOD_OPERAND1/OPERAND2/OPERATOR)
+// now return 255. Addresses targeting old indices >= 42 decrement by 8.
+// Address 111 newly mapped to FOLD (new idx 69).
 static const prog_char midi_nrpn_map[256] PROGMEM = {
    // 0-15
      0,   1,   2,   3,   4,   5,   6,   7,
@@ -310,20 +319,20 @@ static const prog_char midi_nrpn_map[256] PROGMEM = {
     25,  26,  27,  28,  31,  30, 255,  29,
     25,  26,  27,  28,  31,  30, 255,  29,
    // 48-63
-    33,  32,  35,  36,  37,  35,  36,  37,
-    35,  36,  37,  35,  36,  37,  35,  36,
+    33,  32, 255, 255, 255, 255, 255, 255,
+   255, 255, 255, 255, 255, 255, 255, 255,
    // 64-79
-    37,  35,  36,  37,  35,  36,  37,  35,
-    36,  37,  35,  36,  37,  35,  36,  37,
+   255, 255, 255, 255, 255, 255, 255, 255,
+   255, 255, 255, 255, 255, 255, 255, 255,
    // 80-95
-    35,  36,  37,  35,  36,  37,  35,  36,
-    37,  35,  36,  37,  39,  40,  41,  39,
+   255, 255, 255, 255, 255, 255, 255, 255,
+   255, 255, 255, 255, 255, 255, 255, 255,
    // 96-111
-    40,  41,  39,  40,  41,  39,  40,  41,
-    73,  74, 255, 255, 255, 255, 255, 255,
+   255, 255, 255, 255, 255, 255, 255, 255,
+    65,  66, 255, 255, 255, 255, 255,  69,
    // 112-127
-   42,  43,  44,  45,  46,  47,  48,  49,
-   50,  51,  52,  53,  54,  55,  56,  57,
+    34,  35,  36,  37,  38,  39,  40,  41,
+    42,  43,  44,  45,  46,  47,  48,  49,
    // 128-143
    254, 254, 254, 254, 254, 254, 254, 254,
    254, 254, 254, 254, 254, 254, 254, 254,
@@ -592,246 +601,176 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 48,
     STR_RES_WAVEFORM, STR_RES_WAVEFORM, STR_RES_VOICE_LFO },
 
-  // 34
-  { PARAMETER_LEVEL_UI,
-    PRM_UI_ACTIVE_MODULATION,
-    UNIT_INDEX, 0, 13,
-    1, 0, 0xff, 0xff,
-    STR_RES_MODUL_, STR_RES_MODULATION, 0 },
-
-  // 35
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_MOD_SOURCE,
-    UNIT_MODULATION_SOURCE, 0, MOD_SRC_CONSTANT_256,
-    14, 3, PRM_UI_ACTIVE_MODULATION, 0xff,
-    STR_RES_SRCE, STR_RES_SOURCE, STR_RES_MODULATION },
-  
-  // 36
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_MOD_DESTINATION,
-    UNIT_MODULATION_DESTINATION, 0, MOD_DST_LAST - 1,
-    14, 3, PRM_UI_ACTIVE_MODULATION, 0xff,
-    STR_RES_DESTINATION, STR_RES_DESTINATION, STR_RES_MODULATION },
-  
-  // 37
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_MOD_AMOUNT,
-    UNIT_INT8, -63, 63,
-    14, 3, PRM_UI_ACTIVE_MODULATION, 0xff,
-    STR_RES_AMNT, STR_RES_AMOUNT, STR_RES_MODULATION },
-  
-  // 38
-  { PARAMETER_LEVEL_UI,
-    PRM_UI_ACTIVE_MODIFIER,
-    UNIT_INDEX, 0, 3,
-    1, 0, 0xff, 0xff,
-    STR_RES_MODIF_, STR_RES_MODIFIER, 0 },
-  
-  // 39
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_MOD_OPERAND1,
-    UNIT_MODULATION_SOURCE, 0, MOD_SRC_LAST - 1,
-    4, 3, PRM_UI_ACTIVE_MODIFIER, 0xff,
-    STR_RES_IN1, STR_RES_IN1, STR_RES_MODIFIER },
-
-  // 40
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_MOD_OPERAND2,
-    UNIT_MODULATION_SOURCE, 0, MOD_SRC_LAST - 1,
-    4, 3, PRM_UI_ACTIVE_MODIFIER, 0xff,
-    STR_RES_IN2, STR_RES_IN2, STR_RES_MODIFIER },
-  
-  // 41
-  { PARAMETER_LEVEL_PATCH,
-    PRM_PATCH_MOD_OPERATOR,
-    UNIT_MODIFIER, 0, MODIFIER_LAST - 1,
-    4, 3, PRM_UI_ACTIVE_MODIFIER, 0xff,
-    STR_RES_OPERATOR, STR_RES_OPERATOR, STR_RES_MODIFIER },
-  
   // Parameters for part editor
-  // 42
+  // 34
   { PARAMETER_LEVEL_PART,
     PRM_PART_VOLUME,
     UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 7,
     STR_RES_VOLUME, STR_RES_VOLUME, STR_RES_PART },
   
-  // 43
+  // 35
   { PARAMETER_LEVEL_PART,
     PRM_PART_OCTAVE,
     UNIT_INT8, -2, 2,
     1, 0, 0xff, 0xff,
     STR_RES_OCTV, STR_RES_OCTAVE, STR_RES_PART },
   
-  // 44
+  // 36
   { PARAMETER_LEVEL_PART,
     PRM_PART_TUNING,
     UNIT_INT8, -127, 127,
     1, 0, 0xff, 94,
     STR_RES_TUNE, STR_RES_TUNE, STR_RES_PART },
-  
-  // 45
+
+  // 37
   { PARAMETER_LEVEL_PART,
     PRM_PART_TUNING_SPREAD,
     UNIT_UINT8, 0, 40,
     1, 0, 0xff, 95,
     STR_RES_SPRD, STR_RES_SPREAD, STR_RES_PART },
-  
-  // 46
+
+  // 38
   { PARAMETER_LEVEL_PART,
     PRM_PART_RAGA,
     UNIT_RAGA, 0, 31,
     1, 0, 0xff, 0xff,
     STR_RES_RAGA, STR_RES_RAGA, STR_RES_PART },
-  
-  // 47
+
+  // 39
   { PARAMETER_LEVEL_PART,
     PRM_PART_LEGATO,
     UNIT_BOOLEAN, 0, 1,
     1, 0, 0xff, 68,
     STR_RES_LEGATO, STR_RES_LEGATO, STR_RES_PART },
-  
-  // 48
+
+  // 40
   { PARAMETER_LEVEL_PART,
     PRM_PART_PORTAMENTO_TIME,
     UNIT_UINT8, 0, 63,
     1, 0, 0xff, 5,
     STR_RES_PORTAMENTO, STR_RES_PORTAMENTO, STR_RES_PART },
-  
-  // 49 (was PRM_PART_ARP_MODE — removed, arp params unused in elkhart)
-  // 50 (was PRM_PART_ARP_DIRECTION — removed)
-  // 51 (was PRM_PART_ARP_OCTAVE — removed)
-  // 52 (was PRM_PART_ARP_PATTERN — removed)
-  // 53 (was PRM_PART_ARP_RESOLUTION — removed)
 
-  // 54
+  // 41
   { PARAMETER_LEVEL_PART,
     PRM_PART_SEQUENCE_LENGTH_1,
     UNIT_UINT8, 1, 32,
     1, 0, 0xff, 0xff,
     STR_RES_LEN1, STR_RES_SEQ1_LEN, STR_RES_SEQUENCER },
 
-  // 55
+  // 42
   { PARAMETER_LEVEL_PART,
     PRM_PART_SEQUENCE_LENGTH_2,
     UNIT_UINT8, 1, 32,
     1, 0, 0xff, 0xff,
     STR_RES_LEN2, STR_RES_SEQ2_LEN, STR_RES_SEQUENCER },
 
-  // 56
+  // 43
   { PARAMETER_LEVEL_PART,
     PRM_PART_SEQUENCE_LENGTH_3,
     UNIT_UINT8, 1, 32,
     1, 0, 0xff, 0xff,
     STR_RES_LENP, STR_RES_PATT_LEN, STR_RES_SEQUENCER },
-  
-  // 57 (was PRM_PART_POLYPHONY_MODE — removed, elkhart is fixed 6-voice)
-  // 58 (was PRM_UI_ACTIVE_PART — removed; ui.state().active_part still live)
-  // 59 (was PRM_MULTI_MIDI_CHANNEL — removed, per-part MIDI routing unused)
-  // 60 (was PRM_MULTI_KEYRANGE_LOW — removed)
-  // 61 (was PRM_MULTI_KEYRANGE_HIGH — removed)
 
-  // 62
+  // 44
   { PARAMETER_LEVEL_MULTI,
     PRM_MULTI_CLOCK_BPM,
     UNIT_TEMPO, 39, 240,
     1, 0, 0xff, 0xff,
     STR_RES_BPM, STR_RES_BPM, STR_RES_CLOCK },
   
-  // 63
+  // 45
   { PARAMETER_LEVEL_MULTI,
     PRM_MULTI_CLOCK_GROOVE_TEMPLATE,
     UNIT_GROOVE_TEMPLATE, 0, STR_RES_MONKEY - STR_RES_SWING,
     1, 0, 0xff, 0xff,
     STR_RES_GROOVE, STR_RES_GROOVE, STR_RES_CLOCK },
-  
-  // 64
+
+  // 46
   { PARAMETER_LEVEL_MULTI,
     PRM_MULTI_CLOCK_GROOVE_AMOUNT,
     UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_AMNT, STR_RES_AMOUNT, STR_RES_CLOCK },
 
-  // 65 (was PRM_MULTI_CLOCK_LATCH — removed, unused)
-
-  // 66
+  // 47
   { PARAMETER_LEVEL_SYSTEM,
     PRM_SYSTEM_MIDI_IN_MASK,
     UNIT_MIDI_IN_MASK, 0, 15,
     1, 0, 0xff, 0xff,
     STR_RES_INPT_FILTER, STR_RES_INPT_FILTER, STR_RES_MIDI },
-  
-  // 67
+
+  // 48
   { PARAMETER_LEVEL_SYSTEM,
     PRM_SYSTEM_MIDI_OUT_MODE,
     UNIT_MIDI_OUT_MODE, MIDI_OUT_THRU, MIDI_OUT_FULL,
     1, 0, 0xff, 0xff,
     STR_RES_OUTP_MODE, STR_RES_OUTP_MODE, STR_RES_MIDI },
-  
-  // 68
+
+  // 49
   { PARAMETER_LEVEL_SYSTEM,
     PRM_SYSTEM_SHOW_HELP,
     UNIT_BOOLEAN, 0, 1,
     1, 0, 0xff, 0xff,
     STR_RES_HELP, STR_RES_HELP, STR_RES_SYSTEM },
-  
-  // 69
+
+  // 50
   { PARAMETER_LEVEL_SYSTEM,
     PRM_SYSTEM_SNAP,
     UNIT_BOOLEAN, 0, 1,
     1, 0, 0xff, 0xff,
     STR_RES_SNAP, STR_RES_SNAP, STR_RES_SYSTEM },
-    
-  // 70
+
+  // 51
   { PARAMETER_LEVEL_SYSTEM,
     PRM_SYSTEM_AUTOBACKUP,
     UNIT_BOOLEAN, 0, 1,
     1, 0, 0xff, 0xff,
     STR_RES_AUTO_BACKUP, STR_RES_AUTO_BACKUP, STR_RES_SYSTEM },
-  
-  // 71  
+
+  // 52
   { PARAMETER_LEVEL_SYSTEM,
     PRM_SYSTEM_VOICECARD_LEDS,
     UNIT_BOOLEAN, 0, 1,
     1, 0, 0xff, 0xff,
     STR_RES_LEDS, STR_RES_CARD_LEDS, STR_RES_SYSTEM },
-  
-  // 71 2
+
+  // 53
   { PARAMETER_LEVEL_SYSTEM,
     PRM_SYSTEM_VOICECARD_SWAP_LEDS_COLORS,
     UNIT_BOOLEAN, 0, 1,
     1, 0, 0xff, 0xff,
     STR_RES_SWAP_COLORS, STR_RES_SWAP_COLORS, STR_RES_SYSTEM },
   	
-  // 73
+  // 54
   { PARAMETER_LEVEL_PATCH,
     PRM_PATCH_FILTER1_VELO,
     UNIT_UINT8, 0, 63,
     1, 0, 0xff, 108,
     STR_RES_VELOTVCF, STR_RES_VELOTVCF, STR_RES_FILTER_1 },
-  
-  // 74
+
+  // 55
   { PARAMETER_LEVEL_PATCH,
     PRM_PATCH_FILTER1_KBT,
     UNIT_INT8, -63, 63,
     1, 0, 0xff, 109,
     STR_RES_KEYBTVCF, STR_RES_KEYBTVCF, STR_RES_FILTER_1 },
 
-  // 75 — E2 fall (was indexed EG depth)
+  // 56 — E2 fall (was indexed EG depth)
   { PARAMETER_LEVEL_PATCH,
     33,
     UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_FALL, STR_RES_DECAY, STR_RES_ENVELOPE },
 
-  // 76 — E2 curv
+  // 57 — E2 curv
   { PARAMETER_LEVEL_PATCH,
     34,
     UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_CURV, STR_RES_CURV, STR_RES_ENVELOPE },
 
-  // 77 — E2 depth (a.k.a. FLT). Writes the same patch byte as the FAMT
+  // 58 — E2 depth (a.k.a. FLT). Writes the same patch byte as the FAMT
   // page3 default at addr 22 so the per-step snapshot picks up changes
   // — without this they diverge: FLT used to land in kCfgE2DEPT (not
   // in the Touch sync list nor the snapshot field set) and never reached
@@ -842,77 +781,77 @@ static const prog_Parameter parameters[kNumParameters] PROGMEM = {
     1, 0, 0xff, 0xff,
     STR_RES_FLT, STR_RES_DEPTH, STR_RES_ENVELOPE },
 
-  // 78 — E3 rise
+  // 59 — E3 rise
   { PARAMETER_LEVEL_PATCH,
     40,
     UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_RISE, STR_RES_ATTACK, STR_RES_ENVELOPE },
 
-  // 79 — E3 fall
+  // 60 — E3 fall
   { PARAMETER_LEVEL_PATCH,
     41,
     UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_FALL, STR_RES_DECAY, STR_RES_ENVELOPE },
 
-  // 80 — E3 curv
+  // 61 — E3 curv
   { PARAMETER_LEVEL_PATCH,
     42,
     UNIT_RAW_UINT8, 0, 127,
     1, 0, 0xff, 0xff,
     STR_RES_CURV, STR_RES_CURV, STR_RES_ENVELOPE },
 
-  // 81 — E3 depth (virtual addr 202 → page3 PAMT, same byte as patch addr 58)
+  // 62 — E3 depth (virtual addr 202 → page3 PAMT, same byte as patch addr 58)
   { PARAMETER_LEVEL_PATCH,
     202,
     UNIT_INT8, -63, 63,
     1, 0, 0xff, 0xff,
     STR_RES_PCH, STR_RES_DEPTH, STR_RES_ENVELOPE },
 
-  // 82 — LFO4 destination (mod slot 7 destination, addr 72)
+  // 63 — LFO4 destination (mod slot 7 destination, addr 72)
   { PARAMETER_LEVEL_PATCH,
     72,
     UNIT_MODULATION_DESTINATION, 0, MOD_DST_LAST - 1,
     1, 0, 0xff, 0xff,
     STR_RES_DEST, STR_RES_DESTINATION, STR_RES_VOICE_LFO },
 
-  // 83 — LFO4 depth (mod slot 7 amount, addr 73)
+  // 64 — LFO4 depth (mod slot 7 amount, addr 73)
   { PARAMETER_LEVEL_PATCH,
     73,
     UNIT_INT8, -63, 63,
     1, 0, 0xff, 0xff,
     STR_RES_DEPT, STR_RES_DEPTH, STR_RES_VOICE_LFO },
 
-  // 84 — LFO5 rate (addr 109)
+  // 65 — LFO5 rate (addr 109)
   { PARAMETER_LEVEL_PATCH,
     PRM_PATCH_VOICE_LFO_2_RATE,
     UNIT_LFO_RATE, 0, kNumSyncedLfoRates + 127,
     1, 0, 0xff, 0xff,
     STR_RES_RATE, STR_RES_RATE, STR_RES_VOICE_LFO },
 
-  // 85 — LFO5 shape (addr 108) — encoder click toggles lfo5_retrigger
+  // 66 — LFO5 shape (addr 108) — encoder click toggles lfo5_retrigger
   { PARAMETER_LEVEL_PATCH,
     PRM_PATCH_VOICE_LFO_2_SHAPE,
     UNIT_LFO_SHAPE, 0, LFO_WAVEFORM_VOICE_LFO_LAST,
     1, 0, 0xff, 0xff,
     STR_RES_WAVEFORM, STR_RES_WAVEFORM, STR_RES_VOICE_LFO },
 
-  // 86 — LFO5 destination (mod slot 6 destination, addr 69)
+  // 67 — LFO5 destination (mod slot 6 destination, addr 69)
   { PARAMETER_LEVEL_PATCH,
     69,
     UNIT_MODULATION_DESTINATION, 0, MOD_DST_LAST - 1,
     1, 0, 0xff, 0xff,
     STR_RES_DEST, STR_RES_DESTINATION, STR_RES_VOICE_LFO },
 
-  // 87 — LFO5 depth (mod slot 6 amount, addr 70)
+  // 68 — LFO5 depth (mod slot 6 amount, addr 70)
   { PARAMETER_LEVEL_PATCH,
     70,
     UNIT_INT8, -63, 63,
     1, 0, 0xff, 0xff,
     STR_RES_DEPT, STR_RES_DEPTH, STR_RES_VOICE_LFO },
 
-  // 88 — Pre-filter wavefolder drive (addr 111). Capped at 70 — values
+  // 69 — Pre-filter wavefolder drive (addr 111). Capped at 70 — values
   // above introduce inharmonic aliasing noise that's never musical.
   // voice.cc also clamps fold_q to keep modulation from pushing into
   // the noise zone.

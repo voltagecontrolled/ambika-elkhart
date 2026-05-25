@@ -112,9 +112,6 @@ class VoicecardProtocolRx {
       case COMMAND_WRITE_PART_DATA:
         voice.set_part_data(arguments_[0], arguments_[1]);
         break;
-      case COMMAND_WRITE_MOD_MATRIX:
-        voice.set_modulation_source(arguments_[0], arguments_[1]);
-        break;
     }
   }
   

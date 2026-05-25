@@ -29,6 +29,18 @@ after each landed issue and update both this table and the baseline.
 - **CZ filter-sim removal** dropped 3 render methods + the `wav_res_cz_phase_reset` LUT — ~530 B of voicecard flash reclaimed.
 - **sn16 windowed sine bank** added a single `RenderSin16Bit` (~130 B) — net voicecard reclaim −108 B.
 
+### v4.4 update (2026-05-24, parameter-table shift + mod-matrix followup cleanup #47)
+
+| Target     | Flash used | Flash free | RAM used | RAM free |
+|------------|-----------:|-----------:|---------:|---------:|
+| controller |    58896 B |     6640 B |   3340 B |    756 B |
+| voicecard  |    26558 B |     6210 B |   1077 B |    971 B |
+
+- Net session reclaim: controller **−218 B** (90.4% → 89.8% full), voicecard **−50 B**, controller RAM **−2 B** (`active_modulation` + `active_modifier` UiState bytes deleted).
+- Reclaim landed at the low end of the 500–900 B projection. The orphan-strings savings was dampened by the build dedup'ing duplicate `modulation` entries and a couple of strings staying live for shared use (`STR_RES_OFF`, `STR_RES_AMNT`); the bulk of the win came from deleting the 8 `parameters[]` entries themselves (~120 B PROGMEM) plus the cascade through `kParamLockMap[]`.
+- FOLD picks up inbound CC#90 + NRPN address 111 as a side effect of the map rewrite (both were unmapped pre-#47).
+- Followup filed: groove-template removal (multi.h annotates `clock_groove_template` / `clock_groove_amount` as dead; LUT, strings, `UNIT_GROOVE_TEMPLATE` PrintValue path all standing).
+
 ### v4.4 update (2026-05-24, mod-matrix removal + groovebox MIDI trim)
 
 | Target     | Flash used | Flash free | RAM used | RAM free |
@@ -238,7 +250,7 @@ Captured during the 2026-05-24 mod-matrix cleanup session. These are *not* gated
 
 **FatFs trim** (`avrlib/third_party/ff/ffconf.h`). Setting `_USE_MKFS=0` drops on-device SD-card format (currently exposed via Card Info page → FORMAT action). Setting `_FS_MINIMIZE=1` additionally drops `f_mkdir` (used by `snapshot.cc:104` `Storage::fs_.Mkdirs(path)`), `f_unlink`, `f_truncate`, `f_rename`, `f_stat`, `f_getfree` (the last one is consumed by the Card Info page's free-space display). Estimate: **~1-2 KB controller** total. Requires removing the FORMAT call site and either pre-creating the snapshot directory tree or working around `Mkdirs` deletion. Free-space display is a separate UX call.
 
-**Parameter table index shift (issue #47, already filed).** Deletes orphan `parameters[]` entries 34..41 (the retired mod-matrix UI parameters), shifts every subsequent ID down by 8, cascades through `kParamLockMap`, hardcoded IDs in `parameter_editor.cc`, MIDI CC/NRPN maps. Unblocks deletion of `UNIT_MODULATION_SOURCE` / `UNIT_MODIFIER` format cases, the now-orphan source/destination/modifier strings (including `lfo 1` / `lfo 3` long labels), and the `MOD_SRC_PITCH_BEND` / `MOD_SRC_WHEEL` / `MOD_SRC_AFTERTOUCH` enum slots. Estimate: **~500-900 B controller**. Mechanical but invasive; needs hardware verification on every patch-page cell.
+**Parameter table index shift (#47).** ~~Deletes orphan `parameters[]` entries 34..41…~~ **Landed 2026-05-24** — controller −218 B, voicecard −50 B. Audit miss: `page_registry[]` in `ui.cc` hardcodes parameter array indices and required its own pass (PAGE_MIXER FOLD cell, PAGE_FILTER E2 row, PAGE_ENV_LFO E3 row, PAGE_VOICE_LFO LFO4 dest/dept + LFO5 row, PAGE_SYSTEM_SETTINGS). Future parameter-table churn must update both `parameter.cc` AND `ui.cc` page registry together.
 
 ### Speculative (uncertain magnitude)
 

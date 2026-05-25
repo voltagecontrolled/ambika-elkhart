@@ -193,7 +193,7 @@ uint8_t ParameterEditor::OnClick() {
     patch_addr = 106;                     // osc_phase_reset
   } else if (parameter_id == 33) {        // VOICE LFO 4 SHAPE cell
     patch_addr = 107;                     // lfo4_retrigger
-  } else if (parameter_id == 74) {        // VOICE LFO 5 SHAPE cell (array idx)
+  } else if (parameter_id == 66) {        // VOICE LFO 5 SHAPE cell (array idx)
     patch_addr = 110;                     // lfo5_retrigger
   } else {
     return 1;                             // no click action on this cell

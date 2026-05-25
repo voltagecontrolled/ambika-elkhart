@@ -354,15 +354,12 @@ enum PatchParameter {
   
   PRM_PATCH_VOICE_LFO_SHAPE = 48,
   PRM_PATCH_VOICE_LFO_RATE,
-  
-  PRM_PATCH_MOD_SOURCE,
-  PRM_PATCH_MOD_DESTINATION,
-  PRM_PATCH_MOD_AMOUNT,
-  
-  PRM_PATCH_MOD_OPERAND1 = 92,
-  PRM_PATCH_MOD_OPERAND2,
-  PRM_PATCH_MOD_OPERATOR,
-  
+
+  // Bytes 50..103 are retired mod-matrix / modifier storage. Patch struct
+  // fields `modulation[14]` and `modifier[4]` remain as anonymous padding
+  // to preserve SD-card snapshot wire format. No PRM_PATCH_MOD_* constants
+  // — voicecard ignores those bytes since the mod matrix was retired.
+
   PRM_PATCH_FILTER1_VELO = 104,
   PRM_PATCH_FILTER1_KBT,
   PRM_PATCH_OSC_PHASE_RESET = 106,
