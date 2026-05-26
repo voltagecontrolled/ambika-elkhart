@@ -140,11 +140,9 @@ in the per-page sections below.
 | Filter                       | `S2` + turn (Filter group)                     | `freq reso —    mode` / `rise fall curv flt`                                  |
 | Amp + Pitch envelopes        | `S2` + turn (Envelopes group, page 1) / `S3`   | `rise fall curv amp` / `rise fall curv pitc`                                  |
 | Voice LFOs (LFO 4 + LFO 5)   | `S2` + turn (Envelopes group, page 2) / `S4`*  | `rate wave dest dept` / `rate wave dest dept`                                 |
-| Sequencer Step page          | `S4` + turn (Sequencer mode, lock page 1)      | `note vel vamt rate` / `subs prob glid sfx`                                   |
-| Sequencer Voice 1 page       | encoder past Step page (lock page 2; INT only) | `nois w1 pa1 tun2` / `mix w2 pa2 fin2`                                        |
-| Sequencer Voice 2 page       | encoder past Voice 1 page (lock page 3)        | `freq fdec famt adec` / `pdec pamt sub wave`                                  |
-| MIDI CC page (EXT tracks)    | encoder past Step page when track is EXT       | `CC# CC# CC# CC#` / `val val val val` (slides through 8 slots)                |
-| Per-track settings           | `S6` + turn                                    | `dirn rate rota leng` / `scal root mch mmod`                                  |
+| Sequencer Step page          | `S4` + turn (Sequencer mode)                   | `note vel mrst rate` / `subs prob glid sfx`                                   |
+| MIDI CC page (EXT tracks)    | `S1` / `S2` / `S3` + turn when track is EXT    | `cc#1 cc#2 cc#3 cc#4` / `val1 val2 val3 val4` (4 slots, per-slot enable)      |
+| Per-track settings           | `S6` + turn                                    | `dirn rate rota leng` / `scal root mch/mmod init`                             |
 | Performance mixer            | `S7` + turn                                    | `v1 v2 v3 mode` / `v4 v5 v6 clr`                                              |
 | System                       | `S8` + turn                                    | `Cur: Next: BPM CLK` / `save load info exit`                                  |
 
@@ -154,45 +152,48 @@ pages.
 
 Lock-vs-default behaviour:
 
-- **Patch pages** (Oscillators / Mixer / Filter / Envelopes): turning a
-  pot writes the **track default**. Holding any step button while
-  turning writes a **per-step lock** for the parameter under that pot,
-  if the cell is lockable.
-- **Sequencer Step / Voice 1 / Voice 2 pages**: every cell is per-step
-  lockable. Without a step held, the pot writes the track default;
-  with a step held, it writes a per-step lock.
-- **Per-track settings**: track-wide. No per-step locks; values fire
-  for every step on that voice.
-- **Performance mixer + System**: page-local state; no track defaults
-  or step locks involved.
+- **Patch pages** (Oscillators / Mixer / Filter / Envelopes): turning a pot writes the **track default**. Holding any step button while turning writes a **per-step lock** for the parameter under that pot, if the cell is lockable. **On EXT tracks the patch pages are hidden entirely** — synth params don't sound when the voicecard isn't triggered, so editing them would be wasted UI. S1 / S2 / S3 / S4 + turn all route to the MIDI CC page instead.
+- **Sequencer Step page**: every cell is per-step lockable. Without a step held, the pot writes the track default; with a step held, it writes a per-step lock.
+- **MIDI CC page** (EXT only): per-slot CC# + value editor. Encoder click toggles per-slot enable. Held step + value pot writes a per-step lock on the CC value via the lock pool.
+- **Per-track settings**: track-wide. No per-step locks; values fire for every step on that voice. The `init` cell is the deliberate clear gesture for the track's patch defaults or per-step locks.
+- **Performance mixer + System**: page-local state; no track defaults or step locks involved.
+
+Step buttons (`S1`–`S8`) — gestures that work on every page:
+
+- **Short tap** toggles the step on/off for the active track.
+- **Hold ≥ 250 ms** peeks at that step's resolved values without toggling it on release. While held, every cell on the current page shows the step's locked (or default) value.
+- **Double-tap (two short taps within 300 ms)** wipes every per-step lock for that step on the active track and undoes the first tap's toggle — works equally on S5a, the MIDI CC page, and any patch page where you set the locks.
+- **Held step + pot turn** = write a per-step lock for whichever pot you turn (lockable cells only).
 
 ### LCD mockups
 
+Each pair of screens is laid out side-by-side. Every screen is a 42-character block (mirroring the 40-char LCD plus inter-cell delimiters used in the mockup); a 4-space gutter separates left and right columns so titles sit directly above the data they describe.
+
 ```
-Oscillators                       Mixer
-wave saw  | para  64 | rang  +0 | mix    32     fold  16 | nois  16 | sub   48 | wave  squ1
-wave fm   | para  90 | rang +12 | tune  -05     xmod env | amnt  20 | fuzz  18 | crsh   4
+Oscillators                                   Mixer
+wave saw | para  64 | rang  +0 | mix    32    fold  16 | nois  16 | sub   48 | wave squ1
+wave fm  | para  90 | rang +12 | tune  -05    xmod env | amnt  20 | fuzz  18 | crsh    4
 
-Filter                            Amp + Pitch envelopes
-freq 127 | reso  18 | --       | mode  LP       rise   2 | fall  64 | curv  90 | amp  127
-rise   8 | fall  72 | curv  40 | flt   48       rise   0 | fall  20 | curv 100 | pitc  +24
+Filter                                        Amp + Pitch envelopes
+freq 127 | reso  18 | --       | mode   LP    rise   2 | fall  64 | curv  90 | amp   127
+rise   8 | fall  72 | curv  40 | flt    48    rise   0 | fall  20 | curv 100 | pitc  +24
 
-Voice LFOs (LFO 4 + LFO 5)        Per-track settings
-rate 1/4 | wave tri | dest prm1| dept  +32      dirn fwd  | rate 16   | rota   0 | leng   8
-rate  72 | wave 1exp| dest cut | dept  +48      scal min  | root   0  | mch    1 | mmod INT
+Voice LFOs (LFO 4 + LFO 5)                    Per-track settings
+rate 1/4 | wave tri | dest prm1| dept  +32    dirn fwd | rate  16 | rota   0 | leng    8
+rate  72 | wave 1exp| dest cut | dept  +48    scal min | root   0 | mch    1 | init voic
 
-Sequencer Step page               Sequencer Voice 1 page (INT tracks)
-note C 3 | vel  100 | vamt  64 | rate trk       nois  16 | w1   saw | pa1  64 | tun2 +07
-subs   0 | prob 127 | glid   0 | sfx none       mix   32 | w2   fm  | pa2  90 | fin2 -05
+Sequencer Step page (S5a)                     Performance mixer
+note C 3 | vel  100 | mrst   8 | rate trk     v1   192 | v2   220 | v3   180 | mode MT-A
+subs  1x | prob 127 | glid   0 | sfx none     v4   255 | v5   200 | v6   128 | clr  unmt
 
-Sequencer Voice 2 page            Performance mixer
-freq  64 | fdec  72 | famt +20 | adec  64       v1 192 | v2 220 | v3 180 | mode MT-A
-pdec  20 | pamt +24 | sub   48 | wave squ1      v4 255 | v5 200 | v6 128 | clr  unmt
-
-MIDI CC page (EXT tracks)         System
-CC#  20 | CC#  74 | CC#  off| CC#  16          Cur: 04 | Next: 12*| BPM 120 | CLK OUT
-val 127 | val  45 | val   0 | val  90          save     load     info     exit
+MIDI CC page (EXT tracks)                     System
+CC#1  20 | CC#2  74 | cc#3  16 | cc#4   10    Cur:  04 | Next: 12*| BPM  120 | CLK   OUT
+VAL1 127 | VAL2  45 | val3 off | val4  off    save     | load     | info     | exit
 ```
+
+(Per-track settings mockup: cell 7 shows `init voic` by default; turn pot 7 past midpoint to flip to `init ploc`. Cell 6 shows `mch` by default; click the encoder to toggle to `mmod`, then the same pot edits INT/EXT.)
+
+(MIDI CC mockup: slots 1 and 2 are enabled — labels uppercase, value fields show the live CC value. Slots 3 and 4 are disabled — labels lowercase, value field reads `off`. Encoder click on any cell toggles that slot's enable.)
 
 ## Oscillators and Mixer (`S1`)
 
@@ -424,26 +425,23 @@ LFOs to song-position-0 deliberately.
 
 ## Per-track settings (`S6`)
 
-The `S6` group's first page configures the active voice's
-pattern-level behaviour: direction, step length, rotation, scale,
-root, MIDI channel, and INT/EXT mode. Use the `S1` + encoder combo
-to pick which voice you're editing.
+The `S6` group's first page configures the active voice's pattern-level behaviour: direction, step length, rotation, scale, root, MIDI channel, INT/EXT mode, and the per-track init action. Use the `S1` + encoder combo to pick which voice you're editing.
 
 ```
 dirn fwd  | rate 16   | rota   0 | leng   8
-scal min  | root   0  | mch    1 | mmod INT
+scal min  | root   0  | mch    1 | init voic
 ```
 
-| Cell   | Range / values                                                 | Notes                                                                                                            |
-|--------|----------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
-| `dirn` | `fwd` / `rev` / `pend` / `rnd`                                 | Playback direction. `pend` ping-pongs end-to-end; `rnd` jumps to a random step each tick.                        |
-| `rate` | 15 musical step lengths (see table below)                      | The track's step length. Different rates on different tracks is what produces polymetric drift.                  |
-| `rota` | 0–7                                                            | Rotates the pattern's start point without altering step data — useful for shifting which step lands on the downbeat. |
-| `leng` | 1–8                                                            | Pattern length in steps. Combined with `rate`, drives polymetric cycle length.                                   |
-| `scal` | `chro` / `maj` / `min` / `dor` / `mix` / `pMa` / `pMi` / `blu` | Quantises every step's note into the chosen scale.                                                               |
-| `root` | 0–11                                                           | Scale root, in semitones from C.                                                                                 |
-| `mch`  | 1–16                                                           | MIDI channel for the track's sequencer-out notes and (on EXT) MIDI CC. Defaults to the track index.              |
-| `mmod` | `INT` / `EXT`                                                  | INT (default) drives the internal voicecard. EXT silences the voicecard and routes the track to MIDI out — sequencer notes + configurable CCs only. See *MIDI sequencing* below. |
+| Cell        | Range / values                                                 | Notes                                                                                                            |
+|-------------|----------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `dirn`      | `fwd` / `rev` / `pend` / `rnd`                                 | Playback direction. `pend` ping-pongs end-to-end; `rnd` jumps to a random step each tick.                        |
+| `rate`      | 15 musical step lengths (see table below)                      | The track's step length. Different rates on different tracks is what produces polymetric drift.                  |
+| `rota`      | 0–7                                                            | Rotates the pattern's start point without altering step data — useful for shifting which step lands on the downbeat. |
+| `leng`      | 1–8                                                            | Pattern length in steps. Combined with `rate`, drives polymetric cycle length.                                   |
+| `scal`      | `chro` / `maj` / `min` / `dor` / `mix` / `pMa` / `pMi` / `blu` | Quantises every step's note into the chosen scale.                                                               |
+| `root`      | 0–11                                                           | Scale root, in semitones from C.                                                                                 |
+| `mch`/`mmod`| 1–16 / `INT` / `EXT`                                            | Combined cell hosting MIDI channel and INT/EXT mode. **Click the encoder** to toggle which subparam the pot edits — the label flips between `mch` and `mmod`. Pot in `mch` mode dials channel 1..16; pot in `mmod` mode flips INT/EXT (past midpoint = EXT). `mch` defaults to the track index. INT (default) drives the internal voicecard. EXT silences the voicecard and routes the track to MIDI out — sequencer notes + the dedicated MIDI CC page. Flipping to EXT bounces the current page to `MIDI CC page` if you were on a synth page. |
+| `init`      | `voic` / `ploc`                                                | Per-track init action. Pot selects the target (`voic` = reset the track's patch defaults; `ploc` = clear every per-step lock + per-lock PROB on this track). **Encoder long-press (≥ 800 ms)** executes — LED 6 rapid-flashes red for ~600 ms as acknowledgement. Both modes leave the step pattern, pattern-level cells (DIRN / RATE / ROTA / LENG / SCAL / ROOT), and MIDI config untouched; `init voic` preserves per-step locks; `init ploc` preserves the patch defaults. Short click on this cell is a no-op so you can't fire it by accident. |
 
 ### `rate` values
 
@@ -564,10 +562,8 @@ is active.)
 In sequencer mode:
 
 - The eight buttons become **step triggers** for the active voice.
-- The eight pots edit the **lockable parameters** of the lock page
-  the cursor is currently on.
-- The encoder walks across the lockable cells (24 in total, spread
-  over three lock pages — covered in the next section).
+- The eight pots edit the **lockable parameters** of the Step page.
+- The encoder walks across the 8 cells of the Step page (S5a) — covered in the next section. The synth-side per-step locks that used to share this group's encoder turn now live on their respective patch pages (OSC / MIX / FILTER / ENV / LFO); on EXT tracks the synth group is replaced with the dedicated MIDI CC page.
 
 The page-jump combos and global transport combos still work
 normally; the cell-selector tables in *Navigation* listing `S1`–`S8`
@@ -605,26 +601,14 @@ voice can be a stable timbre on most steps and surprise on a few,
 or it can be reshaped step-by-step by dialing track defaults
 underneath a fixed set of locks.
 
-## Sequencer mode — the three lock pages
+## Sequencer mode — Step page (S5a)
 
-The encoder walks across all 24 lockable cells, eight per page, in
-this order: **Step → Voice 1 → Voice 2**. The active page flips
-automatically as the cursor crosses each eight-cell boundary; the
-parameter abbreviations on the top row of the LCD show which page
-you're currently on. Turning past the last cell spills out into
-the Envelopes group; turning before the first cell spills out into
-Per-track settings.
+The Sequencer locks page is a single 8-cell page after #32. The cells you used to find on the retired S5b / S5c (osc / mixer / filter / env per-step locks) are owned by their respective patch pages now — every patch-page cell is per-step lockable via the same hold-step + turn-pot gesture.
 
-To write a lock on any of these cells: hold the step button and
-turn the pot for that cell. To peek at what a step has locked, just
-hold the step (don't touch a pot).
-
-### Step page
-
-Per-step performance and timing controls.
+To write a lock on a Step page cell: hold the step button and turn the pot for that cell. To peek at what a step has locked, just hold the step (don't touch a pot). The encoder walks the 8 cells; turning past the last cell spills out into the next group, turning before the first cell spills into Per-track settings.
 
 ```
-note C 3 | vel  100 | vamt  64 | rate trk
+note C 3 | vel  100 | mrst   8 | rate trk
 subs  1x | prob 100 | glid   0 | sfx none
 ```
 
@@ -632,56 +616,31 @@ subs  1x | prob 100 | glid   0 | sfx none
 |--------|---------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `note` | 0–127, shown as note name                                                       | Step note. Quantised to the track's scale and root.                                                                                                                                    |
 | `vel`  | 0–127                                                                           | Step velocity. Supports per-lock probability — see below.                                                                                                                              |
-| `vamt` | 0–127                                                                           | Velocity → VCA depth on INT tracks. **Lockable per step** so it can also drive MIDI Mod Wheel (CC 1) on EXT tracks. On INT, only the live-tweak value reaches the voicecard today — step locks are stored but don't override the voicecard amount at fire time.  |
+| `mrst` | `off` / 2–128                                                                   | Multi-level master reset period. `off` = free-run; `N` = reset all tracks every `N` undivided steps. Multi-wide value, not per-step lockable.                                          |
 | `rate` | `trk`, preset (`32`…`2B`), or raw-tick (`t2`…`t96`)                             | Per-step rate override. `trk` inherits the track rate. Encoder click toggles between preset and raw-tick modes — see *Raw-tick `rate` (tracker swing)* above.                          |
 | `subs` | `1x..8x` (ratchets), centre `1x` (no substeps), `1r..8r` (repeats)              | Bipolar substep cell. Displayed as total fires. `1x` = main step only. CW values pack multiple sub-triggers into the step's own period (e.g. `4x` = main + 3 ratchets = 4 fires). CCW values re-fire the step on successive pattern periods (`4r` = main + 3 re-fires = 4 fires). Per-step only — shows `----` when no step is held. The substep editor extends both modes — see the next section. |
 | `prob` | bipolar: `0..99%` (CCW), `100` (centre), `1:2..8:8`, `!1:3..!6:6`, `FILL`, `!FIL` (CW) | Probability that the step fires. **Centre (`100`)** = always fires. **CCW** = random roll, dialled in as a percentage. **CW** = iterative cycle-phase. `X:N` fires on loop X of every N pattern wraps (e.g. `2:4` = fires every 4th loop, on loop 2 of 4); `!X:N` fires every loop except X of N. `FILL` / `!FIL` are reserved for a forthcoming fill button. Each track maintains its own loop counter. PROB also gates whether `sfx` takes effect. |
 | `glid` | 0–127                                                                           | Per-step glide / portamento time. `0` = no glide. On EXT tracks, the locked value also emits as CC 5 (Portamento Time) on the track's MIDI channel. Supports per-lock probability — see below. |
 | `sfx`  | `none`, `skip`, `fwd`, `rev`, `dir`, `rjmp`, `jmp1`–`jmp8`, `eskp`              | Per-step modifier. No track default — shows `----` when no step is held. Gated by `prob`. `skip` advances without firing; `fwd`/`rev` set track direction sticky; `dir` toggles direction; `rjmp` jumps to a random step; `jmp1`–`jmp8` jump to that absolute step; `eskp` (explicit-skip) is skipped during normal play and only fires when another step's jump SMOD lands on it. Supports per-lock probability — see below. |
 
-### Voice 1 page
+## MIDI CC page (EXT tracks)
 
-Oscillator-side per-step locks. **On EXT tracks**, this page is
-replaced with a MIDI CC sequencer view — see *MIDI sequencing*
-below.
+When the active track's MMOD is set to EXT, the synth-page group (`S1` / `S2` / `S3` / `S4` + encoder) becomes a single dedicated MIDI CC editing page in place of OSC / MIX / FILTER / ENV / LFO. Synth pages are unreachable on EXT — flipping a track to EXT auto-bounces you to the CC page from any patch page, and flipping back to INT bounces back to OSC.
 
-```
-nois  16 | w1   saw | pa1  64 | tun2 +07
-mix   32 | w2   fm  | pa2  90 | fin2 -05
-```
-
-| Cell   | Range                                | Notes                                                       |
-|--------|--------------------------------------|-------------------------------------------------------------|
-| `nois` | 0–63                                 | Noise level.                                                |
-| `w1`   | 44 algorithms, shown as wave name    | Osc 1 algorithm.                                            |
-| `pa1`  | 0–127                                | Osc 1 algorithm parameter.                                  |
-| `tun2` | signed semitones                     | Osc 2 coarse tune (the same control as `rang` for Osc 2).   |
-| `mix`  | 0–63                                 | Oscillator balance.                                         |
-| `w2`   | 44 algorithms                        | Osc 2 algorithm.                                            |
-| `pa2`  | 0–127                                | Osc 2 algorithm parameter.                                  |
-| `fin2` | signed cents                         | Osc 2 fine tune (the same control as `tune` for Osc 2).     |
-
-### Voice 2 page
-
-Filter, envelope, and sub layers per-step. **On EXT tracks**, this
-page is replaced with a MIDI CC sequencer view — see *MIDI
-sequencing* below.
+The page hosts 4 CC slots per track. Top row = `CC#` (the MIDI CC number, 0..127), bottom row = `VAL` (the value to send, 0..127). Each slot has a per-slot enable bit — disabled slots never emit MIDI, regardless of the configured CC# or VAL.
 
 ```
-freq  64 | fdec  72 | famt +20 | adec  64
-pdec  20 | pamt +24 | sub   48 | wave squ1
+CC#1  20 | CC#2  74 | cc#3  16 | cc#4  10
+VAL1 127 | VAL2  45 | val3 off | val4 off
 ```
 
-| Cell   | Range            | Notes                                                                  |
-|--------|------------------|------------------------------------------------------------------------|
-| `freq` | 0–127            | Filter cutoff base. The filter envelope sweeps around this.            |
-| `fdec` | 0–127            | Filter envelope (Env 2) decay rate.                                    |
-| `famt` | signed           | Filter envelope depth (the same control as `flt` / `env2`).            |
-| `adec` | 0–127            | Amp envelope (Env 1) decay rate.                                       |
-| `pdec` | 0–127            | Pitch envelope (Env 3) decay rate.                                     |
-| `pamt` | −63..+63         | Pitch envelope depth (bipolar, default 0). Same byte as `pitc` on the envelope page. ~±5 octaves at full deflection. |
-| `sub`  | 0–63             | Sub-oscillator level.                                                  |
-| `wave` | 11 shapes        | Sub-oscillator shape (`squ1`, `tri1`, `pul1`, `squ2`, `tri2`, `pul2`, `click`, `glitch`, `blow`, `metal`, `pop`). |
+- **Configure a CC# safely with the sequencer running.** Pots 0..3 dial CC# on the four slots. Until you toggle the slot's enable bit, no MIDI is emitted — so you can sweep through CC numbers without spamming external gear.
+- **Encoder click** on any cell (top or bottom row) toggles the **enable** bit for that slot. Enabled slots render labels in `UPPERCASE`; disabled slots render lowercase with the VAL field showing `off`.
+- **Pots 4..7** dial the CC value for slots 1..4. When a slot is enabled, the value is also emitted live to external gear as you turn the pot — useful for finding the right value while monitoring the destination.
+- **Held step + value pot** writes a per-step lock on the CC value (track default stays put). The locked value emits in place of the default when that step fires, with per-lock PROB available the same way as any other lockable cell.
+- **Default state** for fresh EXT tracks is all four slots disabled with CC# = 0. After upgrading from a prior firmware version, your previously-configured CC slots will be wiped — reconfigure once and save a snapshot.
+
+Step-button gestures on this page (peek, double-tap-clear, held-step + pot lock) behave the same way as on every other page.
 
 ### Per-lock probability
 
@@ -710,8 +669,8 @@ Hold the encoder click for ≥ 800 ms with no step button pressed, while the cur
 | Where | What gets gated on roll fail |
 |-------|------------------------------|
 | Step page cells: `vel`, `glid`, `sfx`        | Intrinsic field reverts to the track default. `sfx` becomes `none` (step fires normally, no jump / no skip / no direction change). |
-| Voice 1 / Voice 2 page cells (synth params)  | Parameter override doesn't apply; the synth uses the track default. |
-| EXT-track CC slots (S5b / S5c)               | Locked CC value doesn't send; the track default CC value sends instead. |
+| Patch-page cells (synth params on OSC / MIX / FILTER / ENV / LFO) | Parameter override doesn't apply; the synth uses the track default. |
+| EXT-track CC slots (MIDI CC page)            | Locked CC value doesn't send; the track default CC value sends instead. |
 | Substep editor — see next section            | Ratchets / repeats / chord walk all suppressed for that loop; main step still fires (subject to step PROB). |
 
 Cells that **don't** support per-lock PROB: `note` (intrinsic with no overlay path), `rate` (encoder click is reserved for raw-tick toggle), `prob` (it's already the gate), `subs` (gated separately inside the substep editor). The four cells excluded above don't get drill-in mode — click is a no-op for them.
@@ -1132,49 +1091,18 @@ on the Per-track settings page and are saved with the snapshot.
 
 #### What an EXT track sends
 
-| Source                         | MIDI message                          |
-|--------------------------------|---------------------------------------|
-| Step note + velocity           | Note On / Note Off on `mch`           |
-| `vamt` cell (Step page)        | CC 1 (Mod Wheel) on `mch`             |
-| `glid` cell (Step page)        | CC 5 (Portamento Time) on `mch`       |
-| 8 configurable slots           | User-assigned CC on `mch`             |
+| Source                            | MIDI message                          |
+|-----------------------------------|---------------------------------------|
+| Step note + velocity              | Note On / Note Off on `mch`           |
+| `vamt` (Mixer patch page, lockable) | CC 1 (Mod Wheel) on `mch`            |
+| `glid` cell (S5a Step page)       | CC 5 (Portamento Time) on `mch`       |
+| 4 configurable slots (MIDI CC page) | User-assigned CC on `mch`           |
 
-`vamt` and `glid` are fixed-purpose on EXT — they map directly to
-the matching standard MIDI controllers so external synths reach
-them with no setup. The other eight slots are configurable: each
-slot picks its own CC number, so you can target whichever filter,
-envelope, or modulation control the receiving gear expects.
-
-#### MIDI CC page (EXT tracks)
-
-When the active track is EXT, the Voice 1 and Voice 2 lock pages flip
-from their normal synth-param layout to a MIDI CC sequencer view. Four
-slots per page, eight per track total. Each slot occupies one column
-of the LCD, with two stacked rows:
-
-```
-CC#  20 | CC#  74 | CC#  off| CC#  16    ← top row: configurable CC#
-val 127 | val  45 | val   0 | val  90    ← bottom row: lockable value
-```
-
-- **Top row (pots 0–3): the CC number.** Twist the pot to assign a
-  CC (1–127). All the way CCW reads `off` and disables emission
-  for that slot. Default is `off` on every slot — a fresh EXT
-  track is silent on CC until you opt each slot in.
-- **Bottom row (pots 4–7): the value sent.** This is a normal
-  lockable cell: hold a step button and turn the pot to author a
-  per-step lock, or turn without a step held to set the track
-  default. Unlocked steps "snap back" to the default on every step.
-
-Step locks on these cells fire the assigned CC at step time, just
-like an INT track's synth params get locked. Channel comes from
-`mch`. Live pot moves emit the CC immediately so you can perform
-with the knob in real time.
+`vamt` and `glid` are fixed-purpose on EXT — they map directly to the matching standard MIDI controllers so external synths reach them with no setup. The four configurable slots on the MIDI CC page each pick their own CC number, so you can target whichever filter, envelope, or modulation control the receiving gear expects. See the *MIDI CC page* section above for the full slot editor.
 
 #### Switching INT ↔ EXT
 
-Flipping `mmod` silences the voicecard immediately on INT → EXT;
-EXT → INT resumes firing on the next step.
+Flip `mmod` on the Per-track settings page (cell 6; encoder click toggles between MCH and MMOD subparams). INT → EXT silences the voicecard immediately, releases any sounding note, and bounces the active page to the MIDI CC page if you were sitting on a synth page. EXT → INT resumes voicecard firing on the next step; the active page bounces to OSC if you were on the MIDI CC page. Per-track CC slot configuration is preserved across mode flips — flip back to EXT and your slot CC#s, values, and enables are still there.
 
 ### Connecting
 

@@ -16,6 +16,14 @@ namespace ambika {
 using namespace avrlib;
 
 static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
+// v0x0b (Elkhart v4.4, issue #32): S5b/S5c sequencer cells retired; EXT-track
+// CC editing moved to dedicated PAGE_EXT_CC. MultiData.midi_cc_map shrinks
+// from [6][8] to [6][4]; new midi_cc_values[6][4] appended in the freed
+// region. Byte 0..6 of each cc_map entry is CC#, bit 7 is enable (default
+// disabled). MultiData total size unchanged (61 B). v0x0a snapshots load
+// with the old 48-byte CC region copied verbatim: low 24 B become the new
+// cc_map (bit 7 clear → disabled) and high 24 B become cc_values (stale
+// CC# numbers reinterpreted as values are harmless because slots are off).
 // v0x0a (Elkhart v4.4-WS2): WAVEFORM_HRM3 dropped during testing; only HRM1
 // (detune) and HRM2 (cascade PM) remain. v0x09 test snapshots remap shape
 // bytes >= 16 down by 1 (HRM2→HRM1, HRM3→HRM2, 8BITLAND etc. shift down).
@@ -39,7 +47,7 @@ static const char kMagic[4] = { 'E', 'L', 'K', 'S' };
 // v0x04 (Elkhart v4.3): adds a per-lock PROB pool serialized after the
 // LockPool. v0x03 loads zero-fill the prob pool. v0x01 / v0x02 reach this
 // via MigrationV41 — neither carries a prob pool either.
-static const uint8_t kVersion = 0x0A;
+static const uint8_t kVersion = 0x0B;
 // v0x06 on-disk sizes (pre-WS1 layout): defaults was 28 bytes, config still 31.
 static const uint16_t kV06DefaultsArea = 28;
 static const uint16_t kV06TrackPersistentSize =
@@ -351,10 +359,10 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
     // v0x06 = v4.4-mid (pre-WS1; defaults[28]).
     // v0x05/v0x04/v0x03 = old layout (7-byte SeqStep, pool capacity 192).
     // v0x01 / v0x02 = v4.1-era dense-lock format (migration TU).
-    if (header[4] != kVersion && header[4] != 0x09 && header[4] != 0x08 &&
-        header[4] != 0x07 && header[4] != 0x06 && header[4] != 0x05 &&
-        header[4] != 0x04 && header[4] != 0x03 && header[4] != 0x02 &&
-        header[4] != 0x01) {
+    if (header[4] != kVersion && header[4] != 0x0a && header[4] != 0x09 &&
+        header[4] != 0x08 && header[4] != 0x07 && header[4] != 0x06 &&
+        header[4] != 0x05 && header[4] != 0x04 && header[4] != 0x03 &&
+        header[4] != 0x02 && header[4] != 0x01) {
       Storage::file_.Close();
       return FS_DISK_ERROR;
     }
@@ -631,8 +639,9 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
     MultiData* d = multi.mutable_data();
     for (uint8_t i = 0; i < kNumVoices; ++i) {
       d->midi_channel[i] = i + 1;
-      for (uint8_t c = 0; c < 8; ++c) {
-        d->midi_cc_map[i][c] = 0xff;  // off / unassigned
+      for (uint8_t c = 0; c < 4; ++c) {
+        d->midi_cc_map[i][c]    = 0;  // disabled, cc#=0
+        d->midi_cc_values[i][c] = 0;
       }
     }
     d->midi_only_mask = 0;
@@ -651,6 +660,20 @@ FilesystemStatus Snapshot::Load(uint8_t slot) {
   }
   if (snapshot_version < 0x0a) {
     MigrateHrm3DroppedWaveforms();
+  }
+  if (snapshot_version < 0x0b) {
+    // v0x0a: midi_cc_map[6][8] held CC#s (0..127 or 0xff = off). Layout
+    // reinterpreted as midi_cc_map[6][4] + midi_cc_values[6][4] where the
+    // map byte is (enable<<7)|cc#. Old 0xff "off" markers would re-decode
+    // as enabled@CC127 — wipe the entire CC region so EXT tracks come up
+    // silent. User reconfigures CC slots after the migration.
+    MultiData* d = multi.mutable_data();
+    for (uint8_t t = 0; t < kNumVoices; ++t) {
+      for (uint8_t s = 0; s < 4; ++s) {
+        d->midi_cc_map[t][s]    = 0;
+        d->midi_cc_values[t][s] = 0;
+      }
+    }
   }
 
   // Discard transient playhead state and re-sync transport.

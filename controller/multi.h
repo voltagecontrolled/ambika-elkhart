@@ -33,11 +33,23 @@ struct MultiData {
   uint8_t midi_channel[kNumVoices];      // 1..16, default i+1
   uint8_t midi_only_mask;                // bit N = track N is EXT (MIDI-only)
   uint8_t midi_clock_mode;               // 0=INT, 1=EXT, 2=OUT, 3=THR
-  // EXT-mode CC# per track. 8 slots/track: idx 0..3 on S5b, idx 4..7 on S5c.
-  // Each slot reuses the existing per-step lockable storage for its value;
-  // this array only holds the user-assigned CC numbers.
-  uint8_t midi_cc_map[kNumVoices][8];
+  // EXT-mode CC slots per track. 4 slots/track on the dedicated PAGE_EXT_CC.
+  //   midi_cc_map[t][slot]: bits 0..6 = CC# (0..127), bit 7 = enable.
+  //                          Disabled (bit7=0) → slot does not emit, regardless
+  //                          of value. Default 0 (disabled, CC#=0).
+  //   midi_cc_values[t][slot]: 0..127 CC value. Per-step lockable via the
+  //                            LockPool using keys kCcSlotLockBase..+3.
+  // Footprint: 24 + 24 = 48 B, matches the retired midi_cc_map[6][8] byte
+  // count so MultiData stays at 61 B (snapshot size unchanged across the
+  // v0x0A→0x0B bump; only byte interpretation shifts).
+  uint8_t midi_cc_map[kNumVoices][4];
+  uint8_t midi_cc_values[kNumVoices][4];
 };
+
+// LockPool param keys for per-step CC value locks (slots 0..3).
+// Placed above the 0..27 patch-lockable range with headroom.
+static const uint8_t kCcSlotLockBase = 70;
+static const uint8_t kCcSlotCount    = 4;
 
 typedef MultiData PROGMEM prog_MultiData;
 
@@ -139,9 +151,19 @@ class Multi {
   static inline uint8_t track_is_ext(uint8_t t) {
     return (data_.midi_only_mask >> t) & 1;
   }
-  // EXT-slot CC# accessor. slot is 0..7 (first 4 on S5b, last 4 on S5c).
-  static inline uint8_t cc_for_slot(uint8_t t, uint8_t slot) {
-    return data_.midi_cc_map[t][slot];
+  // EXT-slot accessors. slot is 0..3.
+  // cc_slot_enabled: bit 7 of the map byte.
+  // cc_slot_number:  bits 0..6 (CC# 0..127).
+  // cc_slot_value:   stored CC value byte (track default; per-step lock
+  //                  resolves separately via the LockPool).
+  static inline uint8_t cc_slot_enabled(uint8_t t, uint8_t slot) {
+    return (data_.midi_cc_map[t][slot] & 0x80) != 0;
+  }
+  static inline uint8_t cc_slot_number(uint8_t t, uint8_t slot) {
+    return data_.midi_cc_map[t][slot] & 0x7f;
+  }
+  static inline uint8_t cc_slot_value(uint8_t t, uint8_t slot) {
+    return data_.midi_cc_values[t][slot];
   }
   static inline uint8_t midi_clock_mode() {
     return data_.midi_clock_mode;

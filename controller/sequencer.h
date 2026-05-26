@@ -233,7 +233,7 @@ struct SeqGlobal {
   uint8_t hold_mode;     // 0=Voltage Block, 1=Elektron
   uint8_t swing;
   uint8_t active_track;  // 0–5
-  uint8_t lock_page;     // 0=Voice1, 1=Voice2, 2=Step
+  uint8_t lock_page;     // vestigial (#32 collapsed S5 to S5a); kept for snapshot layout
   uint8_t held_step;     // 0xff=none; step index during parameter lock edit
   uint16_t master_tick;  // ticks since last Reset; gates mrst trigger
 };
@@ -293,6 +293,18 @@ class Sequencer {
   // Clear (track, *, lock_index) — every step's lock+prob entry for one
   // lock_index on one track. Used by the encoder-long-press clear (#42).
   void ClearTrackLocksForParam(uint8_t track, uint8_t lock_index);
+
+  // Reset the patch-side defaults for one track (osc/mixer/filter/env/LFO
+  // params at defaults[0..15] and defaults[24..47]). Sequencer-side fields
+  // (defaults[16..23] = step page, pattern[], steps[]) are preserved. Lock
+  // pool / prob pool entries are not touched. Used by the S6a "init voic"
+  // action (#32 / #25).
+  void InitTrackPatch(uint8_t track);
+
+  // Clear every per-step lock + per-lock PROB on one track. defaults[] and
+  // intrinsic per-step state are preserved. Used by the S6a "init ploc"
+  // action (#32 / #25).
+  void ClearTrackLocks(uint8_t track);
 
  private:
   void AdvanceStep(uint8_t t);

@@ -53,7 +53,14 @@ class UiPage {
   static EditMode edit_mode_;
   static int8_t active_control_;
   static PageInfo* info_;
-  
+
+  // Cross-page step-button gesture state. Tracked at the base class so any
+  // page that inherits the default OnKey gets peek (hold) and double-tap-
+  // to-clear-all-locks-on-step behavior for free. SeqStepsPage / ExtCcPage
+  // keep their own copies because they override OnKey.
+  static uint8_t  last_tap_step_;
+  static uint16_t last_tap_ms_;
+
   DISALLOW_COPY_AND_ASSIGN(UiPage);
 };
 

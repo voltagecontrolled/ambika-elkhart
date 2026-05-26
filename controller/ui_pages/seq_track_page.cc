@@ -8,7 +8,9 @@
 #include "controller/ui_pages/seq_track_page.h"
 
 #include "avrlib/string.h"
+#include "avrlib/time.h"
 #include "controller/display.h"
+#include "controller/leds.h"
 #include "controller/multi.h"
 #include "controller/sequencer.h"
 #include "controller/ui.h"
@@ -16,17 +18,22 @@
 
 namespace ambika {
 
-/* static */
-uint8_t SeqTrackPage::cursor_ = 0;
-/* static */
-uint8_t SeqTrackPage::rate_snap_pending_ = 0;
+/* static */ uint8_t SeqTrackPage::cursor_ = 0;
+/* static */ uint8_t SeqTrackPage::rate_snap_pending_ = 0;
+/* static */ uint8_t  SeqTrackPage::mch_mmod_active_  = 0;
+/* static */ uint8_t  SeqTrackPage::init_choice_      = 0;
+/* static */ uint16_t SeqTrackPage::init_feedback_ms_ = 0;
+
+// Init-action LED flash duration. Long enough to be visible without lingering
+// past the user's next gesture.
+static const uint16_t kInitFeedbackMs = 600;
 
 // 4-char short_name per knob (lowercase by default; uppercased on cursor).
-// Cells 6 + 7 (formerly retired BPCH and now-redundant VOL — the mixer page
-// covers per-track volume) carry MIDI channel + INT/EXT mode for the active
-// track. They write to multi.data() instead of tr.pattern[].
+// Cell 6 hosts MCH+MMOD on a single cell (encoder click toggles subparam);
+// cell 7 hosts the "init" action (pot selects voic/ploc, encoder long-press
+// executes). Labels for cells 6/7 are rewritten dynamically in UpdateScreen.
 static const prog_char kAbbr[] PROGMEM =
-  "dirnraterotalengscalrootmch mmod";
+  "dirnraterotalengscalroot--------";
 
 // Rate display labels (matches sequencer.cc kRateValues): musical-notation values.
 // 4 chars × 15 entries = 60 bytes PROGMEM. Shared with seq_steps_page.cc via
@@ -62,7 +69,7 @@ const prog_EventHandlers SeqTrackPage::event_handlers_ PROGMEM = {
   NULL,
   OnIdle,
   UpdateScreen,
-  UpdateLeds,
+  UpdateLeds,  // custom — overlays init-action flash on LED_6
   OnDialogClosed,
 };
 
@@ -86,6 +93,23 @@ uint8_t SeqTrackPage::OnIncrement(int8_t increment) {
 
 /* static */
 uint8_t SeqTrackPage::OnClick() {
+  // Cell 7 (init): encoder long-press executes the chosen action.
+  if (cursor_ == 7 && ui.encoder_long_pressed()) {
+    uint8_t track = ui.state().active_part;
+    if (init_choice_ == 0) {
+      sequencer.InitTrackPatch(track);
+    } else {
+      sequencer.ClearTrackLocks(track);
+    }
+    init_feedback_ms_ = static_cast<uint16_t>(avrlib::milliseconds());
+    ui.clear_encoder_last_hold_ms();
+    return 1;
+  }
+  // Cell 6 (mch/mmod): short click swaps which subparam the pot edits.
+  if (cursor_ == 6) {
+    mch_mmod_active_ ^= 1;
+    return 1;
+  }
   if (cursor_ == 1) {
     uint8_t track = ui.state().active_part;
     SeqTrack* tr = sequencer.mutable_track(track);
@@ -160,25 +184,31 @@ uint8_t SeqTrackPage::OnPot(uint8_t index, uint8_t value) {
     case 5:  // ROOT: 0..11
       mapped = (static_cast<uint16_t>(value) * 12) >> 7;
       break;
-    case 6: {  // MCH: MIDI channel 1..16 for the active track. Writes to
-               // multi.data().midi_channel[track], not tr->pattern[].
-      uint8_t ch = 1 + ((static_cast<uint16_t>(value) * 16) >> 7);
-      multi.mutable_data()->midi_channel[track] = ch;
-      return 1;
-    }
-    case 7: {  // MMOD: 0=INT, 1=EXT. EXT skips the voicecard trigger and
-               // emits configurable CCs at fire time. On INT→EXT release the
-               // voice so any sounding note is silenced cleanly.
-      uint8_t want_ext = (value >= 64) ? 1 : 0;
-      uint8_t was_ext  = multi.track_is_ext(track);
-      uint8_t mask = multi.mutable_data()->midi_only_mask;
-      mask = want_ext ? (mask | (1 << track)) : (mask & ~(1 << track));
-      multi.mutable_data()->midi_only_mask = mask;
-      if (want_ext && !was_ext) {
-        voicecard_tx.Release(track);
+    case 6: {  // Combined MCH+MMOD. Pot edits whichever subparam is active
+               // (toggled via encoder click). Writes to multi.data().
+      if (mch_mmod_active_ == 0) {
+        // MCH: MIDI channel 1..16.
+        uint8_t ch = 1 + ((static_cast<uint16_t>(value) * 16) >> 7);
+        multi.mutable_data()->midi_channel[track] = ch;
+      } else {
+        // MMOD: 0=INT, 1=EXT. INT→EXT releases the voice so any sounding
+        // note silences cleanly; also bounces the active page to the EXT
+        // CC editor if we're sitting on a now-meaningless synth page.
+        uint8_t want_ext = (value >= 64) ? 1 : 0;
+        uint8_t was_ext  = multi.track_is_ext(track);
+        uint8_t mask = multi.mutable_data()->midi_only_mask;
+        mask = want_ext ? (mask | (1 << track)) : (mask & ~(1 << track));
+        multi.mutable_data()->midi_only_mask = mask;
+        if (want_ext && !was_ext) {
+          voicecard_tx.Release(track);
+        }
       }
       return 1;
     }
+    case 7:  // INIT choice: 0..63 = voic, 64..127 = ploc. Execution happens
+             // on encoder long-press (OnClick).
+      init_choice_ = (value >= 64) ? 1 : 0;
+      return 1;
     default:
       return 0;
   }
@@ -200,12 +230,29 @@ void SeqTrackPage::UpdateScreen() {
     if ((row + 10) != kLcdWidth) buffer[10] = kDelimiter;
 
     // Short name (4 chars) at offset 1, uppercased on the active control.
-    for (uint8_t c = 0; c < 4; ++c) {
-      char ch = pgm_read_byte(kAbbr + i * 4 + c);
-      if (i == cursor_ && ch >= 'a' && ch <= 'z') {
-        ch -= 0x20;
+    // Cells 6 (mch/mmod) + 7 (init) have dynamic labels written below.
+    if (i == 6) {
+      const char* label = (mch_mmod_active_ == 0) ? "mch " : "mmod";
+      for (uint8_t c = 0; c < 4; ++c) {
+        char ch = label[c];
+        if (i == cursor_ && ch >= 'a' && ch <= 'z') ch -= 0x20;
+        buffer[1 + c] = ch;
       }
-      buffer[1 + c] = ch;
+    } else if (i == 7) {
+      const char* label = "init";
+      for (uint8_t c = 0; c < 4; ++c) {
+        char ch = label[c];
+        if (i == cursor_ && ch >= 'a' && ch <= 'z') ch -= 0x20;
+        buffer[1 + c] = ch;
+      }
+    } else {
+      for (uint8_t c = 0; c < 4; ++c) {
+        char ch = pgm_read_byte(kAbbr + i * 4 + c);
+        if (i == cursor_ && ch >= 'a' && ch <= 'z') {
+          ch -= 0x20;
+        }
+        buffer[1 + c] = ch;
+      }
     }
 
     // Value (4 chars) at offset 6, with separator space at 5.
@@ -234,15 +281,30 @@ void SeqTrackPage::UpdateScreen() {
       case 5:  // ROOT
         memcpy_P(val, kRootLabels + (v % 12) * 4, 4);
         break;
-      case 6:  // MCH — MIDI channel 1..16 from multi data, not tr.pattern.
-        UnsafeItoa<uint8_t>(multi.data().midi_channel[track], 4, val);
-        AlignRight(val, 4);
-        break;
-      case 7:  // MMOD — INT/EXT from midi_only_mask bit.
-        if (multi.track_is_ext(track)) {
-          val[0] = ' '; val[1] = 'E'; val[2] = 'X'; val[3] = 'T';
+      case 6:  // Combined MCH/MMOD: render whichever subparam is active.
+        if (mch_mmod_active_ == 0) {
+          UnsafeItoa<uint8_t>(multi.data().midi_channel[track], 4, val);
+          AlignRight(val, 4);
         } else {
-          val[0] = ' '; val[1] = 'I'; val[2] = 'N'; val[3] = 'T';
+          val[0] = ' ';
+          if (multi.track_is_ext(track)) {
+            val[1] = 'E'; val[2] = 'X'; val[3] = 'T';
+          } else {
+            val[1] = 'I'; val[2] = 'N'; val[3] = 'T';
+          }
+        }
+        break;
+      case 7:  // INIT choice label.
+        if (init_choice_ == 0) {
+          val[0] = 'v'; val[1] = 'o'; val[2] = 'i'; val[3] = 'c';
+        } else {
+          val[0] = 'p'; val[1] = 'l'; val[2] = 'o'; val[3] = 'c';
+        }
+        // Uppercase when cursor is on this cell.
+        if (cursor_ == 7) {
+          for (uint8_t k = 0; k < 4; ++k) {
+            if (val[k] >= 'a' && val[k] <= 'z') val[k] -= 0x20;
+          }
         }
         break;
       default:
@@ -250,6 +312,19 @@ void SeqTrackPage::UpdateScreen() {
         AlignRight(val, 4);
         break;
     }
+  }
+}
+
+/* static */
+void SeqTrackPage::UpdateLeds() {
+  UiPage::UpdateLeds();  // base paints step LEDs + playhead
+  // Init action feedback: rapid red flash on LED_6 for kInitFeedbackMs after
+  // an init voic / init ploc execution. Bit 5 of the current ms toggles ~16Hz
+  // (period ~64 ms) for a fast strobe; ends once the window elapses and the
+  // base step paint resumes on its own next frame.
+  uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+  if (static_cast<uint16_t>(now - init_feedback_ms_) < kInitFeedbackMs) {
+    leds.set_pixel(LED_6, (now & 0x20) ? 0xf0 : 0);
   }
 }
 

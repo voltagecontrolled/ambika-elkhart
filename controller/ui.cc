@@ -35,6 +35,7 @@
 #include "controller/ui_pages/seq_mixer_page.h"
 #include "controller/ui_pages/seq_steps_page.h"
 #include "controller/ui_pages/seq_track_page.h"
+#include "controller/ui_pages/ext_cc_page.h"
 #include "controller/ui_pages/parameter_editor.h"
 #include "controller/ui_pages/system_page.h"
 #include "controller/voicecard_tx.h"
@@ -81,11 +82,20 @@ const prog_PageInfo page_registry[] PROGMEM = {
     PAGE_ENV_LFO, 2, 0x0f,
   },
 
-  // S5 group 4: sequencer mode (3 lock pages cycled by encoder).
+  // S5 group 4: sequencer mode (single S5a lock page after #32).
   { PAGE_PART_SEQUENCER,
     &SeqStepsPage::event_handlers_,
     { 0, 0, 0, 0, 0, 0, 0, 0 },
     PAGE_PART_SEQUENCER, 4, 0xff,
+  },
+
+  // EXT-track MIDI CC editing. Sits in synth group 2 so the S3+ENC nav
+  // cycle picks it up when the active track is EXT (the cycle filter in
+  // Ui::Poll swaps the synth_page_cycle for this one page).
+  { PAGE_EXT_CC,
+    &ExtCcPage::event_handlers_,
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    PAGE_EXT_CC, 2, 0xf0,
   },
 
   // S6a group 5: per-track sequencer settings.
@@ -257,21 +267,28 @@ void Ui::Poll() {
     else if (switches_.low(4)) { jump_to = PAGE_PART_SEQUENCER; jump_sr = 4; }
     else if (switches_.low(5)) {
       // S3+ENC: from a non-synth page, jump to OSC. From a synth page,
-      // step to the next/prev page in the synth cluster.
-      uint8_t idx = 0xff;
-      for (uint8_t i = 0; i < 5; ++i) {
-        if (pgm_read_byte(&synth_page_cycle[i]) == active_page_) {
-          idx = i;
-          break;
-        }
-      }
-      if (idx == 0xff) {
-        jump_to = PAGE_OSCILLATORS;
+      // step to the next/prev page in the synth cluster. On EXT tracks,
+      // the synth cluster collapses to a single PAGE_EXT_CC — there are
+      // no editable synth params for a track whose voicecard never fires,
+      // so we just land on the CC editor and stay there.
+      if (multi.track_is_ext(state_.active_part)) {
+        jump_to = PAGE_EXT_CC;
       } else {
-        int8_t step = (increment > 0) ? 1 : -1;
-        idx = (idx + 5 + step) % 5;
-        jump_to = static_cast<UiPageNumber>(
-            pgm_read_byte(&synth_page_cycle[idx]));
+        uint8_t idx = 0xff;
+        for (uint8_t i = 0; i < 5; ++i) {
+          if (pgm_read_byte(&synth_page_cycle[i]) == active_page_) {
+            idx = i;
+            break;
+          }
+        }
+        if (idx == 0xff) {
+          jump_to = PAGE_OSCILLATORS;
+        } else {
+          int8_t step = (increment > 0) ? 1 : -1;
+          idx = (idx + 5 + step) % 5;
+          jump_to = static_cast<UiPageNumber>(
+              pgm_read_byte(&synth_page_cycle[idx]));
+        }
       }
       jump_sr = 5;
     }
@@ -363,6 +380,8 @@ void Ui::ShowPageRelative(int8_t increment) {
   int8_t current_page = page_info_.index;
   PageInfo candidate;
   uint8_t guard = PAGE_LIBRARY;
+  // Skip pages with all-0xff data slots (placeholders) and pages that the
+  // active track's mode hides via IsPageAccessible (#32).
   do {
     current_page += increment;
     if (current_page < 0) {
@@ -372,11 +391,15 @@ void Ui::ShowPageRelative(int8_t increment) {
     }
     ResourcesManager::Load(page_registry, current_page, &candidate);
     --guard;
-  } while (guard &&
-      candidate.data[0] == 0xff && candidate.data[1] == 0xff &&
-      candidate.data[2] == 0xff && candidate.data[3] == 0xff &&
-      candidate.data[4] == 0xff && candidate.data[5] == 0xff &&
-      candidate.data[6] == 0xff && candidate.data[7] == 0xff);
+    uint8_t placeholder =
+        candidate.data[0] == 0xff && candidate.data[1] == 0xff &&
+        candidate.data[2] == 0xff && candidate.data[3] == 0xff &&
+        candidate.data[4] == 0xff && candidate.data[5] == 0xff &&
+        candidate.data[6] == 0xff && candidate.data[7] == 0xff;
+    uint8_t hidden = !IsPageAccessible(
+        static_cast<UiPageNumber>(current_page));
+    if (!placeholder && !hidden) break;
+  } while (guard);
 
   ShowPage(static_cast<UiPageNumber>(current_page));
   if (increment >= 0) {
@@ -413,18 +436,23 @@ void Ui::DoEvents() {
           int8_t new_part = state_.active_part + e.value;
           new_part = Clip(new_part, 0, kNumParts - 1);
           state_.active_part = new_part;
+          // If the current page is no longer accessible for the new track's
+          // mode, re-show it — the gate in ShowPage redirects to a safe page.
+          if (!IsPageAccessible(active_page_)) {
+            ShowPage(active_page_);
+          }
         }
         break;
         
       case CONTROL_SWITCH:
         if (!(*event_handlers_.OnKey)(e.control_id)) {
-          // Cycle through the next page in the group.
-          if (page_info_.group == e.control_id) {
-            ShowPage(page_info_.next_page);
-          } else {
-            // Jump to the most recently visited page in the group.
-            ShowPage(most_recent_page_in_group_[e.control_id]);
-          }
+          // Cycle through the next page in the group, or jump to the most
+          // recent page if the current page isn't in the requested group.
+          // IsPageAccessible in ShowPage handles the EXT-track redirect.
+          UiPageNumber target = (page_info_.group == e.control_id)
+              ? page_info_.next_page
+              : most_recent_page_in_group_[e.control_id];
+          ShowPage(target);
         }
         break;
         
@@ -524,7 +552,29 @@ void Ui::DoEvents() {
 }
 
 /* static */
+uint8_t Ui::IsPageAccessible(UiPageNumber page) {
+  if (multi.track_is_ext(state_.active_part)) {
+    // Synth pages (OSC..VOICE_LFO) edit patch params that don't sound on
+    // EXT tracks. Hide them entirely so the user can't waste edits there.
+    if (page <= PAGE_VOICE_LFO) return 0;
+  } else {
+    // INT tracks have no CC slot machinery; the EXT CC page would only show
+    // an editor for a feature the track doesn't fire.
+    if (page == PAGE_EXT_CC) return 0;
+  }
+  return 1;
+}
+
+/* static */
 void Ui::ShowPage(UiPageNumber page, uint8_t initialize) {
+  // Mode gate: substitute a mode-appropriate fallback when the requested
+  // page isn't accessible for the active track. Belt-and-suspenders for
+  // callers that pass in a page without knowing the track's mode.
+  if (!IsPageAccessible(page)) {
+    page = multi.track_is_ext(state_.active_part)
+        ? PAGE_EXT_CC : PAGE_OSCILLATORS;
+  }
+
   // Flush the event queue.
   queue_.Flush();
   queue_.Touch();
@@ -533,7 +583,7 @@ void Ui::ShowPage(UiPageNumber page, uint8_t initialize) {
   // page change can't fire the long-press handler on the new page (#42).
   encoder_press_ms_ = static_cast<uint16_t>(avrlib::milliseconds());
   encoder_last_hold_ms_ = 0;
-  
+
   if (page <= PAGE_SEQ_MIXER) {
     most_recent_non_system_page_ = page;
   }

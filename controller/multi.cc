@@ -46,17 +46,25 @@ static const prog_MultiData init_settings PROGMEM = {
   0,
   // midi_clock_mode: 2 = OUT (internal clock, sending clock out)
   2,
-  // midi_cc_map[6][8]: each slot defaults to 0xff (off / unassigned). The
-  // user dials in a CC# explicitly on S5b/S5c CC# row; the lock-fire path
-  // skips emit when the slot is off, so a fresh EXT track is silent on CC
-  // until the user opts each slot in.
+  // midi_cc_map[6][4]: each byte holds (enable<<7) | cc#. Default 0 means
+  // disabled with CC#=0 — a fresh EXT track is silent on external CC until
+  // the user dials a CC# and toggles the slot enable.
   {
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
-    { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+  },
+  // midi_cc_values[6][4]: track-default CC value bytes (0..127).
+  {
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
   },
 };
 

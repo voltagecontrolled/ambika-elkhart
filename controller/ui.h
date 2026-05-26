@@ -86,6 +86,9 @@ enum UiPageNumber {
   // Order matters for encoder navigation: registry index = enum value, and
   // ShowPageRelative steps through enum values in order.
   PAGE_PART_SEQUENCER,
+  // EXT-track MIDI CC editing (issue #32). Reachable only when the active
+  // track is EXT; the nav layer swaps this page in for the synth pages.
+  PAGE_EXT_CC,
   PAGE_PART,
   PAGE_SEQ_MIXER,
 
@@ -167,6 +170,12 @@ class Ui {
   
   static void ShowPageRelative(int8_t increment);
   static void ShowPage(UiPageNumber page, uint8_t initialize);
+
+  // Page-accessibility gate (#32): synth pages are hidden on EXT tracks
+  // (their patch params don't sound); the EXT CC page is hidden on INT
+  // tracks (no CC slots configured to fire). ShowPage / ShowPageRelative
+  // both honor the gate so an inaccessible page can never become active.
+  static uint8_t IsPageAccessible(UiPageNumber page);
   static void ShowPage(UiPageNumber page) {
     ShowPage(page, 1);
   }

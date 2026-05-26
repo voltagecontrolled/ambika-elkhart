@@ -20,6 +20,7 @@
 #include "controller/ui_pages/ui_page.h"
 
 #include "avrlib/string.h"
+#include "avrlib/time.h"
 
 #include "controller/display.h"
 #include "controller/leds.h"
@@ -27,6 +28,17 @@
 #include "controller/sequencer.h"
 #include "controller/storage.h"
 #include "controller/system_settings.h"
+
+// Step-button peek threshold — holds longer than this skip the toggle on
+// release, so the user can hold a step to "peek" at its locked values on
+// any page without flipping the step on/off. Matches the SeqStepsPage
+// threshold so behavior is consistent across pages.
+static const uint16_t kStepLongPressMs = 250;
+
+// Two short taps on the same step within this many ms clears every per-step
+// lock (pool + per-lock PROB + intrinsic) for that step on the active
+// track, and undoes the first tap's on/off toggle.
+static const uint16_t kStepDoubleTapMs = 300;
 
 namespace ambika {
 
@@ -38,6 +50,12 @@ EditMode UiPage::edit_mode_;
 
 /* static */
 PageInfo* UiPage::info_;
+
+/* static */
+uint8_t UiPage::last_tap_step_ = 0xff;
+
+/* static */
+uint16_t UiPage::last_tap_ms_ = 0;
 
 /* static */
 const prog_EventHandlers UiPage::event_handlers_ PROGMEM = {
@@ -101,10 +119,38 @@ uint8_t UiPage::OnKey(uint8_t key) {
   // with its own button semantics (sequencer / system / dialog / mixer).
   // A pot-touch during the press flips the inhibit bit upstream so this
   // OnKey is never invoked for the lock-edit case.
+  //
+  // Hold-to-peek: release events whose press lasted ≥ kStepLongPressMs
+  // skip the toggle. Lets the user hold a step on any page to inspect
+  // its locked values via UpdateScreen's switch_held() readback without
+  // flipping the step state on release.
+  //
+  // Double-tap-to-clear: two short taps on the same step within
+  // kStepDoubleTapMs wipe every per-step lock for that step on the active
+  // track (sequencer.ClearAllStepLocks) and undo the first tap's toggle.
+  // Mirrors the SeqStepsPage behavior so patch-page lock edits (FOLD /
+  // NOIS / SUB / etc. after #41 unification) can also be cleared by the
+  // same gesture on the page where they were set.
   if (key <= SWITCH_8) {
+    uint8_t sr = 7 - key;
+    uint16_t hold = ui.last_hold_ms(sr);
+    ui.clear_last_hold_ms(sr);
+    if (hold >= kStepLongPressMs) {
+      last_tap_step_ = 0xff;
+      return 1;
+    }
     uint8_t track = ui.state().active_part;
     SeqStep& s = sequencer.mutable_track(track)->steps[key];
+    uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+    if (last_tap_step_ == key && (now - last_tap_ms_) < kStepDoubleTapMs) {
+      sequencer.ClearAllStepLocks(track, key);
+      s.step_flags ^= kStepFlagOn;  // undo the first tap's toggle
+      last_tap_step_ = 0xff;
+      return 1;
+    }
     s.step_flags ^= kStepFlagOn;
+    last_tap_step_ = key;
+    last_tap_ms_ = now;
     return 1;
   }
 

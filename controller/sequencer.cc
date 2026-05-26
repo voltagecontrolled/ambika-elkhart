@@ -419,6 +419,23 @@ void SeedExtendedDefaults(SeqTrack& tr) {
   memcpy_P(&tr.defaults[28], kDefaultExt, 20);
 }
 
+void Sequencer::InitTrackPatch(uint8_t t) {
+  SeqTrack& tr = tracks_[t];
+  memcpy_P(&tr.defaults[0],  kDefaultPage1, 8);
+  memcpy_P(&tr.defaults[8],  kDefaultPage2, 8);
+  memcpy_P(&tr.defaults[24], kDefaultPage3, 4);
+  SeedExtendedDefaults(tr);
+  memcpy_P(tr.config, kDefaultConfig, kCfgSIZE);
+  // Push the freshly-initialized config to the voicecard so the change is
+  // audible immediately (Touch() walks every config byte through SetValue).
+  multi.mutable_part(t)->Touch();
+}
+
+void Sequencer::ClearTrackLocks(uint8_t t) {
+  lock_pool_.ClearTrack(t);
+  lock_prob_pool_.ClearTrack(t);
+}
+
 void Sequencer::ClearTrackLocksForParam(uint8_t t, uint8_t lock_index) {
   for (uint8_t s = 0; s < kNumStepsPerTrack; ++s) {
     lock_pool_.Clear(t, s, lock_index);
@@ -942,18 +959,24 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
     midi_dispatcher.SendVamtCc(channel, snapshot[4] >> 1);
     // GLID (lockable 21) → CC 5 (Portamento Time). Intrinsic, read above.
     midi_dispatcher.SendGlidCc(channel, glid);
-    // EXT slots — 4 on S5b, 4 on S5c. Lockable indices match cells 0..3 of
-    // each page. snapshot already holds lock-or-default for these.
-    static const prog_uint8_t kExtSlotLockable[8] PROGMEM = {
-      14, 1, 2, 9,    // S5b slots 0..3
-      24, 10, 25, 8,  // S5c slots 0..3
-    };
-    for (uint8_t slot = 0; slot < 8; ++slot) {
-      uint8_t lockable = pgm_read_byte(&kExtSlotLockable[slot]);
-      uint8_t snap_idx = (lockable < 16) ? lockable : (lockable - 8);
+    // EXT CC slots (PAGE_EXT_CC). 4 per track. Each slot has its own enable
+    // bit; disabled slots emit nothing. Value resolves as (per-step lock
+    // from LockPool) ?: (track default in midi_cc_values). Per-lock PROB on
+    // a CC slot follows the same roll-fail-revert-to-default pattern as the
+    // patch-page lockables.
+    for (uint8_t slot = 0; slot < kCcSlotCount; ++slot) {
+      if (!multi.cc_slot_enabled(t, slot)) continue;
+      uint8_t lock_key = kCcSlotLockBase + slot;
+      uint8_t v = lock_pool_.Get(t, step_index, lock_key,
+                                 multi.cc_slot_value(t, slot));
+      uint8_t pi = lock_prob_pool_.Find(t, step_index, lock_key);
+      if (pi != 0xff &&
+          !ProbRoll(lock_prob_pool_.entry(pi).prob, tr.shadow[kShdwLOOP])) {
+        v = multi.cc_slot_value(t, slot);
+      }
       midi_dispatcher.SendSlotCc(channel,
-                                 multi.cc_for_slot(t, slot),
-                                 snapshot[snap_idx] >> 1);
+                                 multi.cc_slot_number(t, slot),
+                                 v & 0x7f);
     }
   }
 }

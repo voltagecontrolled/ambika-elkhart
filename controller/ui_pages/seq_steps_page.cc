@@ -41,17 +41,6 @@ static inline uint8_t ScalePot(uint8_t value, uint8_t max) {
   return (static_cast<uint16_t>(value) * (max + 1)) >> 7;
 }
 
-// Map a 0..127 pot value to a signed int8_t range [min..max], stored as the
-// underlying uint8_t (two's-complement). Mid pot ≈ 0; pot endpoints clamp.
-static uint8_t MapPotInt8(uint8_t value, int8_t min, int8_t max) {
-  int16_t range = static_cast<int16_t>(max) - min + 1;
-  int16_t scaled = (static_cast<int16_t>(value) * range) >> 7;
-  int16_t signed_val = scaled + min;
-  if (signed_val > max) signed_val = max;
-  if (signed_val < min) signed_val = min;
-  return static_cast<uint8_t>(static_cast<int8_t>(signed_val));
-}
-
 /* static */
 uint8_t SeqStepsPage::step_lock_dirty_ = 0;
 
@@ -93,56 +82,19 @@ static const uint16_t kStepDoubleTapMs = 300;
 static const prog_char kNoteNames[] PROGMEM =
   "C C#D D#E F F#G G#A A#B ";
 
-// 4-char short_name per cell (8 cells × 3 pages × 4 chars = 96 bytes).
-// Lowercase by default; UpdateScreen uppercases the cursor's slot.
-// All cells render with uniform 4-char label + 4-char value layout.
-//
-// Page order (round 5a-2): step-behavior is the leftmost page so the
-// default cursor=0 lands on NOTE — the most foundational sequencer knob.
-// Voice 1 / Voice 2 follow.
+// 4-char short_name per cell (8 cells × 4 chars = 32 bytes). Lowercase by
+// default; UpdateScreen uppercases the cursor's slot. All cells render with
+// uniform 4-char label + 4-char value layout. After #32 the page collapsed
+// to S5a only — patch-page cells own the synth-param lock surface.
 static const prog_char kAbbr[] PROGMEM =
-  "notevel mrstratesubsprobglidsfx "  // page 1 = S5a (step behavior; sfx=SMOD)
-  "noiswav1prm1tun2mix wav2prm2fin2"  // page 2 = S5b (voice 1: osc / mix)
-  "freqfdecfamtadecpdecpamtsub wave"; // page 3 = S5c (voice 2: filter/env/sub)
+  "notevel mrstratesubsprobglidsfx ";  // S5a (step behavior)
 
-// Per-cell target. 0..27 = lockable param index (writes to tr.defaults[N]
-// or step.{page1|page2|steppage|page3}[N%8]; lock_flags bit N marks per-step lock).
-// 0xfe = merged SSUB+REPT cell (`subs` on S5a) — special-cased in OnPot
-//        and UpdateScreen; writes to both kSPSSUB and kSPREPT with mutex.
-//
-// Lockable indices: page1 0..7, page2 8..15, steppage 16..23, page3 24..27.
-// tun2 / fin2 reclaim the dead E1REL / E2REL slots (lockable 9 / 11).
-// freq / famt / pamt / wave are now lockable (24..27) instead of config-mapped.
-static const prog_uint8_t kCellLockable[24] PROGMEM = {
-  // S5a: note, vel, mrst, rate | subs(merged), prob, glid, sfx(0xfd)
-  // VAMT (was lock 4 here) retired from S5a in v4.2 — the Mixer patch page
-  // already exposes the same lock via the "PRM" cell (Param 10 → lock 4),
-  // and EXT-track CC1 (Mod Wheel) emit still pulls from lock index 4.
-  // mrst (0xfb) is a Multi-level cell that writes
-  // multi.data().master_reset_steps; it is NOT per-step lockable.
+// Per-cell target. 0..23 = lockable param index. Sentinels: 0xfe = merged
+// SSUB+REPT (`subs`), 0xfd = SMOD (`sfx`), 0xfb = MRST (Multi-level).
+static const prog_uint8_t kCellLockable[8] PROGMEM = {
+  // note, vel, mrst, rate | subs(merged), prob, glid, sfx
   0,    20,   0xfb, 19,
   0xfe, 16,   21,   0xfd,
-  // S5b: nois, w1, pa1, tun2 | mix(blnd), w2, pa2, fin2
-  14,   1,    2,    9,
-  3,    5,    6,    11,
-  // S5c: freq, fdec, famt, adec | pdec, pamt, sub, wave  (all lockable now)
-  24,   10,   25,   8,
-  12,   26,   15,   27,
-};
-
-// Patch address for config-mapped cells (0xff for lockable cells).
-// S5a bot4 (cell 7) is the empty/reserved slot — both lockable and patch
-// addr are 0xff so OnPot/UpdateScreen treat it as a no-op cell.
-// Page3 cells use kPage3PatchAddrs for their live-feedback path.
-static const prog_uint8_t kCellPatchAddr[24] PROGMEM = {
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-};
-
-// Voicecard patch addrs for the 4 page3 lockables (indexed by kP3*).
-static const prog_uint8_t kPage3PatchAddrs[4] PROGMEM = {
-  16, 22, 58, 11,   // FREQ, FAMT, PAMT, WAVE
 };
 
 // Sentinel for the merged SSUB+REPT `subs` cell on S5c (cursor 20).
@@ -162,26 +114,6 @@ static const prog_char kSmodLabels[] PROGMEM =
   "noneskipfwd rev dir rjmp"
   "jmp1jmp2jmp3jmp4jmp5jmp6jmp7jmp8eskp";
 
-// Lockable indices that store an int8_t (centered at 0).
-static inline uint8_t IsSignedLockable(uint8_t lockable) {
-  // kP2TUN2 (9), kP2FIN2 (11), kP3PAMT (26 = 24 + 2)
-  return lockable == 9 || lockable == 11 || lockable == 26;
-}
-
-// Wave cells use a 2-char abbr + 6-char value layout instead of the
-// standard 4/4. Lockable 1 (kP1WAVE1) and 5 (kP1WAVE2) on Page 1.
-static inline uint8_t IsWaveCell(uint8_t lockable) {
-  return lockable == 1 || lockable == 5;
-}
-
-static uint8_t MapWaveform(uint8_t value) {
-  return ScalePot(value, WAVEFORM_LAST - 1);
-}
-
-// Sub-osc waveform cell — 4-char text name from STR_RES_SQU1.
-static inline uint8_t IsSubWaveCell(uint8_t lockable) {
-  return lockable == 27;   // kP3WAVE (24 + kP3WAVE=3)
-}
 
 // MINT chord shape, 0..13 (4 chars each). Each value selects a chord whose
 // intervals are walked across sub-triggers; see kChordIntervals in sequencer.cc.
@@ -412,50 +344,24 @@ uint8_t SeqStepsPage::OnClick() {
   return 0;
 }
 
-// Encoder turn walks cursor across 24 cells; spills to the previous/next
-// page (registry order) when stepping past the boundary.
-//
-// |increment| >= 8 indicates the S2/S8 page-jump modifier — step through
-// the 3 lock pages (Voice1 / Voice2 / Step) one at a time, only spilling
-// to the next/prev registry page when crossing the 0..2 boundary.
+// Encoder turn walks cursor across 8 cells of S5a (the only sequencer lock
+// page after #32). Spills to the previous/next registry page on either edge.
 /* static */
 uint8_t SeqStepsPage::OnIncrement(int8_t increment) {
   // Substep editor is modal — encoder turn does not navigate away from it.
   if (editing_substeps_) return 1;
-  if (increment >= 8 || increment <= -8) {
-    uint8_t lock_page = sequencer.global().lock_page;
-    if (increment > 0) {
-      if (lock_page >= 2) {
-        ui.ShowPageRelative(1);
-        return 1;
-      }
-      ++lock_page;
-    } else {
-      if (lock_page == 0) {
-        ui.ShowPageRelative(-1);
-        return 1;
-      }
-      --lock_page;
-    }
-    sequencer.mutable_global()->lock_page = lock_page;
-    cursor_ = lock_page << 3;
-    return 1;
-  }
   int8_t next = static_cast<int8_t>(cursor_) + increment;
   if (next < 0) {
     cursor_ = 0;
-    sequencer.mutable_global()->lock_page = 0;
     ui.ShowPageRelative(-1);
     return 1;
   }
-  if (next >= 24) {
-    cursor_ = 23;
-    sequencer.mutable_global()->lock_page = 2;
+  if (next >= 8) {
+    cursor_ = 7;
     ui.ShowPageRelative(1);
     return 1;
   }
   cursor_ = next;
-  sequencer.mutable_global()->lock_page = cursor_ >> 3;
   rate_snap_pending_ = 1;
   return 1;
 }
@@ -567,38 +473,11 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     return 0;
   }
 
-  uint8_t page = sequencer.global().lock_page;
-
-  // EXT mode replaces S5b/S5c with the MIDI CC page. Pots 0..3 set the CC#
-  // for the page's 4 slots; pots 4..7 set the lockable value (which is the
-  // CC value sent at fire time). Slots 0..3 live on S5b (page 1) and slots
-  // 4..7 on S5c (page 2). The lockable storage is shared with INT-mode
-  // synth values — same bytes, different interpretation.
-  uint8_t ext_value_mode = 0;
-  if (multi.track_is_ext(track) && (page == 1 || page == 2)) {
-    uint8_t slot_base = (page - 1) * 4;
-    if (index < 4) {
-      // Top row: CC#. Pot fully CCW (value 0) → 0xff (off / unassigned),
-      // skipping all emit. Pot 1..127 → CC 1..127 directly. CC 0 (Bank
-      // Select MSB) is intentionally dropped from the dialable range — it's
-      // a routing-only controller and the "off" semantic is more useful.
-      uint8_t cc = (value == 0) ? 0xff : (value & 0x7f);
-      multi.mutable_data()->midi_cc_map[track][slot_base + index] = cc;
-      return 1;
-    }
-    // Bottom row: lockable value. Redirect to cells 0..3 of the active page
-    // (their lockables are the EXT slot storage). Skip cell-specific scaling;
-    // EXT writes 0..254 to make the >> 1 CC emit cover the full 0..127 range.
-    index -= 4;
-    ext_value_mode = 1;
-  }
-
-  uint8_t cell = page * 8 + index;
+  uint8_t cell = index;
   // Touching a knob brings the cursor to it.
   cursor_ = cell;
 
   uint8_t lockable = pgm_read_byte(&kCellLockable[cell]);
-  uint8_t patch_addr = pgm_read_byte(&kCellPatchAddr[cell]);
 
   SeqTrack* tr = sequencer.mutable_track(track);
 
@@ -667,36 +546,15 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     return 1;
   }
 
-  // Per-cell pot scaling. EXT mode bypasses all of this and just doubles
-  // the pot value so storage byte 0..254 maps to MIDI CC 0..127.
+  // Per-cell pot scaling. After #32 only the S5a cells reach this code, so
+  // the WAVE/tun2/fin2/BLND/pamt/sub-wave branches that lived here for
+  // S5b/S5c are gone — their patch pages own the lock surface now.
   uint8_t mapped = value;
-  if (ext_value_mode) {
-    mapped = value << 1;
-  } else if (lockable == 1 || lockable == 5) {
-    // WAVE1 / WAVE2: skip CZ resonant variants (indices 6..14 = silence).
-    mapped = MapWaveform(value);
-  } else if (lockable == 27) {
-    // Sub-osc waveform (kP3WAVE).
-    mapped = ScalePot(value, WAVEFORM_SUB_OSC_LAST - 1);
-  } else if (lockable == 9) {
-    // tun2 — Osc2 coarse pitch, UNIT_INT8 -24..+24.
-    mapped = MapPotInt8(value, -24, 24);
-  } else if (lockable == 11) {
-    // fin2 — Osc2 detune, UNIT_INT8 -64..+64.
-    mapped = MapPotInt8(value, -64, 64);
-  } else if (lockable == 16) {
+  if (lockable == 16) {
     // PROB — bipolar pot mapping: CCW = % roll, center = always fire,
-    // CW = cycle-phase / FILL. Encoded byte stored in step.prob; eval at
-    // fire time via ProbRoll(). See sequencer.h for encoding.
+    // CW = cycle-phase / FILL. Encoded byte stored as a per-step lock; eval
+    // at fire time via ProbRoll(). See sequencer.h for encoding.
     mapped = ProbEncodePot(value);
-  } else if (lockable == 26) {
-    // pamt — ENV3→pitch depth, bipolar (matches "pitc" on Envelope page).
-    mapped = MapPotInt8(value, -63, 63);
-  } else if (lockable == 3) {
-    // BLND (mix) — clamp to crossfade range. Upper half (≥ 64) was reserved
-    // for future linear-FM and isn't implemented; the dead range produced
-    // glitchy output. 0..127 pot → 0..63 crossfade only.
-    mapped = value >> 1;
   } else if (lockable == 19) {
     // RATE — per-step CDIV override; 0 = use track CDIV, 1..15 = preset
     // index, bit 7 set = raw tick period. Raw mode is reached via encoder
@@ -719,18 +577,6 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
       mapped = value >> 3;  // 0..127 → 0..15
     }
   }
-  // freq / famt pass through 0..127 (matches PAGE_FILTER pot semantics
-  // and the round-5 unipolar env-depth range). pamt is bipolar (handled above).
-
-  // Config-mapped cells (smth, vamt) push directly to the voicecard.
-  // Empty cells (lockable & patch_addr both 0xff) are no-ops.
-  if (lockable == 0xff) {
-    if (patch_addr != 0xff) {
-      multi.mutable_part(track)->SetValue(patch_addr, mapped, 0);
-    }
-    return 1;
-  }
-
   if (held_sr != 0xff) {
     uint8_t held_step = 7 - held_sr;
     // Drill-in intercept: when this cell is the drilled-in (step, lockable),
@@ -748,36 +594,14 @@ uint8_t SeqStepsPage::OnPot(uint8_t index, uint8_t value) {
     ui.inhibit_switch(1 << held_sr);
   } else {
     tr->defaults[lockable] = mapped;
-    // v4.4: every lockable resolves at fire time as (pool entry or default).
-    // Unlocked steps follow the new default automatically; locked steps stay
-    // pinned to their pool value — closes issue #45.
-    // Page3 lockables also push live to the voicecard so filter/wave respond
-    // immediately when adjusting the default (same as config-mapped cells did).
-    if (lockable >= 24 && lockable <= 27) {
-      uint8_t p3_addr = pgm_read_byte(&kPage3PatchAddrs[lockable - 24]);
-      multi.mutable_part(track)->SetValue(p3_addr, mapped, 0);
-    }
   }
 
-  // Live MIDI CC emit on EXT tracks for the cells that route to MIDI:
-  //   • S5a VAMT (lockable 4) → CC 1 (Mod Wheel)
-  //   • S5a GLID (lockable 21) → Pitch Bend (14-bit)
-  //   • S5b/S5c EXT slots (this OnPot was redirected via ext_value_mode)
-  // Fires whether the user is editing a step lock or the track default so the
-  // pot sweep is audible on external gear in both cases.
-  if (multi.track_is_ext(track)) {
+  // Live MIDI CC emit on EXT tracks for the S5a intrinsic cells that route
+  // to MIDI: GLID (lockable 21) → CC 5 (Portamento Time). EXT CC slots
+  // are owned by PAGE_EXT_CC now; VAMT no longer lives on S5a.
+  if (multi.track_is_ext(track) && lockable == 21) {
     uint8_t ch = (multi.track_channel(track) - 1) & 0x0f;
-    uint8_t v7 = mapped >> 1;
-    if (ext_value_mode) {
-      uint8_t slot = (page - 1) * 4 + index;
-      uint8_t cc = multi.cc_for_slot(track, slot);
-      if (cc <= 127) midi_dispatcher.SendCc(ch, cc, v7);
-    } else if (lockable == 4) {
-      midi_dispatcher.SendCc(ch, 1, v7);
-    } else if (lockable == 21) {
-      // GLID → CC 5 (Portamento Time). Byte 0..127 → CC 0..127 directly.
-      midi_dispatcher.SendCc(ch, 5, mapped & 0x7f);
-    }
+    midi_dispatcher.SendCc(ch, 5, mapped & 0x7f);
   }
   return 1;
 }
@@ -842,13 +666,6 @@ static void WriteU8Right(char* buf, uint8_t value) {
   AlignRight(&buf[1], 3);
 }
 
-// Write a signed int8 (reinterpreted from uint8 storage) right-aligned into
-// a 4-char field.
-static void WriteI8Right(char* buf, uint8_t value) {
-  int16_t v = static_cast<int8_t>(value);
-  UnsafeItoa<int16_t>(v, 4, buf);
-  AlignRight(buf, 4);
-}
 
 /* static */
 void SeqStepsPage::UpdateScreen() {
@@ -921,9 +738,6 @@ void SeqStepsPage::UpdateScreen() {
     return;
   }
 
-  uint8_t page = sequencer.global().lock_page;
-  uint8_t cursor_in_page = (cursor_ >> 3) == page ? (cursor_ & 7) : 0xff;
-
   // If a step is held, show that step's resolved values (locks where set,
   // defaults elsewhere). Otherwise show the track defaults.
   uint8_t held_step = 0xff;
@@ -931,76 +745,8 @@ void SeqStepsPage::UpdateScreen() {
     if (ui.switch_held(s)) { held_step = 7 - s; break; }
   }
 
-  // EXT mode replaces the S5b/S5c synth-param view with a MIDI CC page:
-  // 4 vertical cells per page, CC# on line 0, lockable value on line 1.
-  // Page 1 (S5b) shows EXT slots 0..3; page 2 (S5c) shows slots 4..7.
-  // The lockable storage is shared with the INT-mode synth-param bytes —
-  // the value bytes are reinterpreted as CC values on EXT tracks.
-  if (multi.track_is_ext(track) && (page == 1 || page == 2)) {
-    static const prog_uint8_t kExtSlotLockable[8] PROGMEM = {
-      14, 1, 2, 9,    // S5b slots 0..3 (page2[6], page1[1], page1[2], page2[1])
-      24, 10, 25, 8,  // S5c slots 0..3 (page3[0], page2[2], page3[1], page2[0])
-    };
-    uint8_t slot_base = (page - 1) * 4;
-    char* line0 = display.line_buffer(0);
-    char* line1 = display.line_buffer(1);
-    // Labels follow the existing convention: lowercase by default, uppercased
-    // on the cursor cell. cursor_in_page 0..3 = CC# row, 4..7 = val row.
-    for (uint8_t k = 0; k < 4; ++k) {
-      uint8_t slot = slot_base + k;
-      uint8_t lockable = pgm_read_byte(&kExtSlotLockable[slot]);
-      char* buf0 = line0 + k * 10;
-      char* buf1 = line1 + k * 10;
-      if (k != 0) {
-        buf0[0] = kDelimiter;
-        buf1[0] = kDelimiter;
-      }
-      uint8_t cc_selected  = (cursor_in_page == k);
-      uint8_t val_selected = (cursor_in_page == k + 4);
-      // v4.3 #38: uppercase CC#/VAL labels also when this slot's lockable
-      // has a per-lock PROB entry for the held step.
-      uint8_t has_prob = (held_step != 0xff &&
-          sequencer.lock_prob_pool().Find(track, held_step, lockable) != 0xff);
-      uint8_t label_upper = cc_selected || has_prob;
-      uint8_t label_upper_val = val_selected || has_prob;
-      buf0[1] = label_upper ? 'C' : 'c';
-      buf0[2] = label_upper ? 'C' : 'c';
-      buf0[3] = '#';
-      buf0[4] = ' ';
-      uint8_t cc = multi.cc_for_slot(track, slot);
-      if (cc > 127) {
-        // " off" right-justified in the 4-char value field (positions 5..8).
-        buf0[5] = ' '; buf0[6] = 'o'; buf0[7] = 'f'; buf0[8] = 'f';
-      } else {
-        UnsafeItoa<uint8_t>(cc, 4, &buf0[5]);
-        AlignRight(&buf0[5], 4);
-      }
-      buf1[1] = label_upper_val ? 'V' : 'v';
-      buf1[2] = label_upper_val ? 'A' : 'a';
-      buf1[3] = label_upper_val ? 'L' : 'l';
-      buf1[4] = ' ';
-      // Drill-in: render PROB byte from LockProbPool instead of the lock
-      // value when this slot's lockable matches the drilled-in (step, lockable).
-      if (held_step != 0xff && drill_step_ == held_step &&
-          drill_lockable_ == lockable) {
-        WriteProbByte(&buf1[5],
-                      sequencer.lock_prob_pool().GetProb(
-                          track, held_step, lockable));
-      } else {
-        uint8_t v = (held_step != 0xff)
-            ? sequencer.StepLockedValue(track, held_step, lockable)
-            : tr.defaults[lockable];
-        UnsafeItoa<uint8_t>(v, 4, &buf1[5]);
-        AlignRight(&buf1[5], 4);
-      }
-    }
-    return;
-  }
-
   for (uint8_t i = 0; i < 8; ++i) {
-    uint8_t cell_global = page * 8 + i;
-    uint8_t lockable = pgm_read_byte(&kCellLockable[cell_global]);
-    uint8_t patch_addr = pgm_read_byte(&kCellPatchAddr[cell_global]);
+    uint8_t lockable = pgm_read_byte(&kCellLockable[i]);
 
     uint8_t line = i < 4 ? 0 : 1;
     uint8_t row = (i & 3) * 10;
@@ -1021,10 +767,10 @@ void SeqStepsPage::UpdateScreen() {
     else if (lockable == kSubsMergedSentinel) prob_key = kProbKeySubs;
     uint8_t has_prob = (held_step != 0xff && prob_key != 0xff && prob_key < 66 &&
                        sequencer.lock_prob_pool().Find(track, held_step, prob_key) != 0xff);
-    const prog_char* abbr_src = kAbbr + cell_global * 4;
+    const prog_char* abbr_src = kAbbr + i * 4;
     for (uint8_t c = 0; c < 4; ++c) {
       char ch = pgm_read_byte(abbr_src + c);
-      if ((i == cursor_in_page || has_prob) && ch >= 'a' && ch <= 'z') {
+      if ((i == cursor_ || has_prob) && ch >= 'a' && ch <= 'z') {
         ch -= 0x20;
       }
       buffer[1 + c] = ch;
@@ -1066,12 +812,6 @@ void SeqStepsPage::UpdateScreen() {
       continue;
     }
 
-    // Empty cell — blank out the value field and skip rendering.
-    if (lockable == 0xff && patch_addr == 0xff) {
-      for (uint8_t k = 6; k <= 9; ++k) buffer[k] = ' ';
-      continue;
-    }
-
     // MRST cell — display the Multi-level master-reset period.
     // Stored 0 → " off"; stored N>0 → period N+1 undivided steps.
     if (lockable == kMrstCellSentinel) {
@@ -1107,16 +847,10 @@ void SeqStepsPage::UpdateScreen() {
       continue;
     }
 
-    // Resolve value for display.
-    uint8_t v;
-    if (lockable == 0xff) {
-      // Config-mapped cell: read live value from config via GetValue.
-      v = multi.part(track).GetValue(patch_addr);
-    } else if (held_step != 0xff) {
-      v = sequencer.StepLockedValue(track, held_step, lockable);
-    } else {
-      v = tr.defaults[lockable];
-    }
+    // Resolve value for display. All remaining S5a cells are lockable.
+    uint8_t v = (held_step != 0xff)
+        ? sequencer.StepLockedValue(track, held_step, lockable)
+        : tr.defaults[lockable];
 
     // Drill-in: render PROB byte from LockProbPool instead of the lock value
     // when this cell matches the drilled-in (step, lockable).
@@ -1131,18 +865,6 @@ void SeqStepsPage::UpdateScreen() {
       // NOTE — 3-char note name, right-aligned in the 4-char field at 6..9.
       buffer[6] = ' ';
       WriteNoteName(&buffer[7], v);
-    } else if (IsWaveCell(lockable)) {
-      // Wave cell — 4-char wave name at 6..9.
-      for (uint8_t k = 6; k <= 9; ++k) buffer[k] = ' ';
-      ResourcesManager::LoadStringResource(STR_RES_NONE + v, &buffer[6], 4);
-      AlignRight(&buffer[6], 4);
-    } else if (IsSubWaveCell(lockable)) {
-      // Sub-osc waveform — 4-char text name.
-      for (uint8_t k = 6; k <= 9; ++k) buffer[k] = ' ';
-      ResourcesManager::LoadStringResource(STR_RES_SQU1 + v, &buffer[6], 4);
-      AlignRight(&buffer[6], 4);
-    } else if (IsSignedLockable(lockable)) {
-      WriteI8Right(&buffer[6], v);
     } else if (lockable == 19) {
       // RATE per-step override. 0 = inherit track (" trk"); 1..15 = preset
       // (indexes kRateLabels[(r-1)..14]); bit 7 set = raw tick period.
