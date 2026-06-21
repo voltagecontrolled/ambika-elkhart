@@ -941,7 +941,9 @@ Standard 5-pin DIN MIDI in and out are on the back panel.
 | Source                | Effect                                                                              |
 |-----------------------|-------------------------------------------------------------------------------------|
 | Clock (`0xF8`)        | Advances the sequencer when `clk` (System page) is `EXT` or `THR`.                  |
-| Start/Stop/Continue   | Drives transport when slaved to external clock.                                     |
+| Start (`0xFA`)        | Restarts the sequencer from step 0. Acts only when `clk` is `EXT` or `THR`; ignored in `INT`/`OUT` so local Play stays in control. |
+| Stop (`0xFC`)         | Pauses the sequencer, holding position so Continue can resume. (`EXT`/`THR` only.) |
+| Continue (`0xFB`)     | Resumes the sequencer from the held position. (`EXT`/`THR` only.)                    |
 | Notes on ch 10        | Notes 36–41 trigger voices 1–6 (fixed General-MIDI-style drum map).                 |
 | Control Change        | Patch parameters per the CC table below.                                            |
 | NRPN                  | Patch parameters by raw patch-byte address (see NRPN table below).                  |

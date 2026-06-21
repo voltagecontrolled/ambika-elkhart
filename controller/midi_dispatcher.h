@@ -23,6 +23,7 @@
 
 #include "controller/display.h"
 #include "controller/multi.h"
+#include "controller/sequencer.h"
 #include "controller/storage.h"
 #include "controller/system_settings.h"
 #include "controller/ui.h"
@@ -116,9 +117,34 @@ class MidiDispatcher : public midi::MidiDevice {
       multi.Clock();
     }
   }
-  static void Start() { multi.Start(); }
-  static void Stop() { multi.Stop(); }
-  static void Continue() { multi.Continue(); }
+  // Inbound MIDI realtime transport. Only acts as a slave when Elkhart is on
+  // an external clock source (EXT/THR) — when master (INT/OUT) we ignore
+  // inbound transport so local Play stays in control. These drive the
+  // sequencer transport (which the old multi.Start()/Stop() path never did, so
+  // external Start never actually started the step sequencer). In EXT mode the
+  // Play()/Pause() calls reach Multi::Start()/Stop() but emit no clock-out echo
+  // (clock-out is off); in THR mode they regenerate transport downstream, the
+  // same way inbound clock is already re-emitted via OnClock().
+  static void Start() {
+    if (multi.internal_clock()) return;
+    sequencer.Reset();  // MIDI Start always restarts from step 0
+    sequencer.Play();
+  }
+  static void Continue() {
+    if (multi.internal_clock()) return;
+    uint8_t transport = sequencer.global().transport;
+    if (transport == kSeqPaused) {
+      sequencer.Pause();  // resume from the held position
+    } else if (transport == kSeqStopped) {
+      sequencer.Play();
+    }
+  }
+  static void Stop() {
+    if (multi.internal_clock()) return;
+    if (sequencer.global().transport == kSeqPlaying) {
+      sequencer.Pause();  // halt but keep position so Continue can resume
+    }
+  }
   
   static void SysExStart() {
     ProcessSysEx(0xf0);
