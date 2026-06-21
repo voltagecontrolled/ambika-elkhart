@@ -37,8 +37,10 @@ class SeqTrackPage : public UiPage {
   // 0 = "voic" (reset track patch defaults) / 1 = "ploc" (clear lock pool
   // entries for this track). Encoder long-press executes.
   static uint8_t init_choice_;
-  // Acknowledge an init action by flashing LED_6 red. Records the ms
-  // timestamp at execution; UpdateLeds drives the flash until elapsed.
+  // Acknowledge an init action by flashing LED_6 red. init_feedback_active_
+  // gates the flash so the timestamp window can't alias on the 16-bit ms
+  // wrap (#53); set on execution, cleared by UpdateLeds once elapsed.
+  static uint8_t init_feedback_active_;
   static uint16_t init_feedback_ms_;
 
   DISALLOW_COPY_AND_ASSIGN(SeqTrackPage);

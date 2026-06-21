@@ -22,6 +22,7 @@ namespace ambika {
 /* static */ uint8_t SeqTrackPage::rate_snap_pending_ = 0;
 /* static */ uint8_t  SeqTrackPage::mch_mmod_active_  = 0;
 /* static */ uint8_t  SeqTrackPage::init_choice_      = 0;
+/* static */ uint8_t  SeqTrackPage::init_feedback_active_ = 0;
 /* static */ uint16_t SeqTrackPage::init_feedback_ms_ = 0;
 
 // Init-action LED flash duration. Long enough to be visible without lingering
@@ -102,6 +103,7 @@ uint8_t SeqTrackPage::OnClick() {
       sequencer.ClearTrackLocks(track);
     }
     init_feedback_ms_ = static_cast<uint16_t>(avrlib::milliseconds());
+    init_feedback_active_ = 1;
     ui.clear_encoder_last_hold_ms();
     return 1;
   }
@@ -321,10 +323,16 @@ void SeqTrackPage::UpdateLeds() {
   // Init action feedback: rapid red flash on LED_6 for kInitFeedbackMs after
   // an init voic / init ploc execution. Bit 5 of the current ms toggles ~16Hz
   // (period ~64 ms) for a fast strobe; ends once the window elapses and the
-  // base step paint resumes on its own next frame.
-  uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
-  if (static_cast<uint16_t>(now - init_feedback_ms_) < kInitFeedbackMs) {
-    leds.set_pixel(LED_6, (now & 0x20) ? 0xf0 : 0);
+  // base step paint resumes on its own next frame. Gated by
+  // init_feedback_active_ so the bare timestamp window can't re-alias every
+  // time the 16-bit ms clock wraps (~65 s) and strobe LED_6 unprompted (#53).
+  if (init_feedback_active_) {
+    uint16_t now = static_cast<uint16_t>(avrlib::milliseconds());
+    if (static_cast<uint16_t>(now - init_feedback_ms_) < kInitFeedbackMs) {
+      leds.set_pixel(LED_6, (now & 0x20) ? 0xf0 : 0);
+    } else {
+      init_feedback_active_ = 0;
+    }
   }
 }
 
