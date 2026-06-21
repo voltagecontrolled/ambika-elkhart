@@ -948,9 +948,9 @@ void Sequencer::FireStep(uint8_t t, uint8_t step_index, uint8_t sub_idx) {
     voicecard_tx.TriggerWithSnapshot(
         t, static_cast<uint16_t>(note) << 7, velocity, 0, snapshot);
   }
-  midi_dispatcher.SequencerNoteOn(t, channel, note, velocity);
 
   if (track_ext) {
+    midi_dispatcher.SequencerNoteOn(t, channel, note, velocity);
     // Emit resolved (lock-or-default) values every step so external gear
     // sees the same "snap back to default on unlocked step" behavior the
     // internal synth gets from a full snapshot push. No dedup state.
