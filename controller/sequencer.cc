@@ -31,6 +31,12 @@ extern const prog_uint8_t kRateValues[] PROGMEM = {
     3, 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48, 96, 144, 192
 };
 
+// TICK sentinel meaning "fire on the next Clock(), whatever period that step
+// resolves to". Reset() can't know the period itself: the step it lands on may
+// carry a RATE lock that overrides CDIV. Real TICK values never exceed the
+// largest period (192) + 1, so 0xff is unambiguous.
+static const uint8_t kTickPreCharge = 0xff;
+
 // Resolves a 0-based preset byte (or a 0x80|period raw byte) to a tick period.
 // Callers with 1-based per-step bytes must subtract 1 before passing.
 static inline uint8_t RatePeriod(uint8_t byte) {
@@ -502,16 +508,18 @@ void Sequencer::Clock(uint8_t ticks) {
   // undivided steps. Stored value k → period of (k + 1) steps; k = 0 = off.
   uint8_t mrst = multi.data().master_reset_steps;
   if (mrst != 0) {
-    global_.master_tick += ticks;
     uint16_t threshold =
         static_cast<uint16_t>(mrst + 1) * kNumTicksPerStep;
+    // Gate before the increment. The track grid fires on the tick *after*
+    // Play() (TICK is pre-charged, not fired inline), so testing after the
+    // increment put the boundary grid one tick ahead of the track grid and
+    // made the first cycle after Play one tick short of every later one.
     if (global_.master_tick >= threshold) {
-      Reset();
+      Reset();  // zeroes master_tick
       // Fall through: the per-track loop runs on this same tick so step 0
-      // fires inline at the cycle boundary. With TICK pre-charged to
-      // period-1, the +=1 below lands TICK == period and fires step 0 with
-      // a full-period gate window.
+      // fires inline at the cycle boundary.
     }
+    global_.master_tick += ticks;
   }
 
   for (uint8_t t = 0; t < kNumVoices; ++t) {
@@ -531,7 +539,12 @@ void Sequencer::Clock(uint8_t ticks) {
     }
     uint8_t period = RatePeriod(cdiv_byte);
 
-    tr.shadow[kShdwTICK] += ticks;
+    if (tr.shadow[kShdwTICK] == kTickPreCharge) {
+      // Land exactly on the boundary so the fire below leaves zero residue.
+      tr.shadow[kShdwTICK] = period;
+    } else {
+      tr.shadow[kShdwTICK] += ticks;
+    }
 
     // SSUB ratchet: fire sub-triggers between period boundaries.
     // Only active when a step has been fired (kShdwLAST is valid post-reset).
@@ -1015,14 +1028,11 @@ void Sequencer::Reset() {
     tracks_[t].shadow[kShdwPROB] = 0;
     tracks_[t].shadow[kShdwLOOP] = 0;
     tracks_[t].shadow[kShdwSubs] = 1;
-    // Pre-charge TICK so the first Clock() call after Play()/Reset() lands
-    // TICK exactly at period and fires step 0 with a full-period gate window
-    // (matching every subsequent step). Pre-charging to period (instead of
-    // period-1) would cross the threshold by one tick on first increment and
-    // truncate step 0's gate. period >= 2 (raw escape clamps to 2; preset
-    // entries are all >= 3).
-    uint8_t period = RatePeriod(tracks_[t].pattern[kPatCDIV]);
-    tracks_[t].shadow[kShdwTICK] = period - 1;
+    // Pre-charge TICK so the first Clock() call after Play()/Reset() fires
+    // step 0 with a full-period gate window, matching every subsequent step.
+    // Resolved to the actual period in Clock() — deriving it from CDIV here
+    // was wrong whenever step 0 carried a RATE lock.
+    tracks_[t].shadow[kShdwTICK] = kTickPreCharge;
   }
   global_.master_tick = 0;
 }

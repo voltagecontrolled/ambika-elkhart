@@ -141,6 +141,24 @@ Index enums: `kP1*`, `kP2*`, `kP3*`, `kSP*`, `kCfg*`, `kPat*`, `kShdw*`.
 
 ---
 
+## Tick timing invariants
+
+Read this before changing anything that touches `kShdwTICK`, `master_tick`, or the master-reset gate in `Sequencer::Clock()`. The `Reset()` pre-charge has been rewritten three times (see CHANGELOG 2026-08-17); each earlier pass adjusted the constant while leaving the source of the value wrong.
+
+**1. `Reset()` must never compute a period.** A track's period at fire time comes from `StepLockedValue(t, kShdwLAST, 16 + kSPRATE)` — the *step's* RATE lock, falling back to `pattern[kPatCDIV]`. Code outside the per-track loop in `Clock()` cannot know which step the playhead will land on, so it cannot know the period. Anything that pre-charges, rewinds, or reseats `kShdwTICK` from outside that loop must store the `kTickPreCharge` sentinel (`0xff`) and let the loop resolve it to the period it actually computed. Deriving the value from CDIV is wrong whenever a RATE lock is present: too slow and the fire is skipped and re-charged at every boundary (a track can go permanently silent), too fast and `TICK -= period` leaves residue that re-phases every later fire.
+
+The sentinel is safe because real `TICK` values are bounded: the largest period is 192 (preset table max; the raw-tick escape clamps to 96), and `TICK` is incremented by one before the test, so it never exceeds 193.
+
+**2. The master-reset gate and the track grid must share a phase.** Tracks fire on the tick *after* `Play()`, because `Reset()` pre-charges `TICK` rather than firing inline. The `master_tick` threshold test therefore has to run *before* its increment; testing after put the boundary grid one tick ahead and made the first MRST cycle one tick shorter than every subsequent one.
+
+**3. MRST cycle length is exact, and a short step before the boundary is not a bug.** The master-reset period is exactly `(mrst + 1) × kNumTicksPerStep` ticks and does not accumulate error — this has been verified by simulation over 6,000 ticks across MRST × CDIV × RATE-lock combinations, and held even before the fixes above. When a track's period does not divide the cycle, the last step before the boundary is truncated (CDIV 9 into a 24-tick cycle yields gaps `9, 9, 6`). That is what a hard master reset does, it is deterministic and identical every cycle, and it is not drift. Before investigating a reported MRST timing problem, establish whether the symptom accumulates across cycles or repeats identically — only the former is a timing bug.
+
+**4. MIDI clock-out is independent of the sequencer.** The master `0xF8` is emitted from `Multi::Tick()` in the Timer2 ISR, not from the main loop, so no amount of sequencer work can delay or drop it. A sequencer timing complaint and a clock-out complaint cannot share a root cause; separate them (e.g. test with MRST off) before diagnosing.
+
+Reproducing the analysis: the offline simulation replicating `Clock()`'s tick arithmetic is quick to rebuild from the sources cited above — model `Play()`, the master-reset gate, the pre-charge, and `TICK += 1; if (TICK >= period) TICK -= period`, then assert that boundary-to-boundary intervals are uniform and that the first cycle matches the steady-state cycle.
+
+---
+
 ## Sequencer Mode UI (S5 / `PAGE_PART_SEQUENCER`)
 
 `controller/ui_pages/seq_steps_page.cc`. Buttons 1–8 are step triggers;
