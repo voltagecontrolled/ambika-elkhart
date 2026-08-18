@@ -11,6 +11,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <avr/interrupt.h>
+
 #include "controller/midi_dispatcher.h"
 #include "controller/multi.h"
 #include "controller/sequencer.h"
@@ -112,7 +114,31 @@ void Multi::ComputeTickDuration() {
   STATIC_ASSERT(kTempoFactor == 392156L);
   int32_t rounding = 2 * static_cast<int32_t>(data_.clock_bpm);
   int32_t denominator = 4 * static_cast<int32_t>(data_.clock_bpm);
-  tick_duration_ = static_cast<uint16_t>((kTempoFactor + rounding) / denominator);
+  uint16_t d = static_cast<uint16_t>((kTempoFactor + rounding) / denominator);
+  // Timer2 reads tick_duration_ every 510 cycles; a torn 16-bit store here
+  // would fire a bogus tick.
+  uint8_t sreg = SREG;
+  cli();
+  tick_duration_ = d;
+  SREG = sreg;
+}
+
+// Called from the Timer2 overflow ISR at ~39.2 kHz.
+/* static */
+void Multi::Tick() {
+  ++clock_counter_;
+  if (clock_counter_ >= tick_duration_) {
+    clock_counter_ = 0;
+    ++num_clock_events_;
+    // Emit the clock byte here rather than from Clock() in the main loop. The
+    // main loop lags by however long sequencer.Clock() plus the UI redraw take,
+    // and that lag is largest exactly on step boundaries — which turns into
+    // beat-correlated jitter at the receiver. Only the master path is emitted
+    // here; EXT/THR regenerate inbound clock from Clock() instead.
+    if (running_ && internal_clock()) {
+      midi_dispatcher.OnClock();
+    }
+  }
 }
 
 /* static */
@@ -153,7 +179,9 @@ void Multi::Clock() {
   }
   sequencer.Clock(1);
   if (running_) {
-    midi_dispatcher.OnClock();
+    if (!internal_clock()) {
+      midi_dispatcher.OnClock();  // THR: regenerate inbound clock downstream
+    }
     for (uint8_t i = 0; i < kNumVoices; ++i) {
       voicecard_tx.TickLfo(i);
     }
@@ -162,32 +190,44 @@ void Multi::Clock() {
 
 /* static */
 void Multi::Start() {
-  midi_dispatcher.OnStart();
+  ComputeTickDuration();
   tick_count_ = 0;
   step_count_ = 0;
-  tick_duration_ = 0;  // ensure ComputeTickDuration result is fresh
-  ComputeTickDuration();
+  // Reset the tick phase so the first clock byte lands a full tick period
+  // after the start byte instead of wherever the free-running counter happened
+  // to be. running_ is set last: until it is, the ISR leaves the high-priority
+  // buffer alone, so OnStart() has it to itself.
+  uint8_t sreg = SREG;
+  cli();
+  clock_counter_ = 0;
+  num_clock_events_ = 0;
+  SREG = sreg;
+  midi_dispatcher.OnStart();
   running_ = 1;
 }
 
 /* static */
 void Multi::Stop() {
+  running_ = 0;
   midi_dispatcher.OnStop();
   for (uint8_t i = 0; i < kNumParts; ++i) {
     parts_[i].AllNotesOff();
   }
-  running_ = 0;
 }
 
 /* static */
 void Multi::UpdateClocks() {
-  if (internal_clock()) {
-    while (num_clock_events_) {
-      Clock();
-      --num_clock_events_;
-    }
-  } else {
-    num_clock_events_ = 0;
+  // Claim the whole pending count in one atomic swap. `--num_clock_events_` is
+  // a read-modify-write: a Timer2 increment landing between its load and store
+  // silently ate a tick, which made the sequencer run measurably slow.
+  uint8_t sreg = SREG;
+  cli();
+  uint8_t pending = num_clock_events_;
+  num_clock_events_ = 0;
+  SREG = sreg;
+  if (!internal_clock()) return;
+  while (pending--) {
+    Clock();
   }
 }
 

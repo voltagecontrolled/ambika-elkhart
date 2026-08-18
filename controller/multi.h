@@ -103,13 +103,7 @@ class Multi {
   static void Stop();
   static void Continue() { Start(); }
 
-  static void Tick() {
-    ++clock_counter_;
-    if (clock_counter_ >= tick_duration_) {
-      ++num_clock_events_;
-      clock_counter_ = 0;
-    }
-  }
+  static void Tick();
 
   static void SetValue(uint8_t address, uint8_t value);
   static inline uint8_t GetValue(uint8_t address) {
